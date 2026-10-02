@@ -31,6 +31,8 @@ model User {
   accountLockReason      String?
   frozenByAdminAt        DateTime?
   adminFreezeReason      String?
+  /// Set when access is recovered via OTP; opens a 24h cool-off on outbound money.
+  accountRecoveredAt     DateTime?
   lastActivityAt         DateTime?
   cniNumberEnc           String?
   biometricEnabled       Boolean   @default(false)
@@ -167,6 +169,8 @@ model OtpCode {
   id        String   @id @default(cuid())
   phone     String
   code      String
+  /// Wrong guesses against this code; burned at OTP_MAX_ATTEMPTS (lib/otp-service.js).
+  attempts  Int      @default(0)
   expiresAt DateTime
   createdAt DateTime @default(now())
 
@@ -195,7 +199,7 @@ model Wallet {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
   ledgerEntries LedgerEntry[]
 }
 
@@ -213,8 +217,8 @@ model KoriTransaction {
   giftCardTheme   String?
   createdAt       DateTime @default(now())
 
-  sender    User? @relation("KoriSender", fields: [senderId], references: [id])
-  recipient User? @relation("KoriRecipient", fields: [recipientId], references: [id])
+  sender    User? @relation("KoriSender", fields: [senderId], references: [id], onDelete: Restrict)
+  recipient User? @relation("KoriRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
 
   @@index([senderId, createdAt])
   @@index([recipientId, createdAt])
@@ -247,8 +251,8 @@ model LedgerEntry {
   reference          String   @unique
   createdAt          DateTime @default(now())
 
-  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([walletId, createdAt])
   @@index([userId, createdAt])
@@ -357,7 +361,7 @@ model BusinessWallet {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  business      Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business      Business              @relation(fields: [businessId], references: [id], onDelete: Restrict)
   ledgerEntries BusinessLedgerEntry[]
 
   @@index([businessId])
@@ -378,8 +382,8 @@ model BusinessLedgerEntry {
   reference              String   @unique
   createdAt              DateTime @default(now())
 
-  businessWallet       BusinessWallet @relation(fields: [businessWalletId], references: [id], onDelete: Cascade)
-  business             Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessWallet       BusinessWallet @relation(fields: [businessWalletId], references: [id], onDelete: Restrict)
+  business             Business       @relation(fields: [businessId], references: [id], onDelete: Restrict)
   counterpartyBusiness Business?      @relation("BusinessLedgerCounterparty", fields: [counterpartyBusinessId], references: [id], onDelete: SetNull)
   counterpartyUser     User?          @relation("BusinessLedgerUserCounterparty", fields: [counterpartyUserId], references: [id], onDelete: SetNull)
 
@@ -451,7 +455,7 @@ model WorkerReceipt {
   completedAt     DateTime @default(now())
   createdAt       DateTime @default(now())
 
-  worker WorkerProfile @relation(fields: [workerProfileId], references: [id], onDelete: Cascade)
+  worker WorkerProfile @relation(fields: [workerProfileId], references: [id], onDelete: Restrict)
 
   @@index([workerProfileId, completedAt])
   @@index([userId])
@@ -601,7 +605,7 @@ model OrderItem {
   quantity  Int
   unitPrice Int
 
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Restrict)
   product Product @relation(fields: [productId], references: [id])
 
   @@index([orderId])
@@ -661,8 +665,8 @@ model TradeInvoice {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  supplier      Business      @relation("TradeInvoiceSupplier", fields: [supplierBusinessId], references: [id], onDelete: Cascade)
-  buyer         User          @relation("TradeInvoiceBuyer", fields: [buyerUserId], references: [id], onDelete: Cascade)
+  supplier      Business      @relation("TradeInvoiceSupplier", fields: [supplierBusinessId], references: [id], onDelete: Restrict)
+  buyer         User          @relation("TradeInvoiceBuyer", fields: [buyerUserId], references: [id], onDelete: Restrict)
   buyerBusiness Business?     @relation("TradeInvoiceBuyerBusiness", fields: [buyerBusinessId], references: [id], onDelete: SetNull)
   tradeAccount  TradeAccount? @relation(fields: [tradeAccountId], references: [id], onDelete: SetNull)
   order         Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
@@ -721,6 +725,8 @@ model DeliveryEscrow {
   riderId        String?
   amountNational Int
   koriPayout     Int
+  /// ₭ actually debited from the buyer into escrow (null on pre-J1 legacy rows, which debited amountNational raw units).
+  amountKoriHeld Int?
   status         String    @default("reserved")
   reference      String    @unique
   reservedAt     DateTime  @default(now())
@@ -728,7 +734,7 @@ model DeliveryEscrow {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  delivery DeliveryTask @relation(fields: [deliveryTaskId], references: [id], onDelete: Cascade)
+  delivery DeliveryTask @relation(fields: [deliveryTaskId], references: [id], onDelete: Restrict)
 
   @@index([buyerId])
   @@index([riderId])
@@ -800,7 +806,7 @@ model Ticket {
   status    String   @default("paid")
   createdAt DateTime @default(now())
 
-  event  Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event  Event        @relation(fields: [eventId], references: [id], onDelete: Restrict)
   buyer  User         @relation(fields: [buyerId], references: [id])
   passes TicketPass[]
 
@@ -858,7 +864,7 @@ model SolidarityContribution {
   reference  String   @unique
   createdAt  DateTime @default(now())
 
-  campaign SolidarityCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign SolidarityCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
   donor    User               @relation("SolidarityDonor", fields: [donorId], references: [id])
 
   @@index([campaignId, createdAt])
@@ -1035,8 +1041,8 @@ model TontineMembership {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  group TontineGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group TontineGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  user  User         @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@unique([groupId, userId])
   @@index([userId])
@@ -1153,8 +1159,8 @@ model MoneyRequest {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  requester      User      @relation("MoneyRequester", fields: [requesterId], references: [id], onDelete: Cascade)
-  payer          User      @relation("MoneyPayer", fields: [payerId], references: [id], onDelete: Cascade)
+  requester      User      @relation("MoneyRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  payer          User      @relation("MoneyPayer", fields: [payerId], references: [id], onDelete: Restrict)
   lockToBusiness Business? @relation("LockedMoneyRequests", fields: [lockToBusinessId], references: [id], onDelete: SetNull)
 
   @@index([requesterId, status, createdAt])
@@ -1170,8 +1176,8 @@ model MerchantVoucher {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
 
   @@unique([userId, businessId])
   @@index([userId])
@@ -1204,7 +1210,7 @@ model PaymentFund {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Restrict)
   scheduledPayments ScheduledPayment[]
 
   @@index([userId])
@@ -1227,7 +1233,7 @@ model ScheduledPayment {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   fund PaymentFund? @relation(fields: [fundId], references: [id], onDelete: SetNull)
 
   @@index([userId, active])
@@ -1252,7 +1258,7 @@ model RailTransaction {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([userId, createdAt])
   @@index([provider, externalId])
@@ -1494,7 +1500,7 @@ model HeldTransaction {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   fraudAlerts FraudAlert[]
 
   @@index([userId, status])
@@ -1645,7 +1651,7 @@ model AdminAuditLog {
   detailJson  String?
   createdAt   DateTime @default(now())
 
-  admin AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  admin AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Restrict)
 
   @@index([adminUserId, createdAt])
   @@index([action, createdAt])
@@ -1728,8 +1734,8 @@ model AdminRefund {
   status          String   @default("completed")
   createdAt       DateTime @default(now())
 
-  admin     AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
-  recipient User      @relation("RefundRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  admin     AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Restrict)
+  recipient User      @relation("RefundRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
 
   @@index([recipientUserId, createdAt])
   @@index([adminUserId, createdAt])
@@ -1753,8 +1759,8 @@ model TransferUndo {
   reversedReference  String?   @unique
   createdAt          DateTime  @default(now())
 
-  sender    User @relation("UndoSender", fields: [senderUserId], references: [id], onDelete: Cascade)
-  recipient User @relation("UndoRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  sender    User @relation("UndoSender", fields: [senderUserId], references: [id], onDelete: Restrict)
+  recipient User @relation("UndoRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
 
   @@index([senderUserId, status])
   @@index([recipientUserId])
@@ -1815,7 +1821,7 @@ model PayrollRun {
   completedAt DateTime?
   createdAt   DateTime  @default(now())
 
-  employee PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   @@index([businessId, createdAt])
   @@index([employeeId, createdAt])
@@ -1873,8 +1879,8 @@ model SchoolFeePayment {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  period  SchoolFeePeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
-  student SchoolStudent   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  period  SchoolFeePeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  student SchoolStudent   @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   @@unique([periodId, studentId])
   @@index([parentUserId, status])
@@ -2165,7 +2171,7 @@ model AgentProfile {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Restrict)
   deposits     AgentDeposit[]
   withdrawals  AgentWithdrawal[]
   floatEntries AgentFloatEntry[]
@@ -2211,7 +2217,7 @@ model AgentPayout {
   reference       String   @unique
   createdAt       DateTime @default(now())
 
-  agent AgentProfile @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  agent AgentProfile @relation(fields: [agentId], references: [id], onDelete: Restrict)
 
   @@unique([agentId, periodYear, periodMonth])
   @@index([periodYear, periodMonth])
@@ -2230,7 +2236,7 @@ model AgentDeposit {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user  User          @relation(fields: [userId], references: [id], onDelete: Restrict)
   agent AgentProfile? @relation(fields: [agentId], references: [id])
 
   @@index([userId, createdAt])
@@ -2251,7 +2257,7 @@ model AgentWithdrawal {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user  User          @relation(fields: [userId], references: [id], onDelete: Restrict)
   agent AgentProfile? @relation(fields: [agentId], references: [id])
 
   @@index([userId, createdAt])
@@ -2272,7 +2278,7 @@ model AgentFloatEntry {
   adminId      String?
   createdAt    DateTime @default(now())
 
-  agent AgentProfile @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  agent AgentProfile @relation(fields: [agentId], references: [id], onDelete: Restrict)
 
   @@index([agentId, createdAt])
   @@index([type])
@@ -2291,7 +2297,7 @@ model StripeDeposit {
   createdAt             DateTime  @default(now())
   completedAt           DateTime?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([userId, createdAt])
   @@index([status])
@@ -2354,9 +2360,20 @@ model AffiliateCommission {
   reference      String   @unique
   createdAt      DateTime @default(now())
 
-  affiliate AffiliateProfile @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  affiliate AffiliateProfile @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
 
   @@index([affiliateId, createdAt])
   @@index([buyerId])
   @@index([orderId])
+}
+
+/// Fixed-window request counters for unauthenticated/per-identifier rate limits
+/// (lib/request-limits.js). Shared across serverless instances via Postgres.
+model RateLimitBucket {
+  key         String   @id
+  windowStart DateTime
+  count       Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@index([updatedAt])
 }

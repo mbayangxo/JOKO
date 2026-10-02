@@ -47,3 +47,17 @@ if (push.status !== 0) {
 }
 
 console.log('[db-sync] ✓ Database schema is in sync.');
+
+// Financial invariants Prisma can't express (CHECK constraints, append-only
+// ledger triggers). Idempotent. A failure here is loud but, like the push
+// above, does not block the deploy.
+const invariants = spawnSync(
+  prismaBin,
+  ['db', 'execute', '--file', join(root, 'prisma', 'sql', 'financial-invariants.sql'), '--url', url],
+  { cwd: root, stdio: 'inherit' },
+);
+if (invariants.status !== 0) {
+  console.warn('[db-sync] ⚠️  Financial invariant guards NOT applied — run prisma/sql/financial-invariants.sql manually.');
+} else {
+  console.log('[db-sync] ✓ Financial invariant guards applied.');
+}
