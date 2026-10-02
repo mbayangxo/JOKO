@@ -9,7 +9,7 @@ import {
   applyCirculationIncrease,
   reconcileKoriReserve,
 } from '../../lib/kori-reserve.js';
-import { convertKoriToNational, mintKoriFromNationalDeposit } from '../../lib/kori-service.js';
+import { burnKoriForCashOut, convertKoriToNational, mintKoriFromNationalDeposit } from '../../lib/kori-service.js';
 import { runMoneyTransaction } from '../../lib/wallet-atomic.js';
 import { createUserWithWallet, prisma, resetReserveToWallets, uniqueRef } from '../helpers/db.js';
 
@@ -45,7 +45,7 @@ test('minting from a national deposit raises circulation AND reserve together', 
   assert.equal(wallet.koriBalance, 1_000);
 });
 
-test('converting ₭ → XOF lowers circulation and reserve symmetrically', async () => {
+test('burning ₭ for cash-out lowers circulation and reserve symmetrically', async () => {
   const user = await createUserWithWallet();
   await runMoneyTransaction(prisma, (tx) =>
     mintKoriFromNationalDeposit(tx, {
@@ -58,8 +58,9 @@ test('converting ₭ → XOF lowers circulation and reserve symmetrically', asyn
   );
   const before = await reserve();
 
+  // J0/J1: the cash-out burn is the only real ₭ → XOF exit (convert had no destination).
   const result = await runMoneyTransaction(prisma, (tx) =>
-    convertKoriToNational(tx, {
+    burnKoriForCashOut(tx, {
       userId: user.id,
       walletId: user.wallet.id,
       country: 'SN',
@@ -68,9 +69,8 @@ test('converting ₭ → XOF lowers circulation and reserve symmetrically', asyn
     }),
   );
 
+  assert.equal(result.koriBurned, 500);
   assert.equal(result.grossNational, 5_000);
-  assert.equal(result.feeNational, 100);
-  assert.equal(result.netNational, 4_900);
 
   const afterState = await reserve();
   assert.equal(afterState.totalKoriInCirculation, before.totalKoriInCirculation - 500);
@@ -92,7 +92,7 @@ test('reconciliation passes when wallets and reserve agree', async () => {
   assert.equal(result.conversionsFrozen, false);
 });
 
-test('reconciliation detects drift, freezes conversions, and blocks convert', async () => {
+test('reconciliation detects drift, freezes conversions, and blocks cash-out burns', async () => {
   const user = await createUserWithWallet();
   // Simulate an unbacked Kori increase (bug or attack): wallet up, reserve untouched.
   await prisma.wallet.update({
@@ -107,7 +107,7 @@ test('reconciliation detects drift, freezes conversions, and blocks convert', as
 
   await assert.rejects(
     runMoneyTransaction(prisma, (tx) =>
-      convertKoriToNational(tx, {
+      burnKoriForCashOut(tx, {
         userId: user.id,
         walletId: user.wallet.id,
         country: 'SN',
@@ -126,6 +126,10 @@ test('reconciliation detects drift, freezes conversions, and blocks convert', as
   const repaired = await reconcileKoriReserve(prisma);
   assert.equal(repaired.ok, true);
   assert.equal(repaired.conversionsFrozen, false);
+});
+
+test('Kori → national conversion is refused (no destination for the value)', async () => {
+  await assert.rejects(convertKoriToNational(), (e) => e.code === 'conversion_unavailable');
 });
 
 test('zero or negative circulation changes are no-ops', async () => {

@@ -521,3 +521,31 @@ test('partner payout: provider rejection refunds the settlement wallet once; dou
     await server.stop();
   }
 });
+
+// ─── Tontine wallet drain (found in the resumed J0 audit, Phase 10) ───────────
+
+test('tontine: a creator cannot pull money from members (collections paused in production)', async () => {
+  const attacker = await actor({ koriBalance: 0 });
+  const v1 = await actor({ koriBalance: 50_000 });
+  const v2 = await actor({ koriBalance: 30_000 });
+  const handles = await prisma.user.findMany({ where: { id: { in: [v1.user.id, v2.user.id] } }, select: { handle: true } });
+  const created = await live.client('POST', 'tontine/groups', {
+    ...as(attacker),
+    body: { name: 'Famille', amountPerMember: 300_000, frequency: 'mensuel', memberHandles: handles.map((h) => h.handle) },
+  });
+  assert.equal(created.status, 201);
+  const rel = await live.client('POST', `tontine/groups/${created.body.id}/release`, as(attacker));
+  assert.equal(rel.status, 503);
+  assert.equal(rel.body.code, 'tontine_collections_paused');
+  assert.equal(await bal(attacker.user), 0);
+  assert.equal(await bal(v1.user), 50_000);
+  assert.equal(await bal(v2.user), 30_000);
+});
+
+test('kori/convert refuses honestly instead of burning ₭ with nowhere for the value to go', async () => {
+  const a = await actor({ koriBalance: 1000 });
+  const r = await live.client('POST', 'kori/convert', { ...as(a), body: { amountKori: 500 } });
+  assert.equal(r.status, 410);
+  assert.equal(r.body.code, 'conversion_unavailable');
+  assert.equal(await bal(a.user), 1000);
+});
