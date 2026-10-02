@@ -1142,6 +1142,18 @@ export function createTontineGroup(body) {
   return apiFetch('/api/tontine/groups', { method: 'POST', body, skipCache: true });
 }
 
+function tontineAction(groupId, action, body) {
+  return apiFetch(`/api/tontine/groups/${encodeURIComponent(groupId)}/${action}`, { method: 'POST', body, skipCache: true });
+}
+
+/** Consent + escrow model: nothing is ever debited without the member's own action. */
+export const acceptTontineInvite = (groupId) => tontineAction(groupId, 'accept');
+export const declineTontineInvite = (groupId) => tontineAction(groupId, 'decline');
+export const startTontine = (groupId) => tontineAction(groupId, 'start');
+export const contributeToTontine = (groupId) => tontineAction(groupId, 'contribute');
+export const cancelTontine = (groupId) => tontineAction(groupId, 'cancel');
+export const leaveTontine = (groupId) => tontineAction(groupId, 'leave');
+
 export function releaseTontinePot(groupId) {
   return apiFetch(`/api/tontine/groups/${encodeURIComponent(groupId)}/release`, {
     method: 'POST',

@@ -11,7 +11,18 @@ import ScreenHeader from '../components/ScreenHeader';
 import AmountChips from '../components/AmountChips';
 import { useToast } from '../components/Toast';
 import { useAppState } from '../state/AppState';
-import { createTontineGroup, getTontineGroups, lookupUser, releaseTontinePot } from '../lib/api-client';
+import {
+  acceptTontineInvite,
+  cancelTontine,
+  contributeToTontine,
+  createTontineGroup,
+  declineTontineInvite,
+  getTontineGroups,
+  leaveTontine,
+  lookupUser,
+  releaseTontinePot,
+  startTontine,
+} from '../lib/api-client';
 import { formatKori } from '../lib/kori.js';
 import KoriAmount from '../components/KoriAmount';
 import { parseK21Qr } from '../lib/k21-qr';
@@ -92,7 +103,7 @@ function HomeStep({ groups, loading, onOpenGroup, onCreate, onBack }) {
             </View>
             <Text style={styles.eyebrow}>NATTA DIGITALE</Text>
             <Text style={styles.title}>Mes groupes</Text>
-            <Text style={styles.sub}>Épargne collective · Automatique</Text>
+            <Text style={styles.sub}>Épargne collective · Chacun cotise lui-même</Text>
 
             <View style={styles.statsRow}>
               <View style={styles.statBox}>
@@ -136,7 +147,7 @@ function HomeStep({ groups, loading, onOpenGroup, onCreate, onBack }) {
                 name: g.name,
                 members: g.memberCount,
                 perMonth: g.amountPerMember,
-                total: g.potBalance || g.expectedPot,
+                total: g.potBalance || g.expectedPot || 0,
                 totalLabel: g.potBalance > 0 ? 'dans le pot' : 'attendus',
                 totalColor: g.isMyTurn ? colors.terracotta : colors.green,
                 progress: g.expectedPot ? Math.round((g.potBalance / g.expectedPot) * 100) : 0,
@@ -163,7 +174,7 @@ function HomeStep({ groups, loading, onOpenGroup, onCreate, onBack }) {
               <View style={styles.howIcon}>
                 <Text style={{ fontSize: 15 }}>🔒</Text>
               </View>
-              <Text style={styles.howText}>K21 collecte automatiquement le jour convenu</Text>
+              <Text style={styles.howText}>Chaque membre accepte l’invitation puis cotise lui-même — la cagnotte reste bloquée dans un pot dédié</Text>
             </View>
             <View style={styles.howRow}>
               <View style={styles.howIcon}>
@@ -501,6 +512,68 @@ function CreateStep({ navigation, creatorHandle, pendingMember, onConsumePending
   );
 }
 
+/**
+ * What THIS user can do in a group right now — every money action is the
+ * user's own explicit choice (accept, cotiser, verser le pot complet).
+ */
+export function tontineActionsFor(g) {
+  const actions = [];
+  if (g.myStatus === 'invited' && g.status === 'forming') {
+    actions.push({ key: 'accept', label: 'Accepter l’invitation' }, { key: 'decline', label: 'Refuser' });
+  }
+  if (g.isCreator && g.status === 'forming') actions.push({ key: 'start', label: 'Démarrer la tontine' });
+  if (g.canContribute) actions.push({ key: 'contribute', label: `Cotiser ${formatKori(g.contributionKori ?? 0)}` });
+  if (g.cycleFunded) actions.push({ key: 'release', label: 'Verser le pot complet' });
+  if (!g.isCreator && g.myStatus === 'accepted' && g.status === 'forming') actions.push({ key: 'leave', label: 'Quitter' });
+  if (g.isCreator && ['forming', 'active'].includes(g.status)) actions.push({ key: 'cancel', label: 'Annuler la tontine' });
+  return actions;
+}
+
+function GroupActionStep({ group, onBack, onAction, busy }) {
+  const actions = tontineActionsFor(group);
+  const statusLabel = {
+    forming: 'En formation — en attente des acceptations',
+    active: `Cycle ${group.currentCycle} · ${group.members?.filter((m) => m.paidThisCycle).length ?? 0}/${group.memberCount} cotisations`,
+    completed: 'Terminée',
+    cancelled: 'Annulée',
+  }[group.status] ?? group.status;
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+        <View style={styles.releaseHero}>
+          <ScreenHeader onBack={onBack} style={styles.topRow} />
+          <View style={{ alignItems: 'center' }}>
+            <Text style={styles.releaseName}>{group.name}</Text>
+            <KoriAmount value={group.potBalance ?? 0} textStyle={styles.releaseAmount} style={{ justifyContent: 'center' }} />
+            <Text style={styles.releaseRecipient}>{statusLabel}</Text>
+            {group.recipientThisCycle ? (
+              <Text style={styles.releaseRecipient}>Bénéficiaire du tour : {group.recipientThisCycle.name ?? displayHandle(group.recipientThisCycle.handle)}</Text>
+            ) : null}
+          </View>
+        </View>
+        <View style={styles.potMembers}>
+          <Text style={styles.potMembersLabel}>Membres</Text>
+          {(group.members ?? []).map((m) => (
+            <View key={m.userId} style={styles.potMemberItem}>
+              <Text style={styles.howText}>
+                {m.name ?? displayHandle(m.handle)} · {m.status === 'accepted' ? (m.paidThisCycle ? 'a cotisé ✓' : 'membre') : m.status === 'invited' ? 'invité·e' : m.status}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+      <View style={[styles.footer, { gap: spacing.sm }]}>
+        {actions.length === 0 ? <Text style={styles.howText}>Aucune action pour toi pour l’instant.</Text> : null}
+        {actions.map((a) => (
+          <PressScale key={a.key} scaleTo={0.97} onPress={() => !busy && onAction(a.key)} style={styles.createBtn}>
+            <Text style={styles.createBtnText}>{busy ? '…' : a.label}</Text>
+          </PressScale>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function ReleaseStep({ group, onBack, onReceive, receiving }) {
   const blink = useBlink(800);
   const heroEntrance = useEntrance(0, 400, 10);
@@ -518,7 +591,7 @@ function ReleaseStep({ group, onBack, onReceive, receiving }) {
             </View>
             <Text style={styles.releaseName}>{group?.name}</Text>
             <KoriAmount value={potAmount} textStyle={styles.releaseAmount} style={{ justifyContent: 'center' }} />
-            <Text style={styles.releaseRecipient}>Pot collecté · Versement automatique</Text>
+            <Text style={styles.releaseRecipient}>Pot complet · Versement au bénéficiaire du tour</Text>
           </Animated.View>
         </View>
 
@@ -611,17 +684,46 @@ export default function TontineScreen({ navigation, route }) {
     try {
       const result = await releaseTontinePot(activeGroup.id);
       await refreshWallet();
-      if (result.payoutAmount > 0) {
-        showToast(`Pot reçu · ${formatKori(result.payoutAmount)} ✓`);
-      } else if (result.partial) {
-        showToast('Collecte partielle — certains membres n\'ont pas assez de solde');
-      } else {
-        showToast('Natta traitée ✓');
-      }
+      showToast(`Pot versé · ${formatKori(result.payout?.amountKori ?? 0)} ✓`);
       setStep('home');
       await loadGroups();
     } catch (err) {
       showToast(err.message ?? 'Versement impossible');
+    } finally {
+      setReceiving(false);
+    }
+  };
+
+  const runAction = async (key) => {
+    if (!activeGroup?.id) return;
+    const fns = {
+      accept: acceptTontineInvite,
+      decline: declineTontineInvite,
+      start: startTontine,
+      contribute: contributeToTontine,
+      release: releaseTontinePot,
+      leave: leaveTontine,
+      cancel: cancelTontine,
+    };
+    setReceiving(true);
+    try {
+      const updated = await fns[key](activeGroup.id);
+      if (['contribute', 'release', 'cancel'].includes(key)) await refreshWallet();
+      showToast(
+        {
+          accept: 'Invitation acceptée ✓',
+          decline: 'Invitation refusée',
+          start: 'Tontine démarrée ✓',
+          contribute: 'Cotisation versée dans le pot ✓',
+          release: `Pot versé · ${formatKori(updated?.payout?.amountKori ?? 0)} ✓`,
+          leave: 'Tu as quitté la tontine',
+          cancel: 'Tontine annulée — cotisations remboursées',
+        }[key],
+      );
+      if (updated?.id) setActiveGroup(updated);
+      await loadGroups();
+    } catch (err) {
+      showToast(err.message ?? 'Action impossible');
     } finally {
       setReceiving(false);
     }
@@ -652,13 +754,7 @@ export default function TontineScreen({ navigation, route }) {
               loading={loading}
               onOpenGroup={(g) => {
                 setActiveGroup(g);
-                if (g.isMyTurn) setStep('release');
-                else
-                  navigation.navigate('Info', {
-                    title: g.name,
-                    subtitle: `${g.memberCount} membres · Ce n'est pas encore ton tour.`,
-                    icon: '🏆',
-                  });
+                setStep('group');
               }}
               onCreate={() => setStep('create')}
               onBack={() => navigation.goBack()}
@@ -676,6 +772,11 @@ export default function TontineScreen({ navigation, route }) {
               onCreate={createGroup}
               creating={creating}
             />
+          </StepTransition>
+        )}
+        {step === 'group' && activeGroup && (
+          <StepTransition>
+            <GroupActionStep group={activeGroup} onBack={() => setStep('home')} onAction={runAction} busy={receiving} />
           </StepTransition>
         )}
         {step === 'release' && activeGroup && (

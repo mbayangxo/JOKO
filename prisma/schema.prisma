@@ -79,6 +79,8 @@ model User {
   createdThreads        MboloThread[]          @relation("ThreadCreator")
   createdTontines       TontineGroup[]         @relation("TontineCreator")
   tontineMemberships    TontineMembership[]
+  tontineContributions  TontineContribution[]  @relation("TontineContributor")
+  tontinePayouts        TontinePayout[]        @relation("TontinePayoutRecipient")
   createdEvents         Event[]                @relation("EventPromoter")
   tickets               Ticket[]
   deliveryAssignments   DeliveryTask[]         @relation("AssignedDriver")
@@ -1022,11 +1024,22 @@ model TontineGroup {
   active          Boolean   @default(true)
   nextDueAt       DateTime?
   lastProcessedAt DateTime?
+  /// forming → active → completed | cancelled. Money moves only while 'active'.
+  status          String    @default("forming")
+  /// 1-based cycle being funded; 0 while forming.
+  currentCycle    Int       @default(0)
+  /// Contribution per member per cycle in ₭, fixed when the group starts.
+  contributionKori Int?
+  startedAt       DateTime?
+  endedAt         DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  creator     User                @relation("TontineCreator", fields: [createdBy], references: [id])
-  memberships TontineMembership[]
+  creator       User                  @relation("TontineCreator", fields: [createdBy], references: [id])
+  memberships   TontineMembership[]
+  contributions TontineContribution[]
+  payouts       TontinePayout[]
+  potEntries    TontinePotEntry[]
 
   @@index([createdBy])
   @@index([active, nextDueAt])
@@ -1038,6 +1051,13 @@ model TontineMembership {
   userId            String
   rotationOrder     Int
   hasReceivedPayout Boolean  @default(false)
+  /// invited → accepted | declined; accepted → left | removed (only while forming).
+  /// An invitation never authorizes a debit; only 'accepted' members can contribute.
+  status            String    @default("invited")
+  invitedById       String?
+  acceptedAt        DateTime?
+  respondedAt       DateTime?
+  leftAt            DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -1046,6 +1066,65 @@ model TontineMembership {
 
   @@unique([groupId, userId])
   @@index([userId])
+}
+
+/// One explicit, member-authorized contribution per member per cycle.
+model TontineContribution {
+  id             String    @id @default(cuid())
+  groupId        String
+  cycle          Int
+  userId         String
+  amountKori     Int
+  /// settled → refunded (only if the group is cancelled before payout)
+  status         String    @default("settled")
+  /// How the member authorized it: 'explicit' (member pressed "cotiser").
+  authorization  String    @default("explicit")
+  reference      String    @unique
+  idempotencyKey String?   @unique
+  dueAt          DateTime?
+  settledAt      DateTime  @default(now())
+  refundedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  group TontineGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  user  User         @relation("TontineContributor", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, cycle, userId])
+  @@index([userId, createdAt])
+}
+
+/// One payout per cycle, to the scheduled recipient, from the escrow pot.
+model TontinePayout {
+  id          String   @id @default(cuid())
+  groupId     String
+  cycle       Int
+  recipientId String
+  amountKori  Int
+  reference   String   @unique
+  createdAt   DateTime @default(now())
+
+  group     TontineGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  recipient User         @relation("TontinePayoutRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, cycle])
+}
+
+/// Append-only escrow ledger for a tontine pot (contribution +, payout −, refund −).
+/// TontineGroup.potBalance must always equal the sum of these rows.
+model TontinePotEntry {
+  id         String   @id @default(cuid())
+  groupId    String
+  cycle      Int
+  type       String
+  amountKori Int
+  userId     String
+  reference  String   @unique
+  createdAt  DateTime @default(now())
+
+  group TontineGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@index([groupId, cycle])
 }
 
 model Notification {
