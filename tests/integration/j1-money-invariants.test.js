@@ -112,3 +112,15 @@ test('delivery dispute refund returns exactly the escrowed ₭ to the buyer', as
   assert.equal(await kori(buyer.id), 500);
   assert.equal(await kori(rider.id), 0);
 });
+
+test('reconciliation counts escrowed ₭ — a delivery hold no longer freezes cash-outs as false drift', async () => {
+  const { reconcileKoriReserve } = await import('../../lib/kori-reserve.js');
+  const { resetReserveToWallets } = await import('../helpers/db.js');
+  const { buyer, rider, task } = await deliveryFixture({ fee: 1000, buyerKori: 1000 });
+  await resetReserveToWallets();
+  await acceptDelivery(prisma, { taskId: task.id, riderId: rider.id, reference: uniqueRef('ESC') });
+  const r = await reconcileKoriReserve(prisma);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.ok(r.custody.deliveryEscrow >= 100);
+  assert.equal(await kori(buyer.id), 900);
+});

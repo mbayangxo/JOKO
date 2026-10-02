@@ -1,6 +1,7 @@
 import './setup.js';
 import crypto from 'crypto';
 import { prisma } from '../../lib/prisma.js';
+import { custodyKoriTotals } from '../../lib/kori-reserve.js';
 
 export { prisma };
 
@@ -72,8 +73,8 @@ export async function createVerifiedDevice(userId, deviceId = `test-device-${cry
  * Serial test execution makes this safe (see --test-concurrency=1).
  */
 export async function resetReserveToWallets() {
-  const total =
-    (await prisma.wallet.aggregate({ _sum: { koriBalance: true } }))._sum.koriBalance ?? 0;
+  // All ₭ custody accounts (wallets, business wallets, pots, vouchers, escrow).
+  const { total } = await custodyKoriTotals(prisma);
   await prisma.koriReserve.upsert({
     where: { id: 'global' },
     create: {
