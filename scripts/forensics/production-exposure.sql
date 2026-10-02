@@ -161,6 +161,24 @@ SELECT COUNT(*) FROM "SmsMessage" WHERE purpose = 'otp' AND body <> '[otp redact
 SELECT COUNT(*) AS seeded_alerts FROM "RegionalAlert" WHERE source = 'K21';
 SELECT COUNT(*) AS culture_items FROM "CultureFeedItem";
 
+\echo '== 15. Credential/PII exposure via Mboolo thread lists (P0: raw User rows) =='
+-- Every GET /api/mbolo/threads (or POST create) by a user who shared a thread
+-- with someone else returned those members' pinHash/passwordHash/CNI/email/phone.
+SELECT COUNT(DISTINCT a."userId") AS readers, COUNT(*) AS reads, MIN(a."createdAt") AS first, MAX(a."createdAt") AS last
+FROM "ApiAuditLog" a
+WHERE a.path IN ('/api/mbolo/threads') AND a."statusCode" BETWEEN 200 AND 299;
+\echo '-- users whose hashes were potentially exposed (member of a thread with ≥2 members)'
+SELECT COUNT(DISTINCT m."userId") AS exposed_users,
+       COUNT(DISTINCT m."userId") FILTER (WHERE u."pinHash" IS NOT NULL) AS with_pin,
+       COUNT(DISTINCT m."userId") FILTER (WHERE u."passwordHash" IS NOT NULL) AS with_password
+FROM "MboloMember" m JOIN "User" u ON u.id = m."userId"
+WHERE (SELECT COUNT(*) FROM "MboloMember" x WHERE x."threadId" = m."threadId") >= 2;
+\echo '-- direct threads created by someone who had no prior friendship with the other member (possible harvesting)'
+SELECT t."creatorId", COUNT(*) AS direct_threads_created
+FROM "MboloThread" t
+WHERE t.type = 'direct'
+GROUP BY 1 HAVING COUNT(*) >= 20 ORDER BY 2 DESC LIMIT 50;
+
 \echo '== 14. Negative or impossible balances (should be zero rows) =='
 SELECT 'wallet' AS kind, id FROM "Wallet" WHERE "koriBalance" < 0 OR balance < 0
 UNION ALL SELECT 'business', id FROM "BusinessWallet" WHERE balance < 0

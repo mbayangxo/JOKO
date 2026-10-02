@@ -334,3 +334,74 @@ When J2 starts, its core should be:
 - Explicit system accounts (external settlement, escrow, fees, a funded incentive pool, agent float, a tontine escrow pot).
 - A reserve fed only by reconciled external settlement statements.
 - Migrations via `prisma migrate deploy`, not `db push`.
+
+
+---
+---
+
+# RUN 3 — tontine consent/escrow, undo fix, exposure pack, resumed audit — 2026-10-02
+
+Branch `claude/jokko-forensic-audit-rprqia` (pushed; **Vercel deployments disabled for this branch**). QA used local disposable Postgres databases only. No production access and no deploy. Every finding below was proven over real HTTP against `api/index.js` running with `NODE_ENV=production`.
+
+> **Stopped under the stop rule.** Phase 16 proved a new **P0**: Mboolo returned other users' full account rows, including bcrypt PIN/password hashes, CNI fields, email, phone and birth date, to anyone who opened a thread with them by handle. It is **contained** (commit `397e89a`). The **decision needed**: whether to force-rotate PINs/passwords that production may already have exposed. Phases 17–22 were **NOT TESTED** in this run.
+
+## Decisions implemented
+
+| Decision | Delivered | Evidence |
+|---|---|---|
+| Tontine: explicit consent + dedicated escrow | `0897520`:<br>• invited→accepted lifecycle;<br>• self-authorized contributions into an escrow pot (append-only `TontinePotEntry`, `CHECK potBalance ≥ 0`);<br>• one contribution per member per cycle;<br>• rule-based payout only when fully funded, once per cycle, to the rotation recipient;<br>• creator cancel refunds once;<br>• the cron only sends reminders;<br>• app wired (accept / start / cotiser / verser / quitter / annuler). | `tests/http/tontine-escrow.test.js`: 19/19 adversarial tests, covering every case you listed. **Production money movement stays OFF** until `TONTINE_ESCROW_ENABLED=true` is set deliberately. |
+| Production exposure (read-only) | **BLOCKED**:<br>• Vercel returns 403;<br>• only the paused Kebu Supabase project is visible;<br>• the production API can't be "read" because every request writes `ApiAuditLog`. | `scripts/forensics/production-exposure.sql` (READ ONLY + ROLLBACK, ids only, 15 sections, validated on QA). `docs/JOKKO-PRODUCTION-EXPOSURE.md`: how to run it, proposed append-only remediation (not executed). |
+| Preview topology | **BLOCKED** (same 403). Preview treated as unsafe; branch deployments stay disabled. | Checklist and `migrate deploy` roadmap in `docs/JOKKO-PRODUCTION-EXPOSURE.md` |
+| P2P undo | `317aa7c`: shadowed `reference()` helper — every undo returned 500. | `tests/http/p2p-undo.test.js`: 9/9 (6 fail before the fix) |
+
+## New findings in this run
+
+| Sev | Finding | Disposition | Commit / test |
+|---|---|---|---|
+| **P0** | Mboolo thread list/create returned other users' full User rows (`pinHash`, `passwordHash`, `cniNumberEnc`, `cniHash`, email, phone, date of birth). Anyone can open a direct thread with any handle. | **CONTAINED**: safe member select + global response secret scrubber. Rotation decision pending. | `397e89a`, `pii-sweep` (12 leaks before) |
+| P1 | `users/lookup` by handle returned the full phone number | FIXED: masked unless the searcher typed the phone | `397e89a` |
+| P1 | Reserve reconciliation counted personal wallets only → any escrow, pot, business or voucher balance froze all cash-outs | FIXED: `custodyKoriTotals` | `352e461` |
+| P1 | Merchant-pay receipt injectable into any `threadId` | FIXED: both parties must be members | `06b7a22` |
+| P1 | Agent cash-in ignored KYC tier caps (tier 1 → 10 000 ₭ with a 5 000 ₭ cap) | FIXED | `06b7a22` |
+| P1 | Agent withdrawal didn't shrink circulation → every withdrawal froze cash-outs | FIXED | `06b7a22` |
+| P1 | Agent cash-out bypassed the 24h post-recovery hold | FIXED | `06b7a22` |
+| P2 | Agents saw the customer's full phone and internal id | FIXED: masked | `06b7a22` |
+| P1 | b2c buyer could self-grant net30/cod → unpaid order, stock reserved | FIXED: b2c is immediate-pay only | `99c6fab` |
+| P1 | b2b net terms with no trade account → unlimited unpaid credit | FIXED: agreed account + credit limit + agreed term required | `99c6fab` |
+| P1 | `deliveries/:id/accept` granted the driver role to anyone (and triggered the buyer escrow debit) | FIXED: onboarded courier required | `99c6fab` |
+
+## Phase status (J0)
+
+| Phase | Area | Classification | Gate |
+|---|---|---|---|
+| 6 | Wallet/ledger | REAL (closed-loop; fragmented ledgers) | PASS after J1 (architecture → J2) |
+| 7 | Concurrency/idempotency | REAL | PASS (tested scope) |
+| 8 | P2P incl. undo | REAL | **PASS** |
+| 9 | Merchant pay | REAL | **PASS** (after 1 P1 fix) |
+| 10 | Tontines | REAL (new consent/escrow model); production money movement disabled | **PASS** (19 adversarial tests) |
+| 11 | Agents | REAL | **PASS** (after 4 fixes) |
+| 12 | Commerce | REAL ordering/stock/price; **cancel/refund NOT IMPLEMENTED**; b2c pays the merchant directly (no escrow) | **PARTIAL** |
+| 13 | Food/delivery | REAL (restaurants are marketplace merchants; escrowed courier fee) | **PASS** (after courier-gate fix) |
+| 14 | Rides | **NOT IMPLEMENTED** ("Movement" = deliveries + gigs) | N/A, roadmap |
+| 15 | Gigs/work | **PARTIAL**: post + list (as `category: gig` products); no apply/accept/complete/pay lifecycle; gig rows have no action | **PARTIAL** (lifecycle NOT IMPLEMENTED) |
+| 16 | Messaging/community | REAL storage, polling only (no realtime) | **FAIL → CONTAINED (P0)**; blocked users, group rules, attachments NOT TESTED |
+| 17 | Offline | — | NOT TESTED |
+| 18 | Mobile/low-end | — | NOT TESTED |
+| 19 | Locale | — | NOT TESTED |
+| 20 | Security | — | PARTIAL (auth, OTP, rate limits, IDOR on money/tontine/orders/deliveries, PII sweep of 23 endpoints) |
+| 21 | Failure injection | — | PASS for payment rails; other boundaries NOT TESTED |
+| 22 | Reload/second session | — | PARTIAL (restart persistence for undo and tontine) |
+
+## Test gate (HEAD `397e89a`, QA DB)
+
+`npm run test:launch-gate`: **298 / 298 pass**, 0 fail, 0 skipped.
+
+## Decision needed before continuing
+
+1. **Credential exposure response.** Production may have served PIN/password hashes to other users. Options:
+   - (a) force a PIN reset (and invalidate password logins) for every user who shared a thread;
+   - (b) force it for all users;
+   - (c) first run §15 of the exposure pack on production, then decide.
+
+   Recommended: **(c) then (a)**. Rotation needs a user-facing flow, so it is a product decision.
+2. **Messaging consent.** Anyone can open a direct thread with any handle and message them. The leak is closed, but whether direct messages need acceptance (message requests) or blocking-by-default is a product decision.

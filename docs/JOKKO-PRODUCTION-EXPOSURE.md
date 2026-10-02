@@ -47,6 +47,7 @@ Status as of 2026-10-02.
 | 12 | Phone accounts with an email marked verified (typed at profile or attached by recover); OTPs in the SMS log | P0-9, P1-16, P0-7 |
 | 13 | Seeded demo alerts and culture items in the DB | P2-19 |
 | 14 | Any negative balance (must be zero rows) | Invariant |
+| 15 | Who read thread lists that leaked other members' PIN/password hashes and PII; how many users' hashes were exposed | P0 (run 3) |
 
 ## 2. Proposed reconciliation / remediation procedure (NOT executed)
 
