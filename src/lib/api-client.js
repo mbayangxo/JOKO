@@ -82,7 +82,16 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   }
 }
 
-export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth = true, skipCache = false, _retry401 = true, accessToken: accessTokenOverride } = {}) {
+function newIdempotencyKey() {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return uuid;
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth = true, skipCache = false, _retry401 = true, accessToken: accessTokenOverride, idempotencyKey } = {}) {
+  // Every write carries ONE Idempotency-Key for all of its attempts (timeout
+  // retry below, 401 refresh retry) so the server never executes it twice.
+  const writeKey = method === 'GET' ? null : idempotencyKey ?? newIdempotencyKey();
   const url = resolveUrl(path);
   assertHttps(url);
   const prefs = await getNetworkPrefs();
@@ -103,6 +112,7 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
     if (token) headers.Authorization = `Bearer ${token}`;
   }
   if (stepUpToken) headers['X-Step-Up-Token'] = stepUpToken;
+  if (writeKey) headers['Idempotency-Key'] = writeKey;
 
   const pin = getSslPinConfig();
   if (pin && Platform.OS !== 'web') {
@@ -141,7 +151,7 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
                 accessToken: refreshed.accessToken,
                 refreshToken: refreshed.refreshToken,
               });
-              return apiFetch(path, { method, body, stepUpToken, auth, skipCache, _retry401: false, accessToken: accessTokenOverride });
+              return apiFetch(path, { method, body, stepUpToken, auth, skipCache, _retry401: false, accessToken: accessTokenOverride, idempotencyKey: writeKey });
             } catch {
               await clearSession();
             }
