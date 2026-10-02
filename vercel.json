@@ -3,6 +3,9 @@
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
+  "git": {
+    "deploymentEnabled": { "claude/jokko-forensic-audit-rprqia": false }
+  },
   "functions": {
     "api/index.js": { "maxDuration": 30 }
   },
