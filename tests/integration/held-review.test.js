@@ -39,7 +39,8 @@ test('held → admin approve → funds move exactly once, user notified', async 
 
   const senderWallet = await prisma.wallet.findUnique({ where: { id: sender.wallet.id } });
   const recipientWallet = await prisma.wallet.findUnique({ where: { id: recipient.wallet.id } });
-  assert.equal(senderWallet.koriBalance, 98_002);
+  // J1: no unfunded +2 ₭ "earn" mint on sends (incentives are off until a funded pool exists).
+  assert.equal(senderWallet.koriBalance, 98_000);
   assert.equal(recipientWallet.koriBalance, 2_000);
 
   // Approving again must fail — no double execution.

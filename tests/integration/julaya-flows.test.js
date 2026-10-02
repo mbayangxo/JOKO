@@ -83,7 +83,7 @@ test('replaying the same idempotency key returns the cached result — no double
   assert.equal(await prisma.railTransaction.count({ where: { idempotencyKey } }), 1);
 });
 
-test('Julaya API timeout: transaction stays PENDING and the wallet is NEVER debited', async () => {
+test('Julaya API timeout: transaction stays PENDING and the funds stay HELD (cannot be double-spent)', async () => {
   process.env.JULAYA_API_KEY_SANDBOX = 'test-sandbox-key';
   globalThis.fetch = (_url, init) =>
     new Promise((_resolve, reject) => {
@@ -96,11 +96,13 @@ test('Julaya API timeout: transaction stays PENDING and the wallet is NEVER debi
   const result = await startCashOut(prisma, railParams(user, 20_000));
 
   assert.equal(result.rail.status, 'pending');
-  assert.equal(result.rail.walletDebited, false);
+  // J1: cash-out funds are held at initiation. Leaving them spendable while the
+  // payout may still complete allowed a proven double-spend (spend, then payout).
+  assert.equal(result.rail.walletDebited, true);
   assert.equal(result.userMessage, RAIL_PROCESSING_MESSAGE);
 
   const wallet = await prisma.wallet.findUnique({ where: { id: user.wallet.id } });
-  assert.equal(wallet.koriBalance, 5_000, 'ambiguous partner outcome must not touch the balance');
+  assert.equal(wallet.koriBalance, 3_000, 'ambiguous outcome: 2 000 ₭ held exactly once, not refunded, not spendable');
 });
 
 test('Julaya explicit rejection marks the rail failed without debiting', async () => {

@@ -133,7 +133,7 @@ test('sender identity comes from the token, not the request body', async () => {
   const victimWallet = await prisma.wallet.findUnique({ where: { id: richVictim.wallet.id } });
   const attackerWallet = await prisma.wallet.findUnique({ where: { id: attacker.wallet.id } });
   assert.equal(victimWallet.koriBalance, 1_000_000, 'victim never debited');
-  assert.equal(attackerWallet.koriBalance, 4_802, 'attacker pays from their own wallet (200 ₭ send + 2 ₭ earn)');
+  assert.equal(attackerWallet.koriBalance, 4_800, 'attacker pays from their own wallet (200 ₭ send, no unfunded earn mint)');
 });
 
 test('ATTACK: session expired after 30 minutes of inactivity → API refreshes activity (client PIN gate)', async () => {
