@@ -7,9 +7,11 @@ export { prisma };
 let phoneCounter = 0;
 
 export function uniquePhone() {
+  // Digits only: a real E.164 number. (Hex letters made phone-based lookups
+  // like partner messaging and support agents fail normalization.)
   phoneCounter += 1;
-  const rand = crypto.randomBytes(3).toString('hex');
-  return `+2217${rand}${String(phoneCounter).padStart(3, '0')}`.slice(0, 16);
+  const rand = String(crypto.randomInt(0, 10_000_000)).padStart(7, '0');
+  return `+2217${rand}${String(phoneCounter % 1000).padStart(3, '0')}`;
 }
 
 export function uniqueRef(prefix = 'TEST') {
