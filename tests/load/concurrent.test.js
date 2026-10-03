@@ -87,7 +87,7 @@ test(`${CONCURRENT_USERS} users sending simultaneously: no lost money, no duplic
   assert.equal(
     failures.length,
     0,
-    `all sends must succeed; first error: ${failures[0]?.error?.message}`,
+    `all sends must succeed; first error: ${failures[0]?.error?.name} ${failures[0]?.error?.code ?? ""} ${failures[0]?.error?.message}`,
   );
 
   const recipientWallet = await prisma.wallet.findUnique({ where: { id: recipient.wallet.id } });
