@@ -45,8 +45,17 @@ test('effectiveTier never grants a tier without matching verification timestamps
   assert.equal(effectiveTier({ verificationTier: 3, cniVerifiedAt: now, addressVerifiedAt: now }), 3);
 });
 
-test('unknown tier falls back to most restrictive (Tier 1)', () => {
-  assert.equal(limitsForTier(0), TIER_LIMITS[1]);
-  assert.equal(limitsForTier(99), TIER_LIMITS[1]);
-  assert.equal(limitsForTier(undefined), TIER_LIMITS[1]);
+test('unknown tier falls back to the most restrictive tier (J3: Tier 0, receive-only)', () => {
+  assert.equal(limitsForTier(99), TIER_LIMITS[0]);
+  assert.equal(limitsForTier(undefined), TIER_LIMITS[0]);
+  assert.equal(TIER_LIMITS[0].maxSendPerDay, 0);
+  assert.equal(TIER_LIMITS[0].canCashOut, false);
+});
+
+test('J3 Tier 0: an email-only account (synthetic phone) cannot send until a phone is verified', () => {
+  assert.equal(effectiveTier({ phone: 'e:someone@example.com', verificationTier: 1 }), 0);
+  assert.equal(effectiveTier({ phone: '+221770000000', verificationTier: 1 }), 1);
+  // Submitted is not verified: a tier number without the verification timestamp does not count.
+  assert.equal(effectiveTier({ phone: '+221770000000', verificationTier: 2, cniVerifiedAt: null }), 1);
+  assert.equal(effectiveTier({ phone: '+221770000000', verificationTier: 3, cniVerifiedAt: null, addressVerifiedAt: new Date() }), 1);
 });

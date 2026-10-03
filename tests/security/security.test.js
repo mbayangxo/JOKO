@@ -185,12 +185,15 @@ test('ATTACK: brute-force PIN — locked after 5 wrong attempts, CNI required to
   assert.equal(res.statusCode, 423);
   assert.equal(res.body.code, 'account_locked');
 
-  // Wrong CNI does not unlock; correct CNI does.
+  // Wrong CNI does not unlock; correct CNI does — and (J3) the unlock is a
+  // RECOVERY: the PIN is reset (no further guessing of it) and the cool-off opens.
   await assert.rejects(unlockAccountWithCni(user.id, 'WRONG-CNI'), PinError);
   const unlocked = await unlockAccountWithCni(user.id, UNIQUE_CNI.toLowerCase());
   assert.equal(unlocked.unlocked, true);
-  const result = await verifyUserPin(user.id, '135790');
-  assert.equal(result.verified, true);
+  assert.equal(unlocked.pinReset, true);
+  await assert.rejects(verifyUserPin(user.id, '135790'), (e) => e.code === 'pin_not_set');
+  const after = await prisma.user.findUnique({ where: { id: user.id } });
+  assert.ok(after.accountRecoveredAt, 'recovery cool-off opened');
 });
 
 test('ATTACK: manipulate Kori balance directly → the database refuses it (J2 projection guard)', async () => {

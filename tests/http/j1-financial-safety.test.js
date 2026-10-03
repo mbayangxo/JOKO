@@ -14,6 +14,7 @@ import jwt from 'jsonwebtoken';
 import {
   createUserWithWallet,
   createVerifiedDevice,
+  establishedSessionToken,
   prisma,
   resetReserveToWallets,
   fundAgentFloat,
@@ -50,14 +51,10 @@ after(async () => {
   await prisma.$disconnect();
 });
 
-function tokenFor(user) {
-  return jwt.sign({ sub: user.id, type: 'access' }, ACCESS_SECRET, { expiresIn: '30m' });
-}
-
 async function actor({ koriBalance = 0, tier = 2 } = {}) {
   const user = await createUserWithWallet({ koriBalance, tier });
   const device = await createVerifiedDevice(user.id);
-  return { user, device, token: tokenFor(user), ip: freshIp() };
+  return { user, device, token: await establishedSessionToken(user.id, device, ACCESS_SECRET), ip: freshIp() };
 }
 
 const as = (a) => ({ token: a.token, device: a.device, ip: a.ip, headers: { 'x-vercel-ip-country': 'SN' } });

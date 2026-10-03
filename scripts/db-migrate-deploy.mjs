@@ -101,7 +101,7 @@ const post = run(['migrate', 'diff', '--from-url', url, '--to-schema-datamodel',
 if (post.status !== 0) fail('Drift after migrate deploy: the database does not match schema.prisma. Investigate before deploying.');
 
 // 5. Guards
-for (const file of ['financial-invariants.sql', 'money-kernel.sql']) {
+for (const file of ['financial-invariants.sql', 'money-kernel.sql', 'identity-guards.sql']) {
   const r = run(['db', 'execute', '--file', join(root, 'prisma', 'sql', file), '--url', url], { stdio: 'inherit' });
   if (r.status !== 0) fail(`Database guards ${file} could not be applied.`);
 }

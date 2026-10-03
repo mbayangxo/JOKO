@@ -116,8 +116,12 @@ test('a session that predates the reset (not revoked) cannot set new credentials
   assert.equal(pinTry.status, 403);
   assert.equal(pinTry.body.code, 'reverification_required');
   const pwTry = await api.client('POST', 'auth/password/set', { ...as(v), body: { password: 'new-password-1' } });
-  assert.equal(pwTry.status, 403);
-  assert.equal((await prisma.user.findUnique({ where: { id: v.id } })).pinHash, null);
+  // J3: refused by the sensitive-change guard (423, untrusted pre-J3 session)
+  // before the handler's own fresh-OTP check (403) — either way: refused.
+  assert.ok([403, 423].includes(pwTry.status), `status ${pwTry.status}`);
+  const after = await prisma.user.findUnique({ where: { id: v.id } });
+  assert.equal(after.pinHash, null);
+  assert.equal(after.passwordHash, null, 'no password was written');
 });
 
 test('changing an existing PIN requires the current PIN (a borrowed session cannot replace it)', async () => {

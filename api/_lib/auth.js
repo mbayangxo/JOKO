@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../../lib/prisma.js';
 import { assertAccountAccessible, touchActivity } from '../../lib/session-security.js';
+import { loadLiveSession, touchSession } from '../../lib/identity/sessions.js';
 import { safeError } from '../../lib/log-redact.js';
 
 function requireEnv(name) {
@@ -12,21 +13,22 @@ function requireEnv(name) {
   return value;
 }
 
-export function signAccessToken(userId) {
+export function signAccessToken(userId, sid = null) {
   // iatMs: millisecond issue time so session revocation is exact (JWT iat is
   // whole seconds, which would reject a fresh login made in the same second).
-  return jwt.sign({ sub: userId, type: 'access', iatMs: Date.now() }, requireEnv('JWT_ACCESS_SECRET'), {
+  // sid: the J3 AuthSession — revoking it kills this token immediately.
+  return jwt.sign({ sub: userId, type: 'access', iatMs: Date.now(), ...(sid ? { sid } : {}) }, requireEnv('JWT_ACCESS_SECRET'), {
     expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '30m',
   });
 }
 
-export function signRefreshToken(userId) {
+export function signRefreshToken(userId, sid = null) {
   // jti makes every token byte-distinct even when issued for the same user in
   // the same second (JWT `iat` is second-granularity) — without it, two logins
   // within the same second produce an identical token, and storing its hash
   // in the unique RefreshToken.tokenHash column throws on the second insert.
   return jwt.sign(
-    { sub: userId, type: 'refresh', jti: crypto.randomBytes(16).toString('hex') },
+    { sub: userId, type: 'refresh', jti: crypto.randomBytes(16).toString('hex'), ...(sid ? { sid } : {}) },
     requireEnv('JWT_REFRESH_SECRET'),
     { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d' },
   );
@@ -79,9 +81,11 @@ export async function getUserIdFromRequest(req) {
 
   let userId;
   let tokenIssuedAtMs = null;
+  let sid = null;
   try {
     const payload = verifyAccessTokenPayload(header.slice('Bearer '.length).trim());
     userId = payload?.sub ?? null;
+    sid = typeof payload?.sid === 'string' ? payload.sid : null;
     tokenIssuedAtMs = Number.isFinite(payload?.iatMs) ? payload.iatMs : payload?.iat ? payload.iat * 1000 : null;
   } catch (err) {
     const code = err.name === 'TokenExpiredError' ? 'token_expired' : 'token_invalid';
@@ -122,6 +126,17 @@ export async function getUserIdFromRequest(req) {
   // revocation instant are dead, even though their signature is valid.
   if (user.sessionsRevokedAt && (!tokenIssuedAtMs || tokenIssuedAtMs < user.sessionsRevokedAt.getTime())) {
     return authFail(req, 'token_expired', 'Session revoked', 'session_revoked');
+  }
+
+  // J3: a token bound to a session dies with it (logout, logout-all, device
+  // revocation, refresh-token reuse, absolute expiry).
+  if (sid) {
+    const session = await loadLiveSession(sid);
+    if (!session || session.userId !== userId) {
+      return authFail(req, 'token_expired', 'Session revoked or expired', 'session_revoked');
+    }
+    req.authSession = session;
+    await touchSession(sid).catch(() => {});
   }
 
   // Refresh activity before the idle check — returning users were getting

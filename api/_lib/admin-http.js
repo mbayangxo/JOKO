@@ -1,5 +1,5 @@
 import { logApiCall } from '../../lib/api-audit.js';
-import { getAdminFromBearer, legacyAdminKeyValid } from '../../lib/admin-auth.js';
+import { getAdminFromBearer } from '../../lib/admin-auth.js';
 import { initServerSentry, captureServerError } from '../../lib/sentry-server.js';
 import { setCors } from './http.js';
 import { safeError } from '../../lib/log-redact.js';
@@ -52,11 +52,10 @@ export function createAdminHandler({ methods, auth = true, handler }) {
           adminId = session.adminId;
           req.adminId = adminId;
           req.admin = session.admin;
-        } else if (!legacyAdminKeyValid(req)) {
+        } else {
+          // J3: the shared admin key is retired.
           res.status(401).json({ error: 'Admin authorization required' });
           return;
-        } else {
-          req.adminId = 'legacy-api-key';
         }
       }
 

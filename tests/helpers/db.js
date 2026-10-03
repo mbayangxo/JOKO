@@ -80,6 +80,55 @@ export async function createVerifiedDevice(userId, deviceId = `test-device-${cry
 }
 
 /**
+ * J3 fixture: an ESTABLISHED login — a verified device first seen
+ * `deviceAgeHours` ago, a trusted AuthSession on it, and (optionally) a PIN
+ * step-up made in that session. Returns an access token bound to the session
+ * (sid), signed with `secret`. This is the precondition a real customer has
+ * after signing in on their own phone; tests about new devices, recovery or
+ * missing step-up build their own weaker sessions instead.
+ */
+export async function establishedSessionToken(userId, deviceId, secret, { stepUp = true, deviceAgeHours = 48, trust = 'trusted' } = {}) {
+  const jwt = (await import('jsonwebtoken')).default;
+  const past = new Date(Date.now() - deviceAgeHours * 60 * 60 * 1000);
+  await prisma.userDevice.updateMany({ where: { userId, deviceId }, data: { firstSeenAt: past, verifiedAt: past } });
+  const session = await prisma.authSession.create({
+    data: {
+      userId,
+      deviceId,
+      authMethod: 'otp_phone',
+      trust,
+      trustedAt: trust === 'trusted' ? past : null,
+      stepUpAt: stepUp ? new Date() : null,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    },
+  });
+  const token = jwt.sign({ sub: userId, type: 'access', iatMs: Date.now(), sid: session.id }, secret, { expiresIn: '30m' });
+  return token;
+}
+
+/**
+ * ₭ a user received as `reward` entries paid FROM the funded incentive budget
+ * (another test may leave incentives:funded with a balance). Rewards are
+ * legitimate only from that budget; anything else would be minted value.
+ */
+export async function fundedRewardsFor(userId) {
+  const [{ funded }] = await prisma.$queryRaw`
+    SELECT COALESCE(SUM(c.amount), 0)::int AS funded
+      FROM "Posting" c
+      JOIN "LedgerAccount" ca ON ca.id = c."accountId"
+      JOIN "JournalEntry" j ON j.id = c."entryId" AND j.kind = 'reward'
+     WHERE ca.code = ${`customer:${userId}:available`} AND c.side = 'credit'
+       AND EXISTS (SELECT 1 FROM "Posting" d JOIN "LedgerAccount" da ON da.id = d."accountId"
+                    WHERE d."entryId" = j.id AND da.code = 'incentives:funded' AND d.side = 'debit')`;
+  return funded;
+}
+
+/** Session id behind a token minted by establishedSessionToken. */
+export function sidOf(token) {
+  return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).sid;
+}
+
+/**
  * Reset the global Kori reserve so it exactly matches SUM(wallet.koriBalance).
  * Serial test execution makes this safe (see --test-concurrency=1).
  */

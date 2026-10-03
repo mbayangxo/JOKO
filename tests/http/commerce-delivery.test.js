@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 
-import { createUserWithWallet, createVerifiedDevice, prisma } from '../helpers/db.js';
+import { createUserWithWallet, createVerifiedDevice, establishedSessionToken, prisma } from '../helpers/db.js';
+import { approveRole } from '../../lib/identity/roles.js';
 import { freshIp, startApiServer } from '../helpers/http-harness.js';
 
 const ACCESS_SECRET = 'http-test-access-secret-0123456789';
@@ -18,7 +19,7 @@ after(async () => { await api?.stop(); await prisma.$disconnect(); });
 async function actor(koriBalance = 0) {
   const user = await createUserWithWallet({ koriBalance, tier: 2 });
   const device = await createVerifiedDevice(user.id);
-  return { user, id: user.id, device, token: jwt.sign({ sub: user.id, type: 'access' }, ACCESS_SECRET), ip: freshIp() };
+  return { user, id: user.id, device, token: await establishedSessionToken(user.id, device, ACCESS_SECRET), ip: freshIp() };
 }
 const as = (a) => ({ token: a.token, device: a.device, ip: a.ip, headers: { 'x-vercel-ip-country': 'SN' } });
 const bal = async (a) => (await prisma.wallet.findUnique({ where: { userId: a.id } })).koriBalance;
@@ -93,7 +94,13 @@ test('delivery: only an onboarded courier can accept; accepting never grants the
   const courier = await actor();
   await prisma.accountRole.create({ data: { userId: courier.id, role: 'personal' } }); // as every real signup
   assert.equal((await call('POST', 'workers/profile', courier, { modes: ['delivery'] })).status, 201);
-  assert.equal((await call('POST', 'drivers/profile', courier, { vehicle: 'moto' })).status, 201);
+  // J3: applying is not onboarding — the role stays pending until an operator approves.
+  const applied = await call('POST', 'drivers/profile', courier, { vehicle: 'moto' });
+  assert.equal(applied.status, 202);
+  assert.equal(applied.body.courierStatus, 'pending');
+  assert.equal((await call('POST', `deliveries/${taskId}/accept`, courier)).status, 403, 'a pending courier cannot accept');
+  assert.equal((await call('GET', `deliveries/${taskId}`, courier)).status, 403, 'a pending courier cannot read open jobs');
+  await approveRole(prisma, { userId: courier.id, role: 'driver', adminId: 'test-compliance', reason: 'documents checked' });
   const seen = await call('GET', `deliveries/${taskId}`, courier);
   assert.equal(seen.status, 200);
   assert.equal(seen.body.dropoff.exact, null, 'exact dropoff hidden until accepted');

@@ -8,7 +8,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
 
-import { createUserWithWallet, createVerifiedDevice, prisma } from '../helpers/db.js';
+import { createUserWithWallet, createVerifiedDevice, establishedSessionToken, prisma } from '../helpers/db.js';
 import { freshIp, startApiServer } from '../helpers/http-harness.js';
 
 const ACCESS_SECRET = 'http-test-access-secret-0123456789';
@@ -19,7 +19,7 @@ after(async () => { await api?.stop(); await prisma.$disconnect(); });
 async function actor(tier) {
   const user = await createUserWithWallet({ tier });
   const device = await createVerifiedDevice(user.id);
-  return { user, device, token: jwt.sign({ sub: user.id, type: 'access' }, ACCESS_SECRET), ip: freshIp() };
+  return { user, device, token: await establishedSessionToken(user.id, device, ACCESS_SECRET), ip: freshIp() };
 }
 const call = (p, a, body) => api.client('POST', p, { token: a.token, device: a.device, ip: a.ip, headers: { 'x-vercel-ip-country': 'SN' }, body });
 const fakeImage = 'data:image/jpeg;base64,' + 'A'.repeat(200);

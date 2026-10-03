@@ -15,7 +15,7 @@ import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 
-import { createUserWithWallet, createVerifiedDevice, prisma } from '../helpers/db.js';
+import { createUserWithWallet, createVerifiedDevice, establishedSessionToken, prisma } from '../helpers/db.js';
 import { freshIp, startApiServer } from '../helpers/http-harness.js';
 import { migrateLegacyThreadsToRequests } from '../../lib/mbolo-access.js';
 
@@ -28,7 +28,7 @@ after(async () => { await api?.stop(); await prisma.$disconnect(); });
 async function actor(koriBalance = 0) {
   const user = await createUserWithWallet({ koriBalance, tier: 2 });
   const device = await createVerifiedDevice(user.id);
-  return { user, id: user.id, handle: user.handle, device, token: jwt.sign({ sub: user.id, type: 'access' }, ACCESS_SECRET), ip: freshIp() };
+  return { user, id: user.id, handle: user.handle, device, token: await establishedSessionToken(user.id, device, ACCESS_SECRET), ip: freshIp() };
 }
 const as = (a) => ({ token: a.token, device: a.device, ip: a.ip, headers: { 'x-vercel-ip-country': 'SN' } });
 const call = (m, p, a, body) => api.client(m, p, { ...as(a), body });

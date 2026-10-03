@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 
-import { createUserWithWallet, createVerifiedDevice, prisma, resetReserveToWallets } from '../helpers/db.js';
+import { createUserWithWallet, createVerifiedDevice, establishedSessionToken, fundedRewardsFor, prisma, resetReserveToWallets } from '../helpers/db.js';
 import { freshIp, startApiServer } from '../helpers/http-harness.js';
 import { createAgentProfile } from '../../lib/agent-service.js';
 import { reconcileKoriReserve } from '../../lib/kori-reserve.js';
@@ -20,7 +20,7 @@ after(async () => { await api?.stop(); await prisma.$disconnect(); });
 async function actor(koriBalance = 0, tier = 2) {
   const user = await createUserWithWallet({ koriBalance, tier });
   const device = await createVerifiedDevice(user.id);
-  return { user, id: user.id, handle: user.handle, device, token: jwt.sign({ sub: user.id, type: 'access' }, ACCESS_SECRET), ip: freshIp() };
+  return { user, id: user.id, handle: user.handle, device, token: await establishedSessionToken(user.id, device, ACCESS_SECRET), ip: freshIp() };
 }
 const as = (a, headers = {}) => ({ token: a.token, device: a.device, ip: a.ip, headers: { 'x-vercel-ip-country': 'SN', ...headers } });
 const bal = async (a) => (await prisma.wallet.findUnique({ where: { userId: a.id } })).koriBalance;
@@ -38,13 +38,15 @@ test('merchant pay: debit/credit, both histories, forged merchant, malformed amo
   const payer = await actor(1000);
   const p = await call('POST', `merchants/${id}/pay`, payer, { body: { amount: 250 } });
   assert.equal(p.status, 201);
-  assert.equal(await bal(payer), 750);
+  // Only rewards paid from the funded incentive budget may top this up.
+  const reward = await fundedRewardsFor(payer.id);
+  assert.equal(await bal(payer), 750 + reward);
   assert.equal(await bal(owner), 250);
   assert.ok((await call('GET', 'transactions', payer)).body.some((t) => t.reference === p.body.reference));
   assert.ok((await call('GET', 'transactions', owner)).body.some((t) => t.amount === 250));
   assert.equal((await call('POST', 'merchants/nope/pay', payer, { body: { amount: 10 } })).status, 404);
   for (const amount of [0, -1, 1.5, '10']) assert.equal((await call('POST', `merchants/${id}/pay`, payer, { body: { amount } })).status, 400);
-  assert.equal(await bal(payer), 750);
+  assert.equal(await bal(payer), 750 + reward);
 });
 
 test('merchant pay: concurrent overspend → one succeeds; duplicate key → one debit', async () => {
@@ -84,7 +86,11 @@ async function agent(float = 200_000) {
 
 test('agent role cannot be self-assigned; non-agents cannot use agent endpoints', async () => {
   const u = await actor();
-  assert.equal((await call('POST', 'roles/agent', u)).status, 400);
+  // J3: agent is an application role — refused with an explicit code, nothing granted.
+  const self = await call('POST', 'roles/agent', u);
+  assert.equal(self.status, 403);
+  assert.equal(self.body.code, 'role_requires_onboarding');
+  assert.equal(await prisma.accountRole.count({ where: { userId: u.id, role: 'agent' } }), 0);
   assert.equal((await call('POST', 'agent/deposits/scan', u, { body: { token: 'xxxxxxxxxxxx' } })).status, 403);
 });
 
@@ -135,6 +141,8 @@ test('agent withdraw: tier gate, once-only confirm, reserve stays reconciled, re
   const recovered = await actor(5000, 2);
   await prisma.user.update({ where: { id: recovered.id }, data: { accountRecoveredAt: new Date() } });
   const held = await call('POST', 'withdrawals/agent', recovered, { body: { amount: 10_000 } });
-  assert.equal(held.status, 403);
-  assert.equal(held.body.code, 'recent_recovery');
+  // J3: the central cash-out guard refuses before any money logic runs.
+  assert.equal(held.status, 423);
+  assert.equal(held.body.code, 'cash_out_hold');
+  assert.ok(held.body.reasonCodes.includes('recent_recovery'));
 });

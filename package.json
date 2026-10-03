@@ -70,7 +70,7 @@
     "pretest": "node scripts/ensure-test-db.mjs",
     "pretest:one": "node scripts/ensure-test-db.mjs",
     "test:db:start": "prisma dev --name joko-test --detach",
-    "test:db:setup": "prisma db push --skip-generate && prisma db execute --schema prisma/schema.prisma --file prisma/sql/financial-invariants.sql && prisma db execute --schema prisma/schema.prisma --file prisma/sql/money-kernel.sql && prisma generate",
+    "test:db:setup": "prisma db push --skip-generate && prisma db execute --schema prisma/schema.prisma --file prisma/sql/financial-invariants.sql && prisma db execute --schema prisma/schema.prisma --file prisma/sql/money-kernel.sql && prisma db execute --schema prisma/schema.prisma --file prisma/sql/identity-guards.sql && prisma generate",
     "test:db:stop": "prisma dev stop joko-test",
     "test": "node --test --test-concurrency=1 \"tests/unit/**/*.test.js\" \"tests/integration/**/*.test.js\" \"tests/security/**/*.test.js\" \"tests/http/**/*.test.js\" \"tests/money/**/*.test.js\"",
     "test:one": "node --test --test-concurrency=1",

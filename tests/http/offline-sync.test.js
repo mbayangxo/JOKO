@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 
-import { createUserWithWallet, createVerifiedDevice, prisma } from '../helpers/db.js';
+import { createUserWithWallet, createVerifiedDevice, establishedSessionToken, prisma } from '../helpers/db.js';
 import { freshIp, startApiServer } from '../helpers/http-harness.js';
 
 const ACCESS_SECRET = 'http-test-access-secret-0123456789';
@@ -21,7 +21,7 @@ after(async () => { await api?.stop(); await prisma.$disconnect(); });
 async function actor() {
   const user = await createUserWithWallet({ tier: 2 });
   const device = await createVerifiedDevice(user.id);
-  return { user, id: user.id, handle: user.handle, device, token: jwt.sign({ sub: user.id, type: 'access' }, ACCESS_SECRET), ip: freshIp() };
+  return { user, id: user.id, handle: user.handle, device, token: await establishedSessionToken(user.id, device, ACCESS_SECRET), ip: freshIp() };
 }
 const call = (m, p, a, body) => api.client(m, p, { token: a.token, device: a.device, ip: a.ip, headers: { 'x-vercel-ip-country': 'SN' }, body });
 const coop = async (owner) => (await call('POST', 'businesses', owner, { name: `Coop ${crypto.randomBytes(3).toString('hex')}`, type: 'merchant' })).body;

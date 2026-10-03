@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 
-import { createUserWithWallet, createVerifiedDevice, prisma } from '../helpers/db.js';
+import { createUserWithWallet, createVerifiedDevice, establishedSessionToken, prisma } from '../helpers/db.js';
 import { freshIp, startApiServer } from '../helpers/http-harness.js';
 
 const ACCESS_SECRET = 'http-test-access-secret-0123456789';
@@ -25,7 +25,7 @@ after(async () => {
 async function actor(koriBalance = 0) {
   const user = await createUserWithWallet({ koriBalance });
   const device = await createVerifiedDevice(user.id);
-  const token = jwt.sign({ sub: user.id, type: 'access' }, ACCESS_SECRET, { expiresIn: '30m' });
+  const token = await establishedSessionToken(user.id, device, ACCESS_SECRET);
   return { user, device, token, ip: freshIp() };
 }
 const as = (a, headers = {}) => ({ token: a.token, device: a.device, ip: a.ip, headers: { 'x-vercel-ip-country': 'SN', ...headers } });
