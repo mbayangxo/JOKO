@@ -2751,3 +2751,198 @@ model LegacyTontineContribution {
   @@index([groupId, cycleKey])
   @@map("TontineContribution")
 }
+
+// ============================================================================
+// J2 — MONEY KERNEL (docs/JOKKO-J2-DESIGN.md). Single source of truth for value.
+// Balances here are written ONLY by the database posting trigger
+// (prisma/sql/money-kernel.sql); journal tables are append-only.
+// ============================================================================
+
+model LedgerAccount {
+  id            String   @id @default(cuid())
+  /// e.g. customer:<userId>:available, tontine:<groupId>:pot, provider:julaya:XOF:settlement
+  code          String   @unique
+  type          String
+  /// 'KRI' (₭ internal unit) | 'XOF' | 'GHS' | …
+  currency      String
+  /// 'credit' (liabilities/revenue) | 'debit' (assets)
+  normalSide    String
+  allowNegative Boolean  @default(false)
+  /// Materialized normal-side balance (minor units). Trigger-maintained only.
+  balance       BigInt   @default(0)
+  ownerType     String?
+  ownerId       String?
+  /// Legacy projection target kept equal to `balance` by the trigger.
+  projTable     String?
+  projId        String?
+  status        String   @default("active")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  postings Posting[]
+
+  @@unique([projTable, projId])
+  @@index([type])
+  @@index([ownerType, ownerId])
+}
+
+model JournalEntry {
+  id                  String   @id @default(cuid())
+  /// Business reference — the exactly-once anchor.
+  reference           String   @unique
+  kind                String
+  /// sha256 of the canonical postings: same reference + different hash = conflict.
+  payloadHash         String
+  reversesId          String?  @unique
+  externalOperationId String?
+  actorType           String
+  actorId             String?
+  reason              String?
+  metadata            Json?
+  createdAt           DateTime @default(now())
+
+  postings          Posting[]
+  reverses          JournalEntry?      @relation("Reversal", fields: [reversesId], references: [id], onDelete: Restrict)
+  reversedBy        JournalEntry?      @relation("Reversal")
+  externalOperation ExternalOperation? @relation(fields: [externalOperationId], references: [id], onDelete: Restrict)
+
+  @@index([kind, createdAt])
+  @@index([externalOperationId])
+}
+
+model Posting {
+  id        BigInt   @id @default(autoincrement())
+  entryId   String
+  accountId String
+  /// 'debit' | 'credit'
+  side      String
+  amount    BigInt
+  currency  String
+  createdAt DateTime @default(now())
+
+  entry   JournalEntry  @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  account LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([entryId])
+  @@index([accountId, id])
+}
+
+/// Money crossing the boundary (cash-in/out, Stripe, partner). State machine
+/// enforced in SQL (money-kernel.sql) and in lib/money-kernel/external-ops.js.
+model ExternalOperation {
+  id                String    @id @default(cuid())
+  provider          String
+  /// 'in' (collection) | 'out' (payout)
+  direction         String
+  state             String    @default("created")
+  reference         String    @unique
+  idempotencyKey    String?   @unique
+  providerReference String?
+  /// Amount in the external currency's minor unit (XOF has no sub-unit).
+  amountMinor       BigInt
+  currency          String
+  /// ₭ equivalent at the fixed peg (credited / burned).
+  amountKori        BigInt
+  feeMinor          BigInt    @default(0)
+  userId            String?
+  /// Ledger account the value belongs to (customer:…:available, partner wallet, …).
+  accountCode       String
+  /// Provider mode at creation ('live' | 'sandbox' | 'mock'): production may only be 'live'.
+  providerMode      String
+  reviewReason      String?
+  failureReason     String?
+  submittedAt       DateTime?
+  confirmedAt       DateTime?
+  settledAt         DateTime?
+  terminalAt        DateTime?
+  /// After this, no outcome → 'expired' (review), never confirmed.
+  outcomeDeadline   DateTime?
+  legacyTable       String?
+  legacyId          String?
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  events  ExternalOperationEvent[]
+  entries JournalEntry[]
+
+  @@unique([provider, providerReference])
+  @@index([state, outcomeDeadline])
+  @@index([userId, createdAt])
+  @@index([legacyTable, legacyId])
+}
+
+/// Append-only transition log for ExternalOperation.
+model ExternalOperationEvent {
+  id            BigInt   @id @default(autoincrement())
+  operationId   String
+  fromState     String
+  toState       String
+  /// 'api' | 'webhook' | 'status_poll' | 'admin' | 'job' | 'reconciliation'
+  source        String
+  signatureOk   Boolean  @default(false)
+  evidenceHash  String?
+  note          String?
+  createdAt     DateTime @default(now())
+
+  operation ExternalOperation @relation(fields: [operationId], references: [id], onDelete: Restrict)
+
+  @@index([operationId, id])
+}
+
+/// Imported provider settlement statement lines (external truth).
+model ProviderStatementLine {
+  id                String    @id @default(cuid())
+  provider          String
+  providerReference String
+  direction         String
+  amountMinor       BigInt
+  currency          String
+  settledAt         DateTime
+  statementId       String
+  matchedOperationId String?
+  importedAt        DateTime  @default(now())
+
+  @@unique([provider, providerReference, direction])
+  @@index([provider, statementId])
+}
+
+/// Reconciliation differences — never silently absorbed.
+model ReconciliationException {
+  id                String    @id @default(cuid())
+  kind              String
+  provider          String?
+  providerReference String?
+  operationId       String?
+  amountMinor       BigInt?
+  currency          String?
+  detail            String
+  status            String    @default("open")
+  resolvedAt        DateTime?
+  resolvedBy        String?
+  createdAt         DateTime  @default(now())
+
+  @@unique([kind, provider, providerReference])
+  @@index([status, createdAt])
+}
+
+/// Admin money adjustments: requested → approved → posted | rejected (dual authorization).
+model MoneyAdjustmentRequest {
+  id             String    @id @default(cuid())
+  idempotencyKey String    @unique
+  debitAccount   String
+  creditAccount  String
+  amount         BigInt
+  currency       String
+  reason         String
+  originalReference String?
+  status         String    @default("requested")
+  requestedBy    String
+  approvedBy     String?
+  rejectedBy     String?
+  entryId        String?
+  createdAt      DateTime  @default(now())
+  decidedAt      DateTime?
+
+  @@index([status, createdAt])
+}

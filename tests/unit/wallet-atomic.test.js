@@ -11,6 +11,7 @@ import {
   transferKori,
   transferNational,
 } from '../../lib/wallet-atomic.js';
+import { account, customerHeld } from '../../lib/money-kernel/index.js';
 import { createUserWithWallet, prisma, uniqueRef } from '../helpers/db.js';
 
 after(() => prisma.$disconnect());
@@ -114,6 +115,7 @@ test('failure AFTER debit rolls back the debit (crash mid-transaction)', async (
         amount: 4_000,
         reference: ref,
         ledger: { type: 'cash_out' },
+        to: await customerHeld(tx, user.id),
       });
       throw new Error('simulated crash after debit, before partner call');
     }),
@@ -136,8 +138,9 @@ test('creditNational is idempotent by reference — no double credit', async () 
     ledger: { type: 'cash_in' },
   };
 
-  await runMoneyTransaction(prisma, (tx) => creditNational(tx, params));
-  await runMoneyTransaction(prisma, (tx) => creditNational(tx, params));
+  // J2: a credit always names its source account (here the test faucet).
+  await runMoneyTransaction(prisma, async (tx) => creditNational(tx, { ...params, from: await account(tx, 'testFaucet') }));
+  await runMoneyTransaction(prisma, async (tx) => creditNational(tx, { ...params, from: await account(tx, 'testFaucet') }));
 
   const w = await prisma.wallet.findUnique({ where: { id: user.wallet.id } });
   assert.equal(w.koriBalance, 2_000, 'replayed credit with same reference must be a no-op');

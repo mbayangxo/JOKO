@@ -16,6 +16,7 @@ import {
   createVerifiedDevice,
   prisma,
   resetReserveToWallets,
+  fundAgentFloat,
 } from '../helpers/db.js';
 import { freshIp, startApiServer } from '../helpers/http-harness.js';
 import { startFakeJulaya } from '../helpers/fake-julaya.js';
@@ -410,18 +411,19 @@ test('GET me/summary works (was a 500: ticket.userId vs buyerId)', async () => {
 
 test('agents/nearby exposes no phone, user id, float or exact location', async () => {
   const owner = await createUserWithWallet({ tier: 2 });
-  await prisma.agentProfile.create({
+  const ag = await prisma.agentProfile.create({
     data: {
       userId: owner.id,
       agentCode: `AGT-T${crypto.randomInt(100000, 999999)}`,
       displayName: 'Boutique QA',
       lat: 14.692812,
       lng: -17.446734,
-      floatBalance: 250000,
+      floatBalance: 0,
       floatLimit: 500000,
       status: 'active',
     },
   });
+  await fundAgentFloat(ag.id, 250000);
   const a = await actor();
   const r = await live.client('GET', 'agents/nearby?lat=14.69&lng=-17.44', as(a));
   assert.equal(r.status, 200);

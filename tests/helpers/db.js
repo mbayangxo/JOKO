@@ -2,6 +2,7 @@ import './setup.js';
 import crypto from 'crypto';
 import { prisma } from '../../lib/prisma.js';
 import { custodyKoriTotals } from '../../lib/kori-reserve.js';
+import { agentFloatTopUp, business as businessAccount, testFund } from '../../lib/money-kernel/index.js';
 
 export { prisma };
 
@@ -46,11 +47,21 @@ export async function createUserWithWallet({
       cniVerifiedAt: tier >= 2 ? now : null,
       addressVerifiedAt: tier >= 3 ? now : null,
       lastActivityAt: now,
-      wallet: { create: { balance: 0, koriBalance: spendableKori, currency: 'XOF' } },
+      wallet: { create: { balance: 0, koriBalance: 0, currency: 'XOF' } },
     },
     include: { wallet: true },
   });
-  return user;
+  if (spendableKori > 0) await fundUser(user.id, spendableKori);
+  return prisma.user.findUnique({ where: { id: user.id }, include: { wallet: true } });
+}
+
+/**
+ * Test-only funding through the Money Kernel (test faucet → customer). The
+ * database refuses direct balance writes, so fixtures fund like everything else.
+ */
+export async function fundUser(userId, amount, db = prisma) {
+  const run = (tx) => testFund(tx, { userId, amount, reference: uniqueRef('FAUCET') });
+  return db === prisma ? prisma.$transaction(run) : run(db);
 }
 
 /** Register a verified device for a user so fraud checks pass. */
@@ -190,4 +201,17 @@ export async function runWithConcurrency(tasks, limit) {
   }
   await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
   return results;
+}
+
+/** Test-only: fund a business wallet through the Money Kernel. */
+export async function fundBusiness(businessId, amount) {
+  return prisma.$transaction(async (tx) => {
+    const to = await businessAccount(tx, businessId);
+    return testFund(tx, { to, amount, reference: uniqueRef('FAUCETB') });
+  });
+}
+
+/** Test-only: agent float via the attested top-up flow (XOF). */
+export async function fundAgentFloat(agentId, amountXof) {
+  return prisma.$transaction((tx) => agentFloatTopUp(tx, { agentId, amountMinor: amountXof, reference: uniqueRef('AFT'), adminId: 'test' }));
 }

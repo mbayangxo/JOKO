@@ -91,6 +91,13 @@ const invariants = spawnSync(
   ['db', 'execute', '--file', join(root, 'prisma', 'sql', 'financial-invariants.sql'), '--url', url],
   { cwd: root, stdio: 'inherit' },
 );
+const kernel = spawnSync(
+  prismaBin,
+  ['db', 'execute', '--file', join(root, 'prisma', 'sql', 'money-kernel.sql'), '--url', url],
+  { cwd: root, stdio: 'inherit' },
+);
+if (kernel.status !== 0) fail('Money Kernel database guards could not be applied — refusing to deploy.');
+
 if (invariants.status !== 0) {
   console.warn('[db-sync] ⚠️  Financial invariant guards NOT applied — run prisma/sql/financial-invariants.sql manually.');
 } else {

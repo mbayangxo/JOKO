@@ -93,12 +93,11 @@ test('reconciliation passes when wallets and reserve agree', async () => {
 });
 
 test('reconciliation detects drift, freezes conversions, and blocks cash-out burns', async () => {
-  const user = await createUserWithWallet();
-  // Simulate an unbacked Kori increase (bug or attack): wallet up, reserve untouched.
-  await prisma.wallet.update({
-    where: { id: user.wallet.id },
-    data: { koriBalance: { increment: 777 } },
-  });
+  const user = await createUserWithWallet({ koriBalance: 100 });
+  await resetReserveToWallets();
+  // J2: wallets can no longer be inflated directly (the DB refuses it), so
+  // drift is simulated on the reserve side: the reserve loses 777 ₭ of backing.
+  await prisma.koriReserve.update({ where: { id: 'global' }, data: { totalReserveHeldXof: { decrement: 7_770 } } });
 
   const result = await reconcileKoriReserve(prisma);
   assert.equal(result.ok, false);
@@ -119,10 +118,7 @@ test('reconciliation detects drift, freezes conversions, and blocks cash-out bur
   );
 
   // Repair and verify conversions thaw automatically on a clean reconcile.
-  await prisma.wallet.update({
-    where: { id: user.wallet.id },
-    data: { koriBalance: { decrement: 777 } },
-  });
+  await prisma.koriReserve.update({ where: { id: 'global' }, data: { totalReserveHeldXof: { increment: 7_770 } } });
   const repaired = await reconcileKoriReserve(prisma);
   assert.equal(repaired.ok, true);
   assert.equal(repaired.conversionsFrozen, false);

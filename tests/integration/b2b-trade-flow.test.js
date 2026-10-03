@@ -13,7 +13,7 @@ import {
   marketplaceOrderConfirm,
 } from '../../lib/trade-handlers.js';
 import { updateOrderStatus } from '../../lib/order-fulfillment-service.js';
-import { createUserWithWallet, mockReq, mockRes, prisma, resetReserveToWallets, createVerifiedDevice } from '../helpers/db.js';
+import { createUserWithWallet, mockReq, mockRes, prisma, resetReserveToWallets, createVerifiedDevice, fundBusiness } from '../helpers/db.js';
 import { ensureBusinessWallet } from '../../lib/business-wallet-service.js';
 
 after(async () => {
@@ -62,10 +62,7 @@ test('B2B trade E2E: brand → trade account → portal → KEBU order → recei
     },
   });
   await ensureBusinessWallet(buyerBiz.id, prisma);
-  await prisma.businessWallet.update({
-    where: { businessId: buyerBiz.id },
-    data: { balance: 50_000 },
-  });
+  await fundBusiness(buyerBiz.id, 50_000);
 
   const brand = await prisma.business.create({
     data: {
@@ -170,10 +167,10 @@ test('B2B trade E2E: brand → trade account → portal → KEBU order → recei
   assert.equal(creditRes.statusCode, 201, JSON.stringify(creditRes.body));
   assert.ok(creditRes.body.invoice?.id, 'trade invoice created');
 
-  await prisma.businessWallet.update({
-    where: { businessId: buyerBiz.id },
-    data: { balance: 100_000 },
-  });
+  {
+    const bw = await prisma.businessWallet.findUnique({ where: { businessId: buyerBiz.id } });
+    if (bw.balance < 100_000) await fundBusiness(buyerBiz.id, 100_000 - bw.balance);
+  }
 
   const payInvRes = await call(tradeInvoicePay, {
     userId: buyer.id,
