@@ -298,6 +298,13 @@ WHERE c.table_schema = 'public' AND (c.table_name, c.column_name) IN (
   ('SolidarityCampaign','kind'),('TontineContribution','cycleKey'),('User','afriClass'))
 ORDER BY 1, 2;
 
+\echo '-- duplicates that would make new UNIQUE indexes fail (must be zero rows)'
+SELECT 'MboloThread.inviteCode' AS col, to_jsonb(t)->>'inviteCode' AS value, COUNT(*) FROM "MboloThread" t
+WHERE to_jsonb(t)->>'inviteCode' IS NOT NULL GROUP BY 2 HAVING COUNT(*) > 1
+UNION ALL
+SELECT 'MboloMessage.mediaAssetId', to_jsonb(m)->>'mediaAssetId', COUNT(*) FROM "MboloMessage" m
+WHERE to_jsonb(m)->>'mediaAssetId' IS NOT NULL GROUP BY 2 HAVING COUNT(*) > 1;
+
 \echo '== 18. Mboolo message-request migration: legacy members who would become requests (counts only) =='
 SELECT COUNT(*) AS members_to_requested
 FROM "MboloMember" m JOIN "MboloThread" t ON t.id = m."threadId"

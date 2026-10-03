@@ -151,6 +151,15 @@ model User {
   mboloStories           UserStory[]
   deviceKeys             UserDeviceKey[]
 
+  deliveriesAsBuyer DeliveryTask[] @relation("DeliveryBuyer")
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  afriClass String?
+  legacyKebuInvestments KebuInvestment[]   @relation("LegacyKebuInvestor")
+  legacyKoriRedemptions KoriRedemption[]   @relation("LegacyKoriRedemptionUser")
+  legacyPromoUses       MerchantPromoUse[] @relation("LegacyPromoUseUser")
+  legacyNuLekkShares    NuLekkShare[]      @relation("LegacyNuLekkShareUser")
+  legacyNuLekkSplits    NuLekkSplit[]      @relation("LegacyNuLekkSplitCreator")
+  legacyTontineContributions LegacyTontineContribution[] @relation("LegacyTontineContributor")
   @@index([phone])
   @@index([afriId])
   @@index([frozenByAdminAt])
@@ -158,6 +167,7 @@ model User {
   @@index([handle])
   @@index([inviteCode])
   @@index([referredByUserId])
+  @@index([afriClass])
 }
 
 model AccountRole {
@@ -321,6 +331,11 @@ model Business {
   tradeInvoicesAsBuyer  TradeInvoice[] @relation("TradeInvoiceBuyerBusiness")
   ordersAsBuyer         Order[]        @relation("OrderBuyerBusiness")
 
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  legacyInvestmentOfferings KebuInvestmentOffering[] @relation("LegacyOfferingBusiness")
+  legacyRedemptionOffers    KoriRedemptionOffer[]    @relation("LegacyRedemptionOfferBusiness")
+  legacyPromos              MerchantPromo[]          @relation("LegacyPromoBusiness")
+  legacyNuLekkSplits        NuLekkSplit[]            @relation("LegacyNuLekkSplitBusiness")
   @@index([ownerId])
   @@index([category])
   @@index([type])
@@ -504,6 +519,9 @@ model Product {
   views      ProductView[]
   affiliateLinks AffiliateLink[]
 
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  legacyPromosAsFree    MerchantPromo[] @relation("LegacyPromoFreeProduct")
+  legacyPromosAsTrigger MerchantPromo[] @relation("LegacyPromoTriggerProduct")
   @@index([sellerId])
   @@index([businessId])
   @@index([category])
@@ -541,6 +559,13 @@ model Order {
   hubParcelLastMile HubParcel? @relation("HubParcelLastMile")
   tradeInvoice TradeInvoice?
 
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  subtotalKori     Int?
+  discountKori     Int      @default(0)
+  promoId          String?
+  promoCode        String?
+  legacyPromo      MerchantPromo?     @relation("LegacyOrderPromo", fields: [promoId], references: [id])
+  legacyPromoUses  MerchantPromoUse[] @relation("LegacyPromoUseOrder")
   @@index([buyerId])
   @@index([businessId])
   @@index([buyerBusinessId])
@@ -548,6 +573,7 @@ model Order {
   @@index([paymentStatus])
   @@index([preferredDeliveryDate])
   @@index([hubId])
+  @@index([promoId])
 }
 
 model DeliveryHub {
@@ -620,8 +646,13 @@ model OrderItem {
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Restrict)
   product Product @relation(fields: [productId], references: [id])
 
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  isPromoFree Boolean        @default(false)
+  promoId     String?
+  legacyPromo MerchantPromo? @relation("LegacyOrderItemPromo", fields: [promoId], references: [id])
   @@index([orderId])
   @@index([productId])
+  @@index([promoId])
 }
 
 /** B2B buyer account with a supplier brand — pricing tier and payment terms. */
@@ -720,9 +751,20 @@ model DeliveryTask {
   order          Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
   hub            DeliveryHub?     @relation(fields: [hubId], references: [id])
   assignedDriver User?            @relation("AssignedDriver", fields: [assignedDriverId], references: [id])
+  /// Restored FK (production-shaped baseline has DeliveryTask_buyerId_fkey ON DELETE RESTRICT).
+  buyer          User             @relation("DeliveryBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
   escrow         DeliveryEscrow?
   dispute        DeliveryDispute?
 
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  proofRecipientUserId String?
+  proofRecipientHandle String?
+  proofScannedPayload  String?
+  proofSignatureUrl    String?
+  proofPhotoUrl        String?
+  proofLat             Float?
+  proofLng             Float?
+  proofSubmittedAt     DateTime?
   @@index([assignedDriverId])
   @@index([status])
   @@index([buyerId])
@@ -861,9 +903,12 @@ model SolidarityCampaign {
   beneficiary User                     @relation("SolidarityBeneficiary", fields: [beneficiaryUserId], references: [id])
   contributions SolidarityContribution[]
 
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  kind String @default("jekkal")
   @@index([creatorId])
   @@index([beneficiaryUserId])
   @@index([status, createdAt])
+  @@index([kind, status])
 }
 
 model SolidarityContribution {
@@ -1057,6 +1102,8 @@ model TontineGroup {
   payouts       TontinePayout[]
   potEntries    TontinePotEntry[]
 
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  legacyContributions LegacyTontineContribution[] @relation("LegacyTontineContributionGroup")
   @@index([createdBy])
   @@index([active, nextDueAt])
 }
@@ -1108,6 +1155,9 @@ model TontineContribution {
 
   @@unique([groupId, cycle, userId])
   @@index([userId, createdAt])
+  /// Escrow-model contributions (run 3) live in their own table so the
+  /// production table "TontineContribution" (old shape) is preserved untouched.
+  @@map("TontineCycleContribution")
 }
 
 /// One payout per cycle, to the scheduled recipient, from the escrow pot.
@@ -2491,4 +2541,213 @@ model CredentialSecurityEvent {
 
   @@index([userId, createdAt])
   @@index([type, createdAt])
+}
+
+// ============================================================================
+// LEGACY MODELS — preserved, never dropped (J2 decision 2026-10-03).
+// They exist in the production-shaped baseline (prisma/migrations/0_baseline,
+// captured 2026-08-17) but no current code reads or writes them. Shapes are
+// byte-for-byte the introspected baseline so no migration touches them.
+// See docs/JOKKO-LEGACY-SCHEMA.md.
+// ============================================================================
+
+/// LEGACY: Kebu business investment (users invested ₭ into a business offering).
+model KebuInvestment {
+  id         String   @id
+  offeringId String
+  investorId String
+  amountKori Int
+  status     String   @default("active")
+  reference  String   @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime
+
+  investor User                   @relation("LegacyKebuInvestor", fields: [investorId], references: [id], onDelete: Cascade)
+  offering KebuInvestmentOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+  payouts  KebuInvestmentPayout[]
+
+  @@index([investorId, status])
+  @@index([offeringId])
+}
+
+/// LEGACY: business fundraising offering on Kebu (target/raised in ₭, dividend bps).
+model KebuInvestmentOffering {
+  id                String           @id
+  businessId        String
+  title             String
+  description       String?
+  targetKori        Int
+  raisedKori        Int              @default(0)
+  minInvestmentKori Int              @default(1000)
+  maxInvestmentKori Int?
+  dividendBps       Int              @default(500)
+  status            String           @default("open")
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime
+  investments       KebuInvestment[]
+  business          Business         @relation("LegacyOfferingBusiness", fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, status])
+  @@index([status, createdAt])
+}
+
+/// LEGACY: dividend payout on a Kebu investment (₭).
+model KebuInvestmentPayout {
+  id           String         @id
+  investmentId String
+  amountKori   Int
+  reference    String         @unique
+  createdAt    DateTime       @default(now())
+  investment   KebuInvestment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+
+  @@index([investmentId])
+}
+
+/// LEGACY: a user spent ₭ on a business reward offer (redemption).
+model KoriRedemption {
+  id        String              @id
+  offerId   String
+  userId    String
+  costKori  Int
+  reference String              @unique
+  createdAt DateTime            @default(now())
+  offer     KoriRedemptionOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  user      User                @relation("LegacyKoriRedemptionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([offerId])
+  @@index([userId, createdAt])
+}
+
+/// LEGACY: business reward catalog priced in ₭.
+model KoriRedemptionOffer {
+  id          String           @id
+  businessId  String
+  title       String
+  description String?
+  costKori    Int
+  category    String           @default("reward")
+  inventory   Int?
+  active      Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime
+  redemptions KoriRedemption[]
+  business    Business         @relation("LegacyRedemptionOfferBusiness", fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([active, costKori])
+  @@index([businessId, active])
+}
+
+/// LEGACY: merchant promotion (percent / fixed off / buy-X-get-Y) applied to orders.
+model MerchantPromo {
+  id               String             @id
+  businessId       String
+  code             String?
+  title            String
+  description      String?
+  type             String
+  percentBps       Int?
+  fixedOffKori     Int?
+  triggerProductId String?
+  buyQty           Int?
+  freeProductId    String?
+  freeQty          Int                @default(1)
+  minOrderKori     Int?
+  maxUses          Int?
+  usesCount        Int                @default(0)
+  perUserMax       Int                @default(1)
+  startsAt         DateTime           @default(now())
+  expiresAt        DateTime?
+  active           Boolean            @default(true)
+  onlineOnly       Boolean            @default(false)
+  inPersonOnly     Boolean            @default(false)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime
+  business         Business           @relation("LegacyPromoBusiness", fields: [businessId], references: [id], onDelete: Cascade)
+  freeProduct      Product?           @relation("LegacyPromoFreeProduct", fields: [freeProductId], references: [id])
+  triggerProduct   Product?           @relation("LegacyPromoTriggerProduct", fields: [triggerProductId], references: [id])
+  uses             MerchantPromoUse[]
+  orders           Order[]            @relation("LegacyOrderPromo")
+  orderItems       OrderItem[]        @relation("LegacyOrderItemPromo")
+
+  @@unique([businessId, code])
+  @@index([active, expiresAt])
+  @@index([businessId, active])
+}
+
+/// LEGACY: one use of a merchant promo (discount granted, per order).
+model MerchantPromoUse {
+  id           String        @id
+  promoId      String
+  userId       String
+  orderId      String?
+  reference    String        @unique
+  discountKori Int           @default(0)
+  channel      String        @default("online")
+  createdAt    DateTime      @default(now())
+  order        Order?        @relation("LegacyPromoUseOrder", fields: [orderId], references: [id])
+  promo        MerchantPromo @relation(fields: [promoId], references: [id], onDelete: Cascade)
+  user         User          @relation("LegacyPromoUseUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([promoId, userId])
+  @@index([userId, createdAt])
+}
+
+/// LEGACY: one participant's share of a Nu Lekk bill split (₭).
+model NuLekkShare {
+  id         String      @id
+  splitId    String
+  userId     String
+  amountKori Int
+  status     String      @default("pending")
+  reference  String      @unique
+  paidAt     DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime
+  split      NuLekkSplit @relation(fields: [splitId], references: [id], onDelete: Cascade)
+  user       User        @relation("LegacyNuLekkShareUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([splitId, userId])
+  @@index([splitId, status])
+  @@index([userId, status])
+}
+
+/// LEGACY: Nu Lekk ("we eat") bill split, optionally paid to a business.
+model NuLekkSplit {
+  id         String        @id
+  creatorId  String
+  title      String?
+  category   String        @default("food")
+  totalKori  Int
+  businessId String?
+  status     String        @default("open")
+  reference  String        @unique
+  fundedAt   DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime
+  shares     NuLekkShare[]
+  business   Business?     @relation("LegacyNuLekkSplitBusiness", fields: [businessId], references: [id])
+  creator    User          @relation("LegacyNuLekkSplitCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([creatorId, status, createdAt])
+  @@index([status])
+}
+
+/// LEGACY: pre-run-3 tontine auto-collection rows (the drained model).
+/// Kept as forensic evidence; the escrow model uses TontineCycleContribution.
+model LegacyTontineContribution {
+  id         String       @id
+  groupId    String
+  userId     String
+  cycleKey   String
+  amountKori Int
+  reference  String       @unique
+  createdAt  DateTime     @default(now())
+  group      TontineGroup @relation("LegacyTontineContributionGroup", fields: [groupId], references: [id], onDelete: Cascade)
+  user       User         @relation("LegacyTontineContributor", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId, cycleKey])
+  @@index([groupId, cycleKey])
+  @@map("TontineContribution")
 }
