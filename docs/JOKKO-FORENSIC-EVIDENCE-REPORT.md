@@ -405,3 +405,84 @@ Branch `claude/jokko-forensic-audit-rprqia` (pushed; **Vercel deployments disabl
 
    Recommended: **(c) then (a)**. Rotation needs a user-facing flow, so it is a product decision.
 2. **Messaging consent.** Anyone can open a direct thread with any handle and message them. The leak is closed, but whether direct messages need acceptance (message requests) or blocking-by-default is a product decision.
+
+---
+---
+
+# RUN 4: credential remediation, message requests, Phases 16–22, security sweep, J2 entry gate (2026-10-03)
+
+| | |
+|---|---|
+| Branch | `claude/jokko-forensic-audit-rprqia`, pushed; Vercel deployments for this branch **disabled** |
+| Commits | `a9bf1be` … `7230d3e` |
+| QA | Local disposable Postgres only. Every proof ran over real HTTP against `api/index.js` with `NODE_ENV=production`. |
+| Production / Preview | Not called, read or mutated. |
+| J2 | Not started. Entry report: `docs/JOKKO-J2-ENTRY-REPORT.md`. |
+
+## Requests implemented
+
+| Request | Delivered | Evidence |
+|---|---|---|
+| Credential exposure remediation (no production resets, no notifications) | `a9bf1be`:<br>• PIN + password invalidation;<br>• refresh revocation and access-token cut-off (ms precision);<br>• re-establishment only after a fresh OTP login;<br>• changing a PIN requires the current one;<br>• uniform password-login failure;<br>• hold, then 24h cool-off;<br>• append-only `CredentialSecurityEvent`;<br>• operator script (dry-run default);<br>• admin route;<br>• A/B/C classification (pack §16);<br>• FR/EN notices prepared, **not sent**. | `tests/http/credential-remediation.test.js` 8/8. `docs/JOKKO-CREDENTIAL-REMEDIATION.md` |
+| Message-request model | `03b8cd0`:<br>• states `active/requested/declined/blocked`;<br>• one ≤500-char text intro;<br>• no media/shares/calls/receipts/presence before acceptance;<br>• decline/block final and indistinguishable from pending;<br>• block → `UserBlock`; report → `ContentReport`;<br>• conditional accept/decline;<br>• request rate limit;<br>• explicit thread DTO;<br>• receipts only between active members;<br>• friend requests silent after decline/block;<br>• idempotent legacy migration. | `tests/http/message-requests.test.js` **17/17**: every case listed in the request, plus attachment hijack. `docs/JOKKO-MESSAGE-REQUESTS.md` |
+| Broad data-exposure sweep + horizontal authz | `bf0bce3`: `tests/sweep/data-exposure.test.js`. A fresh multi-role attacker (customer, merchant, courier, agent, employee) calls **all 106 authenticated GET routes** with other people's ids. Every admin route is tried with a user token. | 2/2 tests. No leak after fixes. The scrubber logs every strip, and the sweep fails on any. |
+| Product gaps documented | `docs/JOKKO-PRODUCT-GAPS.md` | Commerce refund + J2 design, rides, gigs |
+| J2 entry gate | `docs/JOKKO-J2-ENTRY-REPORT.md` | Fresh-DB gate below |
+
+## New findings (run 4)
+
+| Sev | Finding | Proof before | Disposition | Commit / test |
+|---|---|---|---|---|
+| **P0** | **KYC auto-approved in production when `KYC_API_KEY` is unset**: any two strings → Tier 2 ("CNI simulée"); any address → Tier 3. Lifts money limits with no identity check. | HTTP, production mode with `DATA_ENCRYPTION_KEY` set as in production: **202 `approved`, then 200 "Tier 3 actif"** | **CONTAINED**: sandbox is dev-only; production without a key → 503 `kyc_unavailable` before any write. Pack §19 lists affected accounts. | `7230d3e`, `kyc-production` 2/2 |
+| **P0 (deploy)** | **Schema drift.** The baseline (2026-08-17 Postgres) has 9 tables and 17 columns absent from `schema.prisma`. On that shape the old `db push` fails, and the old script deployed anyway. New code reads `User.sessionsRevokedAt` on every authenticated request, so the result is an outage. On an emptier DB the tables are silently dropped. | DB built from `0_baseline`: `db push` → "Use the --accept-data-loss flag" | **CONTAINED**: the deploy script refuses destructive diffs and failed syncs. Decision needed (restore models or approve drop). | `740208d`, manual proof |
+| P1 | Exposure pack aborted on the pre-deploy production schema (it read columns and tables that only exist after deploy) | `ERROR: column "amountKoriHeld" does not exist` | FIXED: schema-tolerant. §17 drift, §18 message-request count, §19 KYC added. | `646086e` / `7230d3e`. Exit 0 on both shapes. |
+| P1 | Offline sync, three issues:<br>• a `clientId` from another user overwrote their queued payload;<br>• `offlineClientId` returned another business's delivery log (with the farmer's phone);<br>• any bad item crashed the batch (500). | 3/3 new tests fail on the old code | FIXED: per-user clientIds, same-business replay only, per-item validation/rejection, batch and payload caps | `bf0bce3`, `offline-sync` 3/3 |
+| P1 | Any business owner could learn a stranger's phone by logging a cooperative delivery against their handle | Same tests | FIXED: phone removed | `bf0bce3` |
+| P1 | Mboolo attachment re-parenting: attaching moved the asset to the posting thread, so a member could move someone else's media into another conversation | 201 on old code | FIXED: only the uploader, within the asset's thread. Reads/uploads/saves need active membership. Others' media can't go to your public profile. | `0290668` |
+| P1 | Refresh tokens:<br>• concurrent refreshes forked a session into parallel chains;<br>• a replayed rotated token wasn't detected;<br>• **no server-side logout existed** (refresh stayed valid 30 days after sign-out). | Code + tests | FIXED: conditional rotation; reuse after 60 s revokes the family (audited); `auth/logout` and `auth/logout-all`; the client revokes on sign-out | `bf0bce3`, `sessions` 3/3 |
+| P1 | Logs/Sentry: raw Prisma errors (which echo query arguments: phones, emails, token hashes) went to `console.error` and Sentry. Email addresses were logged. Mock alert emails (with content) were logged in production. Catch-all handlers returned raw DB error messages to clients. | Code | FIXED: `lib/log-redact.js` (`safeError`, `redactText`, `maskEmail`, `clientErrorMessage`); Sentry `beforeSend` redaction | `bf0bce3`, unit 2/2 |
+| P2 | Open delivery requests (pickup address, fee) were readable by any user | Sweep finding | FIXED: active couriers, the buyer and the assigned rider only. Exact dropoff stays hidden until accepted. | `bf0bce3` |
+| P2 | Messaging: anyone could message anyone, add anyone to groups, invite-link a direct chat into a group, and re-request after being declined | Product gap (run 3 decision 2) | FIXED by the message-request model | `03b8cd0` |
+| P2 | Affiliate share returned the sender's full User row (`include: { sender: true }`) | Code | FIXED | `03b8cd0` |
+| P2 | Jekkal beneficiary can be named without consent | Code | OPEN (product decision) | — |
+| P2 | 29 high / 13 moderate npm advisories (mostly build tooling) | `npm audit` | OPEN (triage on an Expo SDK bump) | — |
+
+## Phase matrix (J0, final)
+
+| Phase | Area | Classification | Gate |
+|---|---|---|---|
+| 0–5 | Repo, env, architecture, empty account | — | PASS (runs 1–2) |
+| 6 | Wallet/ledger | REAL (closed loop; fragmented ledgers) | PASS after J1; architecture → J2 |
+| 7 | Concurrency/idempotency | REAL | PASS (refresh rotation and request accept/decline added) |
+| 8 | P2P incl. undo | REAL | PASS |
+| 9 | Merchant pay | REAL | PASS |
+| 10 | Tontines | REAL (consent + escrow); production money off by flag | PASS |
+| 11 | Agents | REAL | PASS |
+| 12 | Commerce | PARTIAL (no cancel/refund; b2c not escrowed) | PARTIAL |
+| 13 | Food/delivery | REAL | PASS (open jobs now courier-only) |
+| 14 | Rides | NOT IMPLEMENTED | N/A |
+| 15 | Gigs | PARTIAL (post/list only) | PARTIAL |
+| 16 | Messaging/community | REAL, polling | **PASS**: P0 contained run 3; message requests, blocks, group invites, attachments, presence, receipts tested |
+| 17 | Offline | REAL (farmer-delivery sync only) | **PASS** after 3 fixes |
+| 18 | Mobile/low-end | Web bundle 4 MB main JS; low-data and large-text modes partial; few accessibility labels | **PARTIAL**: no device lab (NOT TESTED on real low-end hardware) |
+| 19 | Locale | French hard-coded, no i18n library, few Wolof strings; amounts formatted `fr-*` | **PARTIAL** |
+| 20 | Security | — | **PASS**:<br>• route-wide exposure + horizontal authz sweep;<br>• admin-route sweep;<br>• log/error redaction;<br>• secret scan clean;<br>• KYC P0 contained.<br>Dependency advisories open (A6). |
+| 21 | Failure injection | — | **PASS**: rails (fake provider), SMS/email/KYC/LiveKit/Blob unavailable → fail closed, external search 502/503, schema-sync failure → build stops |
+| 22 | Reload/second session | — | **PASS**: server restart (undo, tontine, requests); concurrent refresh; token reuse; logout/logout-all; old access tokens cut after revocation |
+| 23 | Full verification | — | See the gate below |
+
+## Money-mutation map: changes since run 2
+
+| Path | Status now |
+|---|---|
+| Tontine collection/payout | ✅ consent + escrow pot (`TontinePotEntry`); production money gated by `TONTINE_ESCROW_ENABLED` |
+| Transfer undo | ✅ fixed (run 3) |
+| Merchant pay, agent cash-in/out | ✅ HTTP-tested (run 3) |
+| Payment receipts in chat | Never create a thread; only between active members (not a money mutation, but no longer a trust signal) |
+| KYC tier (gates limits on every money path) | ✅ can no longer be raised without a provider in production |
+| Admin refund | Platform float → user, no order link (A9) |
+| Unchanged | Everything else in the run-2 map |
+
+## Test gate (fresh DB, HEAD `7230d3e`)
+
+See `docs/JOKKO-J2-ENTRY-REPORT.md` → "Exact gate status".

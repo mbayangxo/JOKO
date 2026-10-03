@@ -1,6 +1,6 @@
 # Jokko: Mboolo message requests
 
-**Status:** built and tested (`tests/http/message-requests.test.js`, 16 adversarial HTTP tests under `NODE_ENV=production`). The legacy-thread migration has **not** been run on any shared or production database.
+**Status:** built and tested (`tests/http/message-requests.test.js`, 17 adversarial HTTP tests under `NODE_ENV=production`). The legacy-thread migration has **not** been run on any shared or production database.
 
 ## Why
 

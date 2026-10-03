@@ -1,6 +1,6 @@
 # Jokko — production exposure investigation & environment topology
 
-Status as of 2026-10-02.
+Status as of 2026-10-03 (run 4). Production access is still unavailable, so every item below is still BLOCKED.
 
 | Item | Status | Reason |
 |---|---|---|
@@ -8,6 +8,7 @@ Status as of 2026-10-02.
 | Preview vs Production topology | **BLOCKED** | Same 403. Project env vars and deployments can't be listed. |
 | Calling the production API "read-only" | **Refused** | Every request, including `GET /api/health`, writes an `ApiAuditLog` row (`lib/api-audit.js`). It is a production write, not a read. |
 | Deployments of `claude/jokko-forensic-audit-rprqia` | **Disabled** | `vercel.json` → `git.deploymentEnabled`. Stays in place until topology is proven. |
+| Deploy-time schema sync | **Fail-closed** (run 4) | `scripts/db-sync-deploy.mjs` refuses destructive diffs and failed syncs. The 2026-08-17 baseline shape has 9 tables and 17 columns `schema.prisma` no longer defines (§17). |
 
 ## 1. How to run the exposure check (read-only)
 
@@ -26,7 +27,8 @@ Status as of 2026-10-02.
      -f scripts/forensics/production-exposure.sql > exposure-$(date +%F).txt
    ```
    The script runs in `BEGIN TRANSACTION READ ONLY … ROLLBACK`. It outputs internal ids, references and amounts only.
-3. Validated against the QA database: it detected the reproduced tontine drain (1 run, 60 000 ₭ from others) and the `kori/convert` burn (500 ₭).
+3. Validated against the QA database: it detected the reproduced tontine drain (1 run, 60 000 ₭ from others), the `kori/convert` burn (500 ₭) and the KYC sandbox approvals.
+4. **Schema-tolerant** (run 4): it runs on the **current production schema, before this branch deploys**. Validated with `ON_ERROR_STOP=1`, exit 0, on a database built from `prisma/migrations/0_baseline` (the 2026-08-17 shape) and on the current schema.
 
 ### What each section answers
 
@@ -48,6 +50,10 @@ Status as of 2026-10-02.
 | 13 | Seeded demo alerts and culture items in the DB | P2-19 |
 | 14 | Any negative balance (must be zero rows) | Invariant |
 | 15 | Who read thread lists that leaked other members' PIN/password hashes and PII; how many users' hashes were exposed | P0 (run 3) |
+| 16 | Credential exposure classes A/B/C, with ids for `remediate-credentials.mjs` | P0 (run 3) → remediation |
+| 17 | Schema drift: row counts of tables, and non-null counts of columns, that `schema.prisma` no longer defines | Deploy blocker (run 4) |
+| 18 | Legacy Mboolo members the message-request migration would convert (count) | Messaging consent (run 4) |
+| 19 | KYC sandbox approvals in production; Tier 3 accounts without a provider-backed CNI job | **P0 (run 4)** |
 
 ## 2. Proposed reconciliation / remediation procedure (NOT executed)
 
