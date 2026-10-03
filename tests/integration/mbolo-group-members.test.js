@@ -35,8 +35,12 @@ test('mbolo group members: a member can add someone new, thread flips to group o
   assert.equal(res.body.type, 'group');
   assert.equal(res.body.members.length, 3);
 
-  const notif = await prisma.notification.findFirst({ where: { userId: newcomer.id, title: { contains: 'Ajouté' } } });
+  // The newcomer is not the adder's friend: they get an invitation they must
+  // accept (message-request model), not silent membership.
+  const notif = await prisma.notification.findFirst({ where: { userId: newcomer.id, title: { contains: 'Invitation' } } });
   assert.ok(notif, 'newcomer is notified');
+  const row = await prisma.mboloMember.findUnique({ where: { threadId_userId: { threadId: created.body.id, userId: newcomer.id } } });
+  assert.equal(row.status, 'requested');
 });
 
 test('mbolo group members: adding an already-existing member again is a no-op, not a duplicate', async () => {

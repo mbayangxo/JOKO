@@ -10,7 +10,7 @@ import GlowButton from '../components/GlowButton';
 import StoryAvatar from '../components/StoryAvatar';
 import { colors, fontFamily, radius, spacing } from '../theme';
 import { useScalePulse, useColorPulse, useEntrance } from '../hooks/animations';
-import { createMboloThread, getMboloThreads, getMe } from '../lib/api-client';
+import { createMboloThread, getMboloRequests, getMboloThreads, getMe, reportMboloRequest, respondMboloRequest } from '../lib/api-client';
 import { navigateFromRoot } from '../lib/root-navigation';
 
 const DOTS = [
@@ -161,6 +161,8 @@ export default function MbooloHomeScreen({ navigation }) {
   const logoBounce = useScalePulse(3000, 1.03);
   const [query, setQuery] = useState('');
   const [threads, setThreads] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [busyRequest, setBusyRequest] = useState(null);
   const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
@@ -173,9 +175,14 @@ export default function MbooloHomeScreen({ navigation }) {
 
   const loadThreads = useCallback(async () => {
     try {
-      const [me, list] = await Promise.all([getMe(), getMboloThreads()]);
+      const [me, list, inbox] = await Promise.all([
+        getMe(),
+        getMboloThreads(),
+        getMboloRequests().catch(() => ({ requests: [] })),
+      ]);
       setUserId(me.id);
       setThreads(Array.isArray(list) ? list : []);
+      setRequests(Array.isArray(inbox?.requests) ? inbox.requests : []);
     } catch (err) {
       showToast(err.message ?? 'Impossible de charger Mboolo');
       setThreads([]);
@@ -198,6 +205,26 @@ export default function MbooloHomeScreen({ navigation }) {
   const conversations = threads.map((t) => threadToRow(t, userId)).filter(
     (c) => c.name.toLowerCase().includes(query.trim().toLowerCase()) || c.preview.toLowerCase().includes(query.trim().toLowerCase())
   );
+
+  const answerRequest = async (req, action) => {
+    if (busyRequest) return;
+    setBusyRequest(req.threadId);
+    try {
+      if (action === 'report') {
+        await reportMboloRequest(req.threadId, { category: 'spam' });
+        await respondMboloRequest(req.threadId, 'block');
+        showToast('Signalé et bloqué');
+      } else {
+        await respondMboloRequest(req.threadId, action);
+        showToast(action === 'accept' ? 'Demande acceptée' : action === 'block' ? 'Bloqué' : 'Demande refusée');
+      }
+      await loadThreads();
+    } catch (err) {
+      showToast(err.message ?? 'Action impossible');
+    } finally {
+      setBusyRequest(null);
+    }
+  };
 
   const openChat = (item) => {
     navigation.navigate('MbooloChat', { threadId: item.threadId, thread: item.thread, title: item.name });
@@ -264,6 +291,46 @@ export default function MbooloHomeScreen({ navigation }) {
           <View style={{ paddingHorizontal: spacing.huge, paddingTop: spacing.lg }}>
             <SearchBar query={query} setQuery={setQuery} inputRef={searchRef} />
           </View>
+
+          {requests.length > 0 ? (
+            <View>
+              <Text style={styles.convDivider}>Demandes de message · {requests.length}</Text>
+              {requests.map((r) => (
+                <View key={r.threadId} style={styles.requestCard}>
+                  <Text style={styles.requestFrom} numberOfLines={1}>
+                    {r.type === 'group' ? `👥 ${r.name ?? 'Groupe'} · ` : ''}
+                    {r.from?.name ?? (r.from?.handle ? `@${r.from.handle}` : 'Quelqu’un')}
+                  </Text>
+                  {r.intro?.body ? (
+                    <Text style={styles.requestIntro} numberOfLines={3}>
+                      {r.intro.body}
+                    </Text>
+                  ) : null}
+                  <Text style={styles.requestHint}>Il ne voit pas si tu as lu ce message.</Text>
+                  <View style={styles.requestActions}>
+                    {[
+                      ['accept', 'Accepter'],
+                      ['decline', 'Refuser'],
+                      ['block', 'Bloquer'],
+                      ['report', 'Signaler'],
+                    ].map(([action, label]) => (
+                      <PressScale
+                        key={action}
+                        scaleTo={0.95}
+                        disabled={busyRequest === r.threadId}
+                        onPress={() => answerRequest(r, action)}
+                        style={[styles.requestBtn, action === 'accept' && styles.requestBtnPrimary]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${label} la demande`}
+                      >
+                        <Text style={[styles.requestBtnText, action === 'accept' && styles.requestBtnTextPrimary]}>{label}</Text>
+                      </PressScale>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
 
           <Text style={styles.convDivider}>Messages</Text>
 
@@ -336,6 +403,30 @@ export default function MbooloHomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  requestCard: {
+    marginHorizontal: spacing.huge,
+    marginBottom: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    backgroundColor: '#fff5ee',
+    gap: spacing.xs,
+  },
+  requestFrom: { fontFamily: fontFamily.bodyBold, fontSize: 14, color: colors.ink },
+  requestIntro: { fontFamily: fontFamily.bodyRegular, fontSize: 13, color: colors.ink },
+  requestHint: { fontFamily: fontFamily.bodyRegular, fontSize: 11, color: colors.mboolo.ink3 },
+  requestActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  requestBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    borderColor: colors.mboolo.terra,
+    minHeight: 36,
+    justifyContent: 'center',
+  },
+  requestBtnPrimary: { backgroundColor: colors.mboolo.terra },
+  requestBtnText: { fontFamily: fontFamily.bodyBold, fontSize: 12, color: colors.mboolo.terra },
+  requestBtnTextPrimary: { color: '#fff' },
   root: { flex: 1, backgroundColor: colors.mboolo.bg },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.huge, paddingTop: spacing.lg, paddingBottom: spacing.md },
   logo: { fontFamily: fontFamily.displayBlack, fontSize: 20, letterSpacing: -0.5, color: colors.orange },

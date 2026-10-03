@@ -906,6 +906,11 @@ model MboloMember {
   threadId     String
   userId       String
   role         String    @default("member")
+  /// Message-request state: active (accepted) | requested | declined | blocked.
+  /// Non-active members cannot read, post, see presence or receive receipts.
+  status       String    @default("active")
+  invitedById  String?
+  respondedAt  DateTime?
   lastReadAt   DateTime?
   lastTypingAt DateTime?
   createdAt    DateTime  @default(now())
@@ -915,6 +920,7 @@ model MboloMember {
 
   @@unique([threadId, userId])
   @@index([userId])
+  @@index([userId, status])
 }
 
 model MboloMessage {

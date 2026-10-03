@@ -448,6 +448,27 @@ export function getMboloThreads() {
   return apiFetch('/api/mbolo/threads', { skipCache: true });
 }
 
+/** Incoming message requests (strangers). */
+export function getMboloRequests() {
+  return apiFetch('/api/mbolo/requests', { skipCache: true });
+}
+
+/** action: 'accept' | 'decline' | 'block' */
+export function respondMboloRequest(threadId, action) {
+  return apiFetch(`/api/mbolo/threads/${encodeURIComponent(threadId)}/${action}`, {
+    method: 'POST',
+    skipCache: true,
+  });
+}
+
+export function reportMboloRequest(threadId, { category = 'spam', reason } = {}) {
+  return apiFetch(`/api/mbolo/threads/${encodeURIComponent(threadId)}/report`, {
+    method: 'POST',
+    body: { category, reason },
+    skipCache: true,
+  });
+}
+
 export function createMboloThread({ name, memberHandles = [] }) {
   return apiFetch('/api/mbolo/threads', {
     method: 'POST',
