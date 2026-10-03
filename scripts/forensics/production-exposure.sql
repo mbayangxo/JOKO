@@ -306,6 +306,23 @@ WHERE m."userId" <> t."creatorId"
   AND NOT EXISTS (SELECT 1 FROM "MboloMessage" x WHERE x."threadId" = m."threadId" AND x."senderId" = m."userId")
   AND NOT EXISTS (SELECT 1 FROM "UserFriend" f WHERE f."userId" = m."userId" AND f."friendId" = t."creatorId");
 
+\echo '== 19. KYC sandbox auto-approvals in production (P0 run 4: no KYC key → Tier 2/3 for anyone) =='
+SELECT provider, status, COUNT(*) AS jobs, MIN("createdAt") AS first_seen, MAX("createdAt") AS last_seen
+FROM "CniVerificationJob"
+WHERE "externalJobId" LIKE 'smile-sandbox-%' OR "externalJobId" LIKE 'sumsub-sandbox-%'
+GROUP BY 1, 2 ORDER BY 1, 2;
+\echo '-- user ids raised to Tier 2+ by a sandbox job (review queue; ids only)'
+SELECT DISTINCT j."userId", u."verificationTier"
+FROM "CniVerificationJob" j JOIN "User" u ON u.id = j."userId"
+WHERE (j."externalJobId" LIKE 'smile-sandbox-%' OR j."externalJobId" LIKE 'sumsub-sandbox-%') AND u."verificationTier" >= 2
+ORDER BY 1;
+\echo '-- Tier 3 without any provider-backed CNI job (address auto-approved)'
+SELECT COUNT(*) AS tier3_without_real_job
+FROM "User" u
+WHERE u."verificationTier" >= 3
+  AND NOT EXISTS (SELECT 1 FROM "CniVerificationJob" j WHERE j."userId" = u.id AND j.status = 'approved'
+                  AND j."externalJobId" NOT LIKE '%-sandbox-%');
+
 \echo '== 14. Negative or impossible balances (should be zero rows) =='
 SELECT 'wallet' AS kind, id FROM "Wallet" WHERE "koriBalance" < 0 OR balance < 0
 UNION ALL SELECT 'business', id FROM "BusinessWallet" WHERE balance < 0
