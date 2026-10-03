@@ -282,3 +282,63 @@ END $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS j2_external_op_guard ON "ExternalOperation";
 CREATE TRIGGER j2_external_op_guard BEFORE INSERT OR UPDATE OR DELETE ON "ExternalOperation"
   FOR EACH ROW EXECUTE FUNCTION j2_external_op_guard();
+
+-- ---------------------------------------------------------------------------
+-- ExternalOperation state ↔ ledger coupling (checked at COMMIT)
+--   * confirmed/settled cash-in  ⇒ a cash_in_confirmed entry exists
+--   * authorized+ cash-out        ⇒ a cash_out_hold entry exists
+--   * confirmed/settled cash-out  ⇒ a cash_out_confirmed entry exists
+--   * settled                     ⇒ a *_settled entry exists
+--   * failed/cancelled cash-out that was held ⇒ a cash_out_release entry exists
+--   * an entry linked to an operation needs the matching state
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION j2_external_op_ledger() RETURNS trigger AS $$
+DECLARE
+  op "ExternalOperation"%ROWTYPE;
+  has_kind boolean;
+BEGIN
+  IF TG_TABLE_NAME = 'JournalEntry' THEN
+    IF NEW."externalOperationId" IS NULL THEN RETURN NULL; END IF;
+    SELECT * INTO op FROM "ExternalOperation" WHERE id = NEW."externalOperationId";
+    IF (NEW.kind = 'cash_in_confirmed' AND op.state NOT IN ('confirmed','settled','reversed','refunded'))
+       OR (NEW.kind = 'cash_out_confirmed' AND op.state NOT IN ('confirmed','settled','reversed','refunded'))
+       OR (NEW.kind IN ('cash_in_settled','cash_out_settled') AND op.state NOT IN ('settled','reversed','refunded'))
+       OR (NEW.kind = 'cash_out_hold' AND op.state NOT IN ('authorized','submitted','expired','confirmed','settled','failed','cancelled','reversed','refunded')) THEN
+      RAISE EXCEPTION 'J2: ledger entry % (%) does not match operation % state %', NEW.reference, NEW.kind, op.reference, op.state;
+    END IF;
+    RETURN NULL;
+  END IF;
+
+  op := NEW;
+  IF op.direction = 'in' AND op.state IN ('confirmed','settled','reversed','refunded') THEN
+    SELECT EXISTS (SELECT 1 FROM "JournalEntry" WHERE "externalOperationId" = op.id AND kind = 'cash_in_confirmed') INTO has_kind;
+    IF NOT has_kind THEN RAISE EXCEPTION 'J2: cash-in % is % without a confirmation entry', op.reference, op.state; END IF;
+  END IF;
+  IF op.direction = 'out' AND op.state IN ('authorized','submitted','expired','confirmed','settled') THEN
+    SELECT EXISTS (SELECT 1 FROM "JournalEntry" WHERE "externalOperationId" = op.id AND kind = 'cash_out_hold') INTO has_kind;
+    IF NOT has_kind THEN RAISE EXCEPTION 'J2: cash-out % is % without a hold entry', op.reference, op.state; END IF;
+  END IF;
+  IF op.direction = 'out' AND op.state IN ('confirmed','settled') THEN
+    SELECT EXISTS (SELECT 1 FROM "JournalEntry" WHERE "externalOperationId" = op.id AND kind = 'cash_out_confirmed') INTO has_kind;
+    IF NOT has_kind THEN RAISE EXCEPTION 'J2: cash-out % is % without a confirmation entry', op.reference, op.state; END IF;
+  END IF;
+  IF op.state = 'settled' THEN
+    SELECT EXISTS (SELECT 1 FROM "JournalEntry" WHERE "externalOperationId" = op.id AND kind IN ('cash_in_settled','cash_out_settled')) INTO has_kind;
+    IF NOT has_kind THEN RAISE EXCEPTION 'J2: operation % is settled without a settlement entry', op.reference; END IF;
+  END IF;
+  IF op.direction = 'out' AND op.state IN ('failed','cancelled')
+     AND EXISTS (SELECT 1 FROM "JournalEntry" WHERE "externalOperationId" = op.id AND kind = 'cash_out_hold') THEN
+    SELECT EXISTS (SELECT 1 FROM "JournalEntry" WHERE "externalOperationId" = op.id AND kind = 'cash_out_release') INTO has_kind;
+    IF NOT has_kind THEN RAISE EXCEPTION 'J2: held cash-out % is % without releasing the hold', op.reference, op.state; END IF;
+  END IF;
+  RETURN NULL;
+END $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS j2_external_op_ledger ON "ExternalOperation";
+CREATE CONSTRAINT TRIGGER j2_external_op_ledger AFTER INSERT OR UPDATE ON "ExternalOperation"
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION j2_external_op_ledger();
+DROP TRIGGER IF EXISTS j2_external_op_ledger ON "JournalEntry";
+CREATE CONSTRAINT TRIGGER j2_external_op_ledger AFTER INSERT ON "JournalEntry"
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION j2_external_op_ledger();

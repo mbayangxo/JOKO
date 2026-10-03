@@ -35,8 +35,6 @@ function railParams(user, amount, overrides = {}) {
 
 test('full cash-in in Julaya sandbox: wallet credited, Kori minted, reserve backed, ledger written', async () => {
   const user = await createUserWithWallet({ balance: 0, koriBalance: 0 });
-  const reserveBefore = await prisma.koriReserve.findUniqueOrThrow({ where: { id: 'global' } });
-
   const result = await startCashIn(prisma, railParams(user, 10_000));
 
   assert.equal(result.rail.status, 'completed');
@@ -48,9 +46,13 @@ test('full cash-in in Julaya sandbox: wallet credited, Kori minted, reserve back
   assert.equal(ledger.type, 'cash_in');
   assert.equal(ledger.amount, 1_000);
 
-  const reserveAfter = await prisma.koriReserve.findUniqueOrThrow({ where: { id: 'global' } });
-  assert.equal(reserveAfter.totalKoriInCirculation, reserveBefore.totalKoriInCirculation + 1_000);
-  assert.equal(reserveAfter.totalReserveHeldXof, reserveBefore.totalReserveHeldXof + 10_000);
+  // J2: backing is the provider's confirmed obligation (clearing), linked to the operation.
+  const op = await prisma.externalOperation.findUnique({ where: { reference: result.rail.reference } });
+  assert.equal(op.state, 'confirmed');
+  const confirm = await prisma.journalEntry.findUnique({ where: { reference: `${result.rail.reference}-CONFIRM` }, include: { postings: { include: { account: true } } } });
+  assert.equal(confirm.externalOperationId, op.id);
+  const clearing = confirm.postings.find((p) => p.account.type === 'ext_clearing_in');
+  assert.equal(Number(clearing.amount), 10_000);
 });
 
 test('full cash-out in Julaya sandbox: wallet debited exactly once, rail completed', async () => {
@@ -133,13 +135,14 @@ test('webhook settles a pending cash-out: debit happens exactly once, replays ar
     });
 
   const user = await createUserWithWallet({ balance: 0, koriBalance: 5_000 });
+  const extId = uniqueRef('julaya-ext');
   const pending = await startCashOut(prisma, railParams(user, 20_000));
   assert.equal(pending.rail.status, 'pending');
 
   const settled = await settleRailFromWebhook(prisma, {
     reference: pending.rail.reference,
     status: 'completed',
-    externalId: 'julaya-ext-1',
+    externalId: extId,
   });
   assert.equal(settled.status, 'completed');
   assert.equal(settled.walletDebited, true);
@@ -151,7 +154,7 @@ test('webhook settles a pending cash-out: debit happens exactly once, replays ar
   await settleRailFromWebhook(prisma, {
     reference: pending.rail.reference,
     status: 'completed',
-    externalId: 'julaya-ext-1',
+    externalId: extId,
   });
   wallet = await prisma.wallet.findUnique({ where: { id: user.wallet.id } });
   assert.equal(wallet.koriBalance, 3_000, 'webhook replay must be idempotent');
