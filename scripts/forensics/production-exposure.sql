@@ -9,6 +9,10 @@
 -- Do NOT call the production API for this: every API request writes an
 -- ApiAuditLog row.
 -- Units: ₭ (Kori) unless the column says Xof. 1 ₭ = 10 XOF.
+-- Schema-tolerant: it must run on production BEFORE this branch deploys, so
+-- columns/tables added by J1+ are read via to_jsonb()/to_regclass() guards.
+-- Validated on a database built from prisma/migrations/0_baseline (the
+-- 2026-08-17 production shape) and on the current schema.
 -- ============================================================================
 BEGIN TRANSACTION READ ONLY;
 
@@ -19,8 +23,8 @@ SELECT
   (SELECT COALESCE(SUM("balanceKori"),0) FROM "PaymentFund")            AS funds_kori,
   (SELECT COALESCE(SUM("balanceKori"),0) FROM "MerchantVoucher")        AS vouchers_kori,
   (SELECT COALESCE(SUM("potBalance"),0) FROM "TontineGroup")            AS tontine_pots_kori,
-  (SELECT COALESCE(SUM(COALESCE("amountKoriHeld","amountNational")),0) FROM "DeliveryEscrow"
-     WHERE status IN ('reserved','disputed_held'))                     AS escrow_kori,
+  (SELECT COALESCE(SUM(COALESCE((to_jsonb(de)->>'amountKoriHeld')::bigint, de."amountNational")),0) FROM "DeliveryEscrow" de
+     WHERE de.status IN ('reserved','disputed_held'))                  AS escrow_kori,
   r."totalKoriInCirculation", r."totalReserveHeldXof", r."conversionsFrozen", r."lastReconciliationOk"
 FROM "KoriReserve" r WHERE r.id = 'global';
 
@@ -87,16 +91,18 @@ SELECT ap.reference, ap."agentId", ap."totalPaidXof", le.amount AS credited_kori
 FROM "AgentPayout" ap JOIN "LedgerEntry" le ON le.reference = ap.reference ORDER BY ap."createdAt";
 
 \echo '== 6. Delivery escrow anomalies (P0-12) =='
-SELECT status, ("amountKoriHeld" IS NULL) AS legacy, COUNT(*) AS n,
-       SUM("amountNational") AS fee_xof, SUM("koriPayout") AS rider_kori, SUM("amountKoriHeld") AS held_kori
-FROM "DeliveryEscrow" GROUP BY 1,2 ORDER BY 1,2;
+SELECT de.status, ((to_jsonb(de)->>'amountKoriHeld')::bigint IS NULL) AS legacy, COUNT(*) AS n,
+       SUM(de."amountNational") AS fee_xof, SUM(de."koriPayout") AS rider_kori, SUM((to_jsonb(de)->>'amountKoriHeld')::bigint) AS held_kori
+FROM "DeliveryEscrow" de GROUP BY 1,2 ORDER BY 1,2;
 \echo '-- legacy escrows: buyer debited fee as ₭ (10x); rider paid minted koriPayout'
 SELECT de.reference, de."buyerId", de."riderId", de."amountNational" AS fee_xof,
        -le.amount AS buyer_debited_kori, de."koriPayout" AS rider_minted_kori, de.status, de."createdAt"
 FROM "DeliveryEscrow" de LEFT JOIN "LedgerEntry" le ON le.reference = de.reference
-WHERE de."amountKoriHeld" IS NULL ORDER BY de."createdAt";
+WHERE (to_jsonb(de)->>'amountKoriHeld')::bigint IS NULL ORDER BY de."createdAt";
 
 \echo '== 7. Partner payouts that burned settlement funds and failed without refund (P0-13) =='
+SELECT to_regclass('public."PartnerPayout"') IS NOT NULL AND to_regclass('public."PartnerPayment"') IS NOT NULL AS has_partner \gset
+\if :has_partner
 SELECT p.id, p.reference, p."partnerId", p."amountXof", p.status, p."failureReason", p."createdAt",
        EXISTS (SELECT 1 FROM "KoriTransaction" k WHERE k.reference = 'payout_' || p.id) AS burned,
        EXISTS (SELECT 1 FROM "LedgerEntry" l WHERE l.reference = 'payout_' || p.id || '-REFUND') AS refunded
@@ -108,6 +114,9 @@ SELECT reference, COUNT(*) FROM "KoriTransaction" WHERE reference LIKE 'payout_%
 SELECT id, reference, "partnerId", "amountXof", status, "railReference", "completedAt"
 FROM "PartnerPayment" WHERE status = 'completed' AND ("railReference" IS NULL OR "railReference" LIKE 'pp_%')
 ORDER BY "completedAt";
+\else
+\echo '(Partner tables absent in this database — partner API never deployed here)'
+\endif
 
 \echo '== 8. Cash-outs whose funds stayed spendable while pending (P0-4) =='
 SELECT status, "walletDebited", COUNT(*) AS n, SUM(amount) AS xof
@@ -159,7 +168,12 @@ SELECT COUNT(*) FROM "SmsMessage" WHERE purpose = 'otp' AND body <> '[otp redact
 
 \echo '== 13. Seeded demo alerts / culture items present in the DB =='
 SELECT COUNT(*) AS seeded_alerts FROM "RegionalAlert" WHERE source = 'K21';
+SELECT to_regclass('public."CultureFeedItem"') IS NOT NULL AS has_culture \gset
+\if :has_culture
 SELECT COUNT(*) AS culture_items FROM "CultureFeedItem";
+\else
+\echo '(CultureFeedItem table absent in this database)'
+\endif
 
 \echo '== 15. Credential/PII exposure via Mboolo thread lists (P0: raw User rows) =='
 -- Every GET /api/mbolo/threads (or POST create) by a user who shared a thread
@@ -264,6 +278,33 @@ WITH leak_reads AS (
   FROM "User" u
 )
 SELECT user_id FROM cred_class WHERE class = 'B' ORDER BY 1;
+
+\echo '== 17. Schema drift: tables/columns in the database that schema.prisma no longer defines (deploy blocker) =='
+\echo '-- row counts; any non-zero row means a db push would need --accept-data-loss to drop real data'
+SELECT t AS table_name,
+       (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I', t), false, true, '')))[1]::text::bigint AS row_count
+FROM unnest(ARRAY['KebuInvestment','KebuInvestmentOffering','KebuInvestmentPayout','KoriRedemption','KoriRedemptionOffer',
+                  'MerchantPromo','MerchantPromoUse','NuLekkShare','NuLekkSplit']) AS t
+WHERE to_regclass(format('public.%I', t)) IS NOT NULL
+ORDER BY 1;
+\echo '-- legacy columns with non-null values'
+SELECT c.table_name, c.column_name,
+       (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I WHERE %I IS NOT NULL', c.table_name, c.column_name), false, true, '')))[1]::text::bigint AS non_null
+FROM information_schema.columns c
+WHERE c.table_schema = 'public' AND (c.table_name, c.column_name) IN (
+  ('DeliveryTask','proofLat'),('DeliveryTask','proofLng'),('DeliveryTask','proofPhotoUrl'),('DeliveryTask','proofRecipientHandle'),
+  ('DeliveryTask','proofRecipientUserId'),('DeliveryTask','proofScannedPayload'),('DeliveryTask','proofSignatureUrl'),('DeliveryTask','proofSubmittedAt'),
+  ('Order','discountKori'),('Order','promoCode'),('Order','promoId'),('Order','subtotalKori'),('OrderItem','isPromoFree'),('OrderItem','promoId'),
+  ('SolidarityCampaign','kind'),('TontineContribution','cycleKey'),('User','afriClass'))
+ORDER BY 1, 2;
+
+\echo '== 18. Mboolo message-request migration: legacy members who would become requests (counts only) =='
+SELECT COUNT(*) AS members_to_requested
+FROM "MboloMember" m JOIN "MboloThread" t ON t.id = m."threadId"
+WHERE m."userId" <> t."creatorId"
+  AND t.type IN ('direct','group') AND (to_jsonb(t)->>'commerceType') IS NULL
+  AND NOT EXISTS (SELECT 1 FROM "MboloMessage" x WHERE x."threadId" = m."threadId" AND x."senderId" = m."userId")
+  AND NOT EXISTS (SELECT 1 FROM "UserFriend" f WHERE f."userId" = m."userId" AND f."friendId" = t."creatorId");
 
 \echo '== 14. Negative or impossible balances (should be zero rows) =='
 SELECT 'wallet' AS kind, id FROM "Wallet" WHERE "koriBalance" < 0 OR balance < 0
