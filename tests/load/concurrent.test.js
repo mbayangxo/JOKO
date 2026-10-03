@@ -8,6 +8,7 @@ import { startCashOut } from '../../lib/rail-service.js';
 import {
   LOAD_CONCURRENCY,
   createUserWithWallet,
+  fundUser,
   prisma,
   retryTransient,
   runWithConcurrency,
@@ -49,10 +50,15 @@ test(`${CONCURRENT_USERS} users sending simultaneously: no lost money, no duplic
     data: senders.map((s) => ({
       id: s.walletId,
       userId: s.userId,
-      koriBalance: STARTING_BALANCE,
       currency: 'XOF',
     })),
   });
+  // J2: wallets are created at 0 and funded through the kernel (test faucet).
+  const funding = await runWithConcurrency(
+    senders.map((s) => () => retryTransient(() => fundUser(s.userId, STARTING_BALANCE))),
+    LOAD_CONCURRENCY,
+  );
+  assert.equal(funding.filter((r) => !r.ok).length, 0, 'every sender is funded');
 
   // ₭ (koriBalance) is the only spendable balance — Wallet.balance is legacy.
   const totalBefore =

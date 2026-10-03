@@ -133,7 +133,17 @@ test('sender identity comes from the token, not the request body', async () => {
   const victimWallet = await prisma.wallet.findUnique({ where: { id: richVictim.wallet.id } });
   const attackerWallet = await prisma.wallet.findUnique({ where: { id: attacker.wallet.id } });
   assert.equal(victimWallet.koriBalance, 1_000_000, 'victim never debited');
-  assert.equal(attackerWallet.koriBalance, 4_800, 'attacker pays from their own wallet (200 ₭ send, no unfunded earn mint)');
+  // An earn reward is allowed only when paid from the funded incentive budget
+  // (another test may have left it funded); nothing may be minted.
+  const [{ funded }] = await prisma.$queryRaw`
+    SELECT COALESCE(SUM(c.amount), 0)::int AS funded
+      FROM "Posting" c
+      JOIN "LedgerAccount" ca ON ca.id = c."accountId"
+      JOIN "JournalEntry" j ON j.id = c."entryId" AND j.kind = 'reward'
+     WHERE ca.code = ${`customer:${attacker.id}:available`} AND c.side = 'credit'
+       AND EXISTS (SELECT 1 FROM "Posting" d JOIN "LedgerAccount" da ON da.id = d."accountId"
+                    WHERE d."entryId" = j.id AND da.code = 'incentives:funded' AND d.side = 'debit')`;
+  assert.equal(attackerWallet.koriBalance, 4_800 + funded, 'attacker pays from their own wallet (200 ₭ send; rewards only from the funded budget)');
 });
 
 test('ATTACK: session expired after 30 minutes of inactivity → API refreshes activity (client PIN gate)', async () => {

@@ -300,16 +300,17 @@ confirmed ──► refunded (cash-in returned to payer through the provider, fu
   3. `prisma migrate deploy`;
   4. apply idempotent SQL guards;
   5. fail the build on any error.
-- **Rehearsal:** `scripts/rehearse-migration.sh` builds a DB from `0_baseline` (production shape), seeds legacy-shaped data, runs the migration, the backfill and the invariant checker, then reports.
+- **Rehearsal:** `scripts/rehearse-migration.mjs` (`npm run money:rehearse`) builds a DB from `0_baseline` (production shape), seeds legacy-shaped data, runs the migration, the backfill and the invariant checker, then reports.
 
 ## 12. Admin and support money controls
 
 - No "set balance" anywhere.
-- `adminAdjustment` requires:
-  - reason;
-  - admin session with TOTP;
-  - an idempotency key;
-  - a per-amount policy: ≤ 10 000 ₭ by one admin with the `finance` role; above that, a **second admin approval** (`MoneyAdjustmentRequest`: requested → approved → posted | rejected).
+- `requestAdjustment` / `approveAdjustment` (`lib/money-kernel/admin.js`) require:
+  - a reason (≥ 10 characters);
+  - a named admin session with TOTP (the legacy shared API key is refused);
+  - an idempotency key (reuse with a different payload → 409);
+  - a cap: `MONEY_ADJUSTMENT_MAX_KORI` (default 1 000 000);
+  - **dual authorization for every amount**: a second, different admin approves (`MoneyAdjustmentRequest`: requested → posted | rejected). As built this is stricter than the single-admin ≤ 10 000 ₭ tier first sketched here; loosening it is a product decision.
 - Each adjustment is posted as `adjustment` with `actorType='admin'`, linked to the request, plus an `AdminAuditLog` row.
 - Support refunds draw from the funded `platform:refunds` budget.
 
