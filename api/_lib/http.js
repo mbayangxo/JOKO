@@ -4,6 +4,7 @@ import { logApiCall } from '../../lib/api-audit.js';
 import { databaseConfigured } from '../../lib/prisma.js';
 import { RateLimitError, SecurityBlockError, enforceRateLimit } from '../../lib/rate-limit.js';
 import { initServerSentry, captureServerError } from '../../lib/sentry-server.js';
+import { safeError } from '../../lib/log-redact.js';
 
 initServerSentry();
 
@@ -102,7 +103,7 @@ export function createHandler({ methods, auth = false, handler, skipRateLimit = 
 
       await handler(req, res);
     } catch (error) {
-      console.error(error);
+      console.error(safeError(error));
       captureServerError(error, { path: req.url, method: req.method, userId });
       if (!res.headersSent) {
         const prismaInit =

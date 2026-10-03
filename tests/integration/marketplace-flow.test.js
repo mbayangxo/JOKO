@@ -62,6 +62,7 @@ test('marketplace E2E: publish → search → order pickup → order delivery �
   const merchant = await createUserWithWallet({ koriBalance: 0, name: 'Marchand Test' });
   const buyer = await createUserWithWallet({ koriBalance: 5000, name: 'Acheteur Test' });
   const rider = await createUserWithWallet({ koriBalance: 2000, name: 'Livreur Test' });
+  await prisma.accountRole.create({ data: { userId: rider.id, role: 'driver', status: 'active' } }); // open jobs are courier-only
   const buyerDevice = await createVerifiedDevice(buyer.id);
 
   const business = await prisma.business.create({

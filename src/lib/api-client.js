@@ -289,6 +289,16 @@ export function authCompleteProfile(body) {
   return apiFetch('/api/auth/complete-profile', { method: 'POST', body, skipCache: true });
 }
 
+/** Best-effort server sign-out (revokes this device's refresh token). */
+export function authLogout(refreshToken) {
+  return apiFetch('/api/auth/logout', { method: 'POST', body: { refreshToken }, skipCache: true, _retry401: false });
+}
+
+/** Sign out of every device. */
+export function authLogoutAll() {
+  return apiFetch('/api/auth/logout-all', { method: 'POST', body: {}, skipCache: true, _retry401: false });
+}
+
 export function authRefreshToken(refreshToken) {
   return apiFetch('/api/auth/refresh', { method: 'POST', body: { refreshToken }, auth: false, skipCache: true, _retry401: false });
 }

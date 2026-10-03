@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../../lib/prisma.js';
 import { assertAccountAccessible, touchActivity } from '../../lib/session-security.js';
+import { safeError } from '../../lib/log-redact.js';
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -126,7 +127,7 @@ export async function getUserIdFromRequest(req) {
   // Refresh activity before the idle check — returning users were getting
   // "session invalide" on the first call right after a successful OTP login.
   await touchActivity(userId).catch((err) => {
-    console.error('[auth] touchActivity failed', err);
+    console.error('[auth] touchActivity failed', safeError(err));
   });
 
   try {

@@ -81,6 +81,9 @@ test('delivery: only an onboarded courier can accept; accepting never grants the
   const o = await order(buyer, s, { fulfillmentType: 'delivery', dropoff: { area: 'Plateau', address: 'Rue 9' } });
   const taskId = o.body.delivery.id;
   const random = await actor();
+  // Open requests (pickup address) are for couriers only.
+  assert.equal((await call('GET', `deliveries/${taskId}`, random)).status, 403);
+  assert.equal((await call('GET', 'deliveries/nearby?lat=14.69&lng=-17.44', random)).status, 403);
   const r = await call('POST', `deliveries/${taskId}/accept`, random);
   assert.equal(r.status, 403);
   assert.equal(r.body.code, 'driver_required');
@@ -91,6 +94,9 @@ test('delivery: only an onboarded courier can accept; accepting never grants the
   await prisma.accountRole.create({ data: { userId: courier.id, role: 'personal' } }); // as every real signup
   assert.equal((await call('POST', 'workers/profile', courier, { modes: ['delivery'] })).status, 201);
   assert.equal((await call('POST', 'drivers/profile', courier, { vehicle: 'moto' })).status, 201);
+  const seen = await call('GET', `deliveries/${taskId}`, courier);
+  assert.equal(seen.status, 200);
+  assert.equal(seen.body.dropoff.exact, null, 'exact dropoff hidden until accepted');
   const ok = await call('POST', `deliveries/${taskId}/accept`, courier);
   assert.equal(ok.status, 201, JSON.stringify(ok.body));
   assert.equal(await bal(buyer), 750, 'fee 1 500 XOF = 150 ₭ escrowed once');

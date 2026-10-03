@@ -2,6 +2,7 @@ import { logApiCall } from '../../lib/api-audit.js';
 import { getAdminFromBearer, legacyAdminKeyValid } from '../../lib/admin-auth.js';
 import { initServerSentry, captureServerError } from '../../lib/sentry-server.js';
 import { setCors } from './http.js';
+import { safeError } from '../../lib/log-redact.js';
 
 initServerSentry();
 
@@ -61,7 +62,7 @@ export function createAdminHandler({ methods, auth = true, handler }) {
 
       await handler(req, res);
     } catch (error) {
-      console.error('[admin]', error);
+      console.error('[admin]', safeError(error));
       captureServerError(error, { path: req.url, method: req.method, adminId });
       if (!res.headersSent) {
         res.status(500).json({ error: 'Internal server error' });

@@ -73,6 +73,7 @@ test('hub parcel: last mile creates rider job', async () => {
   const owner = await createUserWithWallet({ koriBalance: 1000 });
   const staff = await createUserWithWallet({ koriBalance: 0 });
   const rider = await createUserWithWallet({ koriBalance: 500 });
+  await prisma.accountRole.create({ data: { userId: rider.id, role: 'driver', status: 'active' } }); // open jobs are courier-only
   await prisma.driverProfile.create({ data: { userId: staff.id } });
 
   const hubs = await listDeliveryHubs(prisma);

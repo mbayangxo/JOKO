@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { clearSession, getAccessToken, setPinConfigured } from '../lib/secure-storage.js';
+import { clearSession, getAccessToken, getRefreshToken, setPinConfigured } from '../lib/secure-storage.js';
+import { authLogout } from '../lib/api-client.js';
 import { restoreSession } from '../lib/session.js';
 import { useAppState } from '../state/AppState.js';
 
@@ -57,6 +58,13 @@ export function SessionProvider({ children }) {
   const markSignedIn = useCallback(() => setHasSession(true), []);
 
   const signOut = useCallback(async () => {
+    // Revoke the refresh token server-side; never block sign-out on the network.
+    try {
+      const refreshToken = await getRefreshToken();
+      if (refreshToken) await Promise.race([authLogout(refreshToken), new Promise((r) => setTimeout(r, 3000))]);
+    } catch {
+      /* offline: local sign-out still happens */
+    }
     await clearSession();
     resetAppState();
     setHasSession(false);

@@ -192,6 +192,9 @@ model RefreshToken {
   tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
+  /// Set when this token was exchanged for a new one (rotation). Presenting
+  /// a rotated token again later means it was copied: the whole family dies.
+  rotatedAt DateTime?
   createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
