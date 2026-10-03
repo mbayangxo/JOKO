@@ -179,6 +179,92 @@ FROM "MboloThread" t
 WHERE t.type = 'direct'
 GROUP BY 1 HAVING COUNT(*) >= 20 ORDER BY 2 DESC LIMIT 50;
 
+\echo '== 16. Credential exposure classification (input for remediate-credentials.mjs) =='
+-- Leaking responses: thread list, thread create, add-members, join-by-invite.
+-- A = had a PIN or password hash AND shared a thread with another user who
+--     made a leaking request while both were members (audit-log evidence).
+-- B = shared a thread with someone, but no audit evidence of a leaking read
+--     (audit log missing/rotated, or reads predate logging).
+-- C = never shared a thread with another user.
+-- NOTE: the hash present today may post-date the read; A is conservative.
+WITH leak_reads AS (
+  SELECT a."userId" AS reader, a."createdAt" AS read_at
+  FROM "ApiAuditLog" a
+  WHERE a."statusCode" BETWEEN 200 AND 299 AND a."userId" IS NOT NULL
+    AND (a.path = '/api/mbolo/threads' OR a.path LIKE '/api/mbolo/threads/%/members'
+         OR a.path LIKE '/api/mbolo/threads/%/invite' OR a.path = '/api/mbolo/join-group')
+), cred_class AS (
+  SELECT u.id AS user_id,
+    CASE
+      WHEN (u."pinHash" IS NOT NULL OR u."passwordHash" IS NOT NULL) AND EXISTS (
+        SELECT 1 FROM "MboloMember" me JOIN "MboloMember" other
+          ON other."threadId" = me."threadId" AND other."userId" <> me."userId"
+        JOIN leak_reads lr ON lr.reader = other."userId"
+        WHERE me."userId" = u.id AND lr.read_at >= me."createdAt" AND lr.read_at >= other."createdAt")
+        THEN 'A'
+      WHEN EXISTS (
+        SELECT 1 FROM "MboloMember" me JOIN "MboloMember" other
+          ON other."threadId" = me."threadId" AND other."userId" <> me."userId"
+        WHERE me."userId" = u.id)
+        THEN 'B'
+      ELSE 'C'
+    END AS class
+  FROM "User" u
+)
+SELECT class, COUNT(*) AS users FROM cred_class GROUP BY 1 ORDER BY 1;
+\echo '-- class A ids (save to class-a.txt for the operator script)'
+WITH leak_reads AS (
+  SELECT a."userId" AS reader, a."createdAt" AS read_at
+  FROM "ApiAuditLog" a
+  WHERE a."statusCode" BETWEEN 200 AND 299 AND a."userId" IS NOT NULL
+    AND (a.path = '/api/mbolo/threads' OR a.path LIKE '/api/mbolo/threads/%/members'
+         OR a.path LIKE '/api/mbolo/threads/%/invite' OR a.path = '/api/mbolo/join-group')
+), cred_class AS (
+  SELECT u.id AS user_id,
+    CASE
+      WHEN (u."pinHash" IS NOT NULL OR u."passwordHash" IS NOT NULL) AND EXISTS (
+        SELECT 1 FROM "MboloMember" me JOIN "MboloMember" other
+          ON other."threadId" = me."threadId" AND other."userId" <> me."userId"
+        JOIN leak_reads lr ON lr.reader = other."userId"
+        WHERE me."userId" = u.id AND lr.read_at >= me."createdAt" AND lr.read_at >= other."createdAt")
+        THEN 'A'
+      WHEN EXISTS (
+        SELECT 1 FROM "MboloMember" me JOIN "MboloMember" other
+          ON other."threadId" = me."threadId" AND other."userId" <> me."userId"
+        WHERE me."userId" = u.id)
+        THEN 'B'
+      ELSE 'C'
+    END AS class
+  FROM "User" u
+)
+SELECT user_id FROM cred_class WHERE class = 'A' ORDER BY 1;
+\echo '-- class B ids (save to class-b.txt)'
+WITH leak_reads AS (
+  SELECT a."userId" AS reader, a."createdAt" AS read_at
+  FROM "ApiAuditLog" a
+  WHERE a."statusCode" BETWEEN 200 AND 299 AND a."userId" IS NOT NULL
+    AND (a.path = '/api/mbolo/threads' OR a.path LIKE '/api/mbolo/threads/%/members'
+         OR a.path LIKE '/api/mbolo/threads/%/invite' OR a.path = '/api/mbolo/join-group')
+), cred_class AS (
+  SELECT u.id AS user_id,
+    CASE
+      WHEN (u."pinHash" IS NOT NULL OR u."passwordHash" IS NOT NULL) AND EXISTS (
+        SELECT 1 FROM "MboloMember" me JOIN "MboloMember" other
+          ON other."threadId" = me."threadId" AND other."userId" <> me."userId"
+        JOIN leak_reads lr ON lr.reader = other."userId"
+        WHERE me."userId" = u.id AND lr.read_at >= me."createdAt" AND lr.read_at >= other."createdAt")
+        THEN 'A'
+      WHEN EXISTS (
+        SELECT 1 FROM "MboloMember" me JOIN "MboloMember" other
+          ON other."threadId" = me."threadId" AND other."userId" <> me."userId"
+        WHERE me."userId" = u.id)
+        THEN 'B'
+      ELSE 'C'
+    END AS class
+  FROM "User" u
+)
+SELECT user_id FROM cred_class WHERE class = 'B' ORDER BY 1;
+
 \echo '== 14. Negative or impossible balances (should be zero rows) =='
 SELECT 'wallet' AS kind, id FROM "Wallet" WHERE "koriBalance" < 0 OR balance < 0
 UNION ALL SELECT 'business', id FROM "BusinessWallet" WHERE balance < 0

@@ -12,7 +12,9 @@ function requireEnv(name) {
 }
 
 export function signAccessToken(userId) {
-  return jwt.sign({ sub: userId, type: 'access' }, requireEnv('JWT_ACCESS_SECRET'), {
+  // iatMs: millisecond issue time so session revocation is exact (JWT iat is
+  // whole seconds, which would reject a fresh login made in the same second).
+  return jwt.sign({ sub: userId, type: 'access', iatMs: Date.now() }, requireEnv('JWT_ACCESS_SECRET'), {
     expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '30m',
   });
 }
@@ -47,9 +49,14 @@ export function otp() {
 
 /** JWT validation only — no session/lock checks. */
 export function verifyAccessToken(token) {
+  const payload = verifyAccessTokenPayload(token);
+  return payload?.sub ?? null;
+}
+
+export function verifyAccessTokenPayload(token) {
   const payload = jwt.verify(token, requireEnv('JWT_ACCESS_SECRET'));
   if (!payload.sub || payload.type !== 'access') return null;
-  return payload.sub;
+  return payload;
 }
 
 function authFail(req, code, message, debug) {
@@ -70,8 +77,11 @@ export async function getUserIdFromRequest(req) {
   }
 
   let userId;
+  let tokenIssuedAtMs = null;
   try {
-    userId = verifyAccessToken(header.slice('Bearer '.length).trim());
+    const payload = verifyAccessTokenPayload(header.slice('Bearer '.length).trim());
+    userId = payload?.sub ?? null;
+    tokenIssuedAtMs = Number.isFinite(payload?.iatMs) ? payload.iatMs : payload?.iat ? payload.iat * 1000 : null;
   } catch (err) {
     const code = err.name === 'TokenExpiredError' ? 'token_expired' : 'token_invalid';
     return authFail(req, code, err.message, `jwt:${err.name}`);
@@ -90,6 +100,7 @@ export async function getUserIdFromRequest(req) {
         accountLockedAt: true,
         lastActivityAt: true,
         otpVerifiedAt: true,
+        sessionsRevokedAt: true,
       },
     });
   } catch (err) {
@@ -104,6 +115,12 @@ export async function getUserIdFromRequest(req) {
   }
   if (!user) {
     return authFail(req, 'user_not_found', 'Valid token but no matching user row', `uid:${userId}`);
+  }
+
+  // Session revocation (credential remediation): tokens issued before the
+  // revocation instant are dead, even though their signature is valid.
+  if (user.sessionsRevokedAt && (!tokenIssuedAtMs || tokenIssuedAtMs < user.sessionsRevokedAt.getTime())) {
+    return authFail(req, 'token_expired', 'Session revoked', 'session_revoked');
   }
 
   // Refresh activity before the idle check — returning users were getting

@@ -33,6 +33,13 @@ model User {
   adminFreezeReason      String?
   /// Set when access is recovered via OTP; opens a 24h cool-off on outbound money.
   accountRecoveredAt     DateTime?
+  /// Credential remediation: set when this account's PIN/password must be
+  /// re-established (e.g. hashes were exposed). Outbound money is held and new
+  /// credentials require a fresh OTP login AFTER this timestamp.
+  credentialResetRequiredAt DateTime?
+  credentialResetReason     String?
+  /// Access tokens issued (iat) before this instant are rejected (session revocation).
+  sessionsRevokedAt         DateTime?
   lastActivityAt         DateTime?
   cniNumberEnc           String?
   biometricEnabled       Boolean   @default(false)
@@ -2455,4 +2462,24 @@ model RateLimitBucket {
   updatedAt   DateTime @updatedAt
 
   @@index([updatedAt])
+}
+
+/// Append-only audit of credential remediation (never contains credentials,
+/// hashes, OTPs or reset secrets).
+model CredentialSecurityEvent {
+  id         String   @id @default(cuid())
+  userId     String
+  /// exposure_marked | pin_invalidated | password_invalidated | sessions_revoked
+  /// | pin_reestablished | password_reestablished
+  type       String
+  /// admin | operator_script | system | user
+  actorType  String
+  actorId    String?
+  reason     String?
+  /// A | B (classification from the exposure investigation), if applicable
+  classification String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
 }

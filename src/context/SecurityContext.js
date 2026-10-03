@@ -22,6 +22,9 @@ export function SecurityProvider({ children }) {
   const [deviceRisk, setDeviceRisk] = useState(null);
   const [stepUpToken, setStepUpToken] = useState(null);
   const [unlockMode, setUnlockMode] = useState('pin');
+  // Server invalidated the PIN (forced credential reset / recovery): the user
+  // must choose a new one before using the app.
+  const [pinResetRequired, setPinResetRequired] = useState(false);
   const appState = useRef(AppState.currentState);
 
   useEffect(() => {
@@ -60,6 +63,10 @@ export function SecurityProvider({ children }) {
       setLocked(false);
       return { ok: true };
     } catch (error) {
+      if (error.code === 'pin_not_set') {
+        setPinResetRequired(true);
+        return { ok: false, needsSetup: true, message: 'Choisis un nouveau code PIN.' };
+      }
       if (error.status === 401 || error.code === 'invalid_pin') {
         return { ok: false, message: error.message };
       }
@@ -79,13 +86,12 @@ export function SecurityProvider({ children }) {
   }, []);
 
   const setupPin = useCallback(async (pin) => {
-    try {
-      await authPinSet(pin);
-    } catch {
-      /* offline dev — still mark configured locally */
-    }
+    // The server is the source of truth: never mark a PIN configured locally
+    // if the server refused it (e.g. re-verification required after a reset).
+    await authPinSet(pin);
     await setPinConfigured(true);
     setPinReady(true);
+    setPinResetRequired(false);
     setLocked(false);
   }, []);
 
@@ -118,6 +124,7 @@ export function SecurityProvider({ children }) {
     () => ({
       locked,
       pinReady,
+      pinResetRequired,
       biometricReady,
       deviceRisk,
       stepUpToken,
@@ -135,6 +142,7 @@ export function SecurityProvider({ children }) {
     [
       locked,
       pinReady,
+      pinResetRequired,
       biometricReady,
       deviceRisk,
       stepUpToken,

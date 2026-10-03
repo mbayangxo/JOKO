@@ -21,7 +21,11 @@ import { navigationIntegration, Sentry } from './src/lib/sentry';
 import NavSideEffects from './src/hooks/NavSideEffects';
 
 function AppShell() {
-  const { locked, pinReady, deviceRisk } = useSecurity();
+  const { locked, pinReady, pinResetRequired, deviceRisk } = useSecurity();
+
+  if (pinResetRequired) {
+    return <PinGateScreen mode="setup" subtitle="Pour ta sécurité, choisis un nouveau code PIN." onSuccess={() => {}} />;
+  }
 
   if (locked && pinReady) {
     return <PinGateScreen mode="unlock" onSuccess={() => {}} />;
