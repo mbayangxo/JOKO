@@ -369,6 +369,28 @@ test('legacy migration: non-consensual legacy members become requests; real conv
   assert.equal(reqs.body.requests.find((r) => r.threadId === tSilent.id)?.from.id, creator.id);
 });
 
+test('attachments: another member’s media cannot be re-posted (re-parented) elsewhere; pending members can’t read it', async () => {
+  const owner = await actor();
+  const mate = await actor();
+  await makeFriends(owner, mate);
+  const t1 = (await call('POST', 'mbolo/threads', owner, { memberHandles: [mate.handle] })).body.id;
+  const asset = await prisma.mbooloMediaAsset.create({
+    data: { ownerId: owner.id, threadId: t1, bucket: 'mboolo', storagePath: `t/${t1}/x.jpg`, sourceUrl: 'https://cdn.example/x.jpg', mimeType: 'image/jpeg', kind: 'image', status: 'ready' },
+  });
+  const other = await actor();
+  await makeFriends(mate, other);
+  const t2 = (await call('POST', 'mbolo/threads', mate, { memberHandles: [other.handle] })).body.id;
+  const steal = await call('POST', `mbolo/threads/${t2}/messages`, mate, { kind: 'image', mediaAssetId: asset.id });
+  assert.equal(steal.status, 403);
+  assert.equal((await prisma.mbooloMediaAsset.findUnique({ where: { id: asset.id } })).threadId, t1, 'asset not moved');
+
+  const ok = await call('POST', `mbolo/threads/${t1}/messages`, owner, { kind: 'image', mediaAssetId: asset.id });
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  const msgId = ok.body.id;
+  const toProfile = await call('POST', `mbolo/messages/${msgId}/save`, mate, { retention: 'profile' });
+  assert.equal(toProfile.status, 403, 'someone else’s photo never lands on my public profile');
+});
+
 test('server logs carry no intro text, secrets or phone numbers', () => {
   const logs = api.logs();
   for (const s of ['on s’est vus au marché', '$2a$', '$2b$', 'SECRETCNI']) assert.ok(!logs.includes(s), `log leak: ${s}`);
