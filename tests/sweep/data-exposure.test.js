@@ -103,6 +103,14 @@ async function candidatesFor(path, me, myBizIds) {
   const prefix = Object.keys(table).find((k) => path === k || path.startsWith(`${k}/`));
   if (!prefix) return null;
   const ids = await pick(table[prefix]);
+  if (path.includes(':subId') && (path.includes('/os/orders/') || path.includes('/os/stock/'))) {
+    // J5: a foreign business's own order / product as the sub-object.
+    const table = path.includes('/os/orders/') ? '"Order"' : '"Product"';
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT "businessId", "id" FROM ${table} WHERE "businessId" IS NOT NULL AND "businessId" NOT IN (${myBizIds.map((i) => `'${i}'`).join(',') || "''"}) ORDER BY random() LIMIT 2`,
+    );
+    return rows.map((r) => path.replace(':id', r.businessId).replace(':subId', r.id));
+  }
   if (path.includes(':subId')) {
     const rows = await prisma.$queryRawUnsafe(
       `SELECT "businessId", "id" FROM "SchoolFeePeriod" WHERE "businessId" NOT IN (${myBizIds.map((i) => `'${i}'`).join(',') || "''"}) ORDER BY random() LIMIT 2`,

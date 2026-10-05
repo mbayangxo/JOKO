@@ -93,6 +93,10 @@ function sourceFor(routeKey) {
     [/^support\/tickets\/:id/, `SELECT "id" FROM "SupportTicket" WHERE "userId" <> $ME`],
     [/^auth\/sessions\/:id/, `SELECT "id" FROM "AuthSession" WHERE "userId" <> $ME`],
     [/^auth\/devices\/:id/, `SELECT "id" FROM "UserDevice" WHERE "userId" <> $ME`],
+    // J5 business OS sub-objects: another business's own rows.
+    [/^businesses\/:id\/os\/orders\/:subId/, `SELECT "businessId" || '|' || "id" FROM "Order" WHERE "businessId" IS NOT NULL AND "businessId" NOT IN ($MYBIZ)`],
+    [/^businesses\/:id\/os\/(catalog|stock)\/:subId/, `SELECT "businessId" || '|' || "id" FROM "Product" WHERE "businessId" IS NOT NULL AND "businessId" NOT IN ($MYBIZ)`],
+    [/^businesses\/:id\/os\/locations\/:subId/, `SELECT "businessId" || '|' || "id" FROM "BusinessLocation" WHERE "businessId" NOT IN ($MYBIZ)`],
     [/^businesses\/:id\/members\/:subId/, `SELECT "businessId" || '|' || "id" FROM "BusinessMember" WHERE "businessId" NOT IN ($MYBIZ) AND "userId" <> $ME`],
     [/^businesses\/:id\/school\/periods\/:subId/, `SELECT "businessId" || '|' || "id" FROM "SchoolFeePeriod" WHERE "businessId" NOT IN ($MYBIZ)`],
     [/^businesses\/:id\/cooperative\/deliveries\/:subId/, `SELECT "businessId" || '|' || "id" FROM "FarmerDeliveryLog" WHERE "businessId" NOT IN ($MYBIZ)`],
@@ -106,6 +110,9 @@ function sourceFor(routeKey) {
 }
 
 const BODY = (attackerBizId) => ({
+  priceKori: 1,
+  delta: 50,
+  note: 'sweep: someone else’s stock',
   amount: 100,
   amountXof: 100,
   reason: 'sweep: acting on someone else’s object',

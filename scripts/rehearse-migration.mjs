@@ -88,6 +88,9 @@ const task = await insert('DeliveryTask', { id: randomUUID(), orderId: order.id,
 await insert('DeliveryEscrow', { id: randomUUID(), deliveryTaskId: task.id, buyerId: users[5].id, amountNational: 1500, koriPayout: 150, status: 'reserved', reference: 'LEG-ESC-1' });
 const offering = await insert('KebuInvestmentOffering', { id: randomUUID(), businessId: biz.id, title: 'Legacy raise', targetKori: 100_000 });
 await insert('KebuInvestment', { id: randomUUID(), offeringId: offering.id, investorId: users[2].id, amountKori: 2_500, reference: 'LEG-INV-1' });
+// J5: a legacy product on the legacy shop (pre-J5 catalog row, no SKU/kind).
+const legacyProduct = await insert('Product', { id: randomUUID(), businessId: biz.id, title: 'Produit legacy', price: 200, inventory: 6, trackInventory: true, active: true });
+await db.query(`UPDATE "Business" SET "verified" = true WHERE id = $1`, [biz.id]);
 // J4: a legacy pending money request (pre-expiry) must survive unchanged.
 const legacyRequest = await insert('MoneyRequest', { id: randomUUID(), requesterId: users[0].id, payerId: users[1].id, amount: 700, status: 'pending', reference: 'LEG-REQ-1' });
 
@@ -197,6 +200,41 @@ step('J4 migration additive on production shape (legacy request preserved, no in
   j4: { ...j4, req_expires: j4.req_expires ?? null },
   legacyRequestPaidThroughJ4: legacyPay.stdout.trim() || legacyPay.stderr.slice(0, 300),
   invariantsAfter: check3.status === 0 ? 'ok' : JSON.parse(check3.stdout || '{}').violations,
+});
+
+// J5 migration (additive, behaviour-preserving): the existing shop keeps
+// owner-personal settlement, its badge maps to 'verified', stock history is
+// append-only, and a real order + customer cancellation run on migrated data.
+const j5 = (await db2.query(`SELECT
+  (SELECT COUNT(*) FROM "_prisma_migrations" WHERE migration_name LIKE '%_j5_business' AND finished_at IS NOT NULL)::int AS j5_applied,
+  (SELECT "settlementMode" FROM "Business" WHERE id = $1) AS settlement,
+  (SELECT "verificationStatus" FROM "Business" WHERE id = $1) AS verification,
+  (SELECT kind FROM "Product" WHERE id = $2) AS kind,
+  (SELECT COUNT(*) FROM pg_trigger WHERE tgname = 'StockMovement_append_only')::int AS stock_guard`, [biz.id, legacyProduct.id])).rows[0];
+const j5flow = node(['--input-type=module', '-e', `
+  const { prisma } = await import('./lib/prisma.js');
+  const { placeMarketplaceOrder } = await import('./lib/marketplace-service.js');
+  const { cancelOrder } = await import('./lib/commerce/orders.js');
+  const buyerId = '${users[2].id}';
+  const before = (await prisma.wallet.findUnique({ where: { userId: buyerId } })).koriBalance;
+  const { order } = await placeMarketplaceOrder(prisma, { buyerId, businessId: '${biz.id}', items: [{ productId: '${legacyProduct.id}', quantity: 2 }], fulfillmentType: 'pickup', reference: 'REH-J5-ORDER' });
+  const mid = (await prisma.wallet.findUnique({ where: { userId: buyerId } })).koriBalance;
+  const stockMid = (await prisma.product.findUnique({ where: { id: '${legacyProduct.id}' } })).inventory;
+  await cancelOrder(buyerId, order.id, { as: 'buyer', reason: 'répétition J5' });
+  const after = (await prisma.wallet.findUnique({ where: { userId: buyerId } })).koriBalance;
+  const stockAfter = (await prisma.product.findUnique({ where: { id: '${legacyProduct.id}' } })).inventory;
+  console.log(JSON.stringify({ settledTo: order.settledTo, paid: before - mid, refunded: after - mid, stockMid, stockAfter }));
+  await prisma.$disconnect();
+`]);
+const check4 = node(['scripts/money-check.mjs', '--json']);
+let flow5 = null;
+try { flow5 = JSON.parse(j5flow.stdout.trim().split('\n').pop()); } catch { flow5 = { error: j5flow.stderr.slice(0, 400) }; }
+step('J5 migration behaviour-preserving on production shape (owner settlement kept, verification mapped, stock guard, order + cancel on migrated data)', {
+  ok: j5.j5_applied === 1 && j5.settlement === 'owner' && j5.verification === 'verified' && j5.kind === 'product' && j5.stock_guard === 1
+    && flow5?.settledTo === 'owner' && flow5?.paid === 400 && flow5?.refunded === 400 && flow5?.stockMid === 4 && flow5?.stockAfter === 6 && check4.status === 0,
+  j5,
+  flow: flow5,
+  invariantsAfter: check4.status === 0 ? 'ok' : JSON.parse(check4.stdout || '{}').violations,
 });
 
 const directWrite = await prisma2.$executeRawUnsafe(`UPDATE "Wallet" SET "koriBalance" = "koriBalance" + 1 WHERE id = (SELECT id FROM "Wallet" LIMIT 1)`).then(() => 'ACCEPTED', (e) => e.message);

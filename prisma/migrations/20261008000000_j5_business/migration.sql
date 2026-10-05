@@ -97,7 +97,15 @@ UPDATE "Business" SET "settlementMode" = 'owner'
 -- J5: the existing public badge maps onto the verification lifecycle.
 UPDATE "Business" SET "verificationStatus" = 'verified' WHERE "verified" = true;
 
--- J5: stock history is append-only (same guard as the money ledgers).
+-- J5: stock history is append-only (same guard as the money ledgers). The
+-- guard function is (re)defined here because migrations run before the
+-- deploy step re-applies prisma/sql/financial-invariants.sql (same body).
+CREATE OR REPLACE FUNCTION joko_ledger_append_only() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'ledger table % is append-only (% refused)', TG_TABLE_NAME, TG_OP
+    USING ERRCODE = 'restrict_violation';
+END;
+$$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS "StockMovement_append_only" ON "StockMovement";
 CREATE TRIGGER "StockMovement_append_only" BEFORE UPDATE OR DELETE ON "StockMovement"
   FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();

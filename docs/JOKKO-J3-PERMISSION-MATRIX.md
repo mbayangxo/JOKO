@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**400 routes.** Column legend:
+**426 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -111,6 +111,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET admin/identity-events` | admin | audit.read | operator_scope |  |  |  |  |  |  |
 | `GET admin/money/lookup` | admin | money.transactions.read | operator_scope |  |  |  |  |  | read-only stage of any reference; cannot change balances |
 | `GET admin/money/limits-usage` | admin | finance.position.read | operator_scope |  |  |  |  |  | D15 maker-checker threshold calibration |
+| `GET admin/businesses/lookup` | admin | businesses.read | operator_scope |  |  |  |  |  | read-only: verification, settlement, staff + authority history, order/charge/refund states |
+| `POST admin/businesses/:id/verification` | admin | merchants.verify | operator_scope |  |  |  |  | identity | operator cannot verify own business |
 
 ## Partner
 
@@ -225,6 +227,29 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET businesses/invitations/mine` | user | business.invitations.read | invitee |  |  |  |  |  |  |
 | `POST businesses/:id/members/:subId/accept` | user | business.members.accept | invitee |  |  |  |  | identity |  |
 | `POST businesses/:id/members/:subId/remove` | user | business.members.remove | business:business.members.manage (or self-leave) |  |  |  |  | identity |  |
+| `POST businesses/:id/members/:subId/role` | user | business.members.role | business:business.members.manage (level + owner-only rules, never own role) |  |  |  |  | identity |  |
+| `GET businesses/:id/os/access` | user | business.os.access | business member (own capabilities) |  |  |  |  |  |  |
+| `GET businesses/:id/os/profile` | user | business.os.profile.read | business:business.read |  |  |  |  |  |  |
+| `PATCH businesses/:id/os/profile` | user | business.os.profile.write | business:business.profile.manage |  |  |  |  | identity |  |
+| `POST businesses/:id/os/locations` | user | business.os.location.create | business:business.profile.manage |  |  |  |  |  |  |
+| `PATCH businesses/:id/os/locations/:subId` | user | business.os.location.update | business:business.profile.manage |  |  |  |  |  |  |
+| `POST businesses/:id/os/settlement` | user | business.os.settlement | business owner only (one-way to business wallet) |  |  |  |  | identity |  |
+| `POST businesses/:id/os/verification` | user | business.os.verification.request | business owner only |  |  |  |  | identity |  |
+| `GET businesses/:id/os/catalog` | user | business.os.catalog.read | business:business.read |  |  |  |  |  |  |
+| `POST businesses/:id/os/catalog` | user | business.os.catalog.create | business:business.catalog.manage |  |  |  |  |  |  |
+| `PATCH businesses/:id/os/catalog/:subId` | user | business.os.catalog.update | business:business.catalog.manage (stock refused here) |  |  |  |  |  |  |
+| `POST businesses/:id/os/stock/:subId/adjust` | user | business.os.stock.adjust | business:business.inventory.adjust (reason required, in-tx authority) |  |  |  |  | stock_movement |  |
+| `GET businesses/:id/os/stock/:subId/history` | user | business.os.stock.history | business:business.catalog.manage \| business.inventory.adjust |  |  |  |  |  |  |
+| `GET businesses/:id/os/orders` | user | business.os.orders.read | business:business.orders.read |  |  |  |  |  |  |
+| `GET businesses/:id/os/orders/:subId` | user | business.os.order.read | business:business.orders.read (order of this business) |  |  |  |  |  |  |
+| `POST businesses/:id/os/orders/:subId/status` | user | business.os.order.fulfil | business:business.orders.fulfill (locked state machine) |  |  |  |  |  |  |
+| `POST businesses/:id/os/orders/:subId/cancel` | user | business.os.order.cancel | business:business.orders.cancel (full refund, in-tx authority) |  |  |  |  | ledger+risk |  |
+| `POST businesses/:id/os/orders/:subId/refund` | user | business.os.order.refund | business:business.refund (full refund, in-tx authority) |  |  |  |  | ledger+risk |  |
+| `GET businesses/:id/os/money` | user | business.os.money.read | business:business.activity.read \| business.wallet.read (payroll / treasury lines by capability) |  |  |  |  |  |  |
+| `GET businesses/:id/os/analytics` | user | business.os.analytics | business:business.analytics.read |  |  |  |  |  |  |
+| `GET businesses/:id/os/customers` | user | business.os.customers | business:business.customers.read (name/handle + history with this business only) |  |  |  |  |  |  |
+| `GET businesses/:id/os/today` | user | business.os.today | business member (each block by capability) |  |  |  |  |  |  |
+| `GET businesses/:id/os/charges` | user | business.os.charges | business:business.charges.read (payer identity not shown) |  |  |  |  |  |  |
 | `GET businesses/:id/reviews` | user | business.reviews.read | public |  |  |  |  |  |  |
 | `POST businesses/:id/reviews` | user | business.reviews.create | verified customer |  |  |  |  |  |  |
 | `GET businesses/:id/kebu-score` | user | business.score.read | business:business.read |  |  |  |  |  |  |
@@ -429,8 +454,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET marketplace/analytics` | user | marketplace.analytics | business:business.read |  |  |  |  |  |  |
 | `PATCH marketplace/business/:id/settings` | user | business.settings | business:business.admin |  |  |  |  |  |  |
 | `GET marketplace/orders/:id` | user | marketplace.order.read | party (buyer or seller business member) |  |  |  |  |  |  |
-| `PATCH marketplace/orders/:id/status` | user | marketplace.order.status | business:business.catalog.manage |  |  |  |  |  |  |
+| `PATCH marketplace/orders/:id/status` | user | marketplace.order.status | business:business.orders.fulfill (J5 state machine) |  |  |  |  |  |  |
 | `POST marketplace/orders/:id/confirm` | user | marketplace.order.confirm | buyer |  |  |  |  | ledger+risk |  |
+| `POST marketplace/orders/:id/cancel` | user | marketplace.order.cancel | buyer (before the merchant starts; system-authorized full refund) |  |  |  |  | ledger+risk |  |
 
 ## User — mbolo
 
@@ -503,10 +529,10 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET money/activity/:reference` | user | wallet.receipt.read | party (the reference touches the caller’s accounts / own operation) |  |  |  |  |  |  |
 | `POST money/preview` | user | wallet.preview | self |  |  |  |  |  | server-authoritative amount / fee / total; executes nothing |
 | `GET money/intents/:id` | user | wallet.intent.read | self (own Idempotency-Key namespace) |  |  |  |  |  |  |
-| `POST money/charges` | user | merchant.charge.create | business:business.catalog.manage |  |  |  |  | ledger |  |
+| `POST money/charges` | user | merchant.charge.create | business:business.charges.create |  |  |  |  | ledger |  |
 | `GET money/charges/:id` | user | merchant.charge.view | opaque code holder (server-provided merchant + amount only) |  |  |  |  |  |  |
 | `POST money/charges/:id/pay` | user | merchant.charge.pay | payer (pays own wallet → merchant; once; before expiry; amount must match) |  | 1 | amount |  | ledger+risk |  |
-| `POST money/charges/:id/cancel` | user | merchant.charge.cancel | business:business.catalog.manage |  |  |  |  |  |  |
+| `POST money/charges/:id/cancel` | user | merchant.charge.cancel | business:business.charges.create |  |  |  |  |  |  |
 | `POST money/payments/:reference/refund` | user | merchant.refund | payee of the original payment (or its business treasury) |  |  |  |  | ledger+risk |  |
 
 ## User — notifications
@@ -693,9 +719,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 
 | Role | Permissions |
 |---|---|
-| `support` | `ops.dashboard.read`, `support.tickets.read`, `support.tickets.write`, `support.calls`, `users.search`, `users.read`, `users.freeze`, `money.transactions.read`, `agents.read`, `distributors.read` |
-| `risk` | `ops.dashboard.read`, `risk.held.read`, `risk.held.decide`, `risk.alerts.read`, `risk.alerts.ack`, `users.search`, `users.read`, `users.read.sensitive`, `users.freeze`, `users.unfreeze.request`, `users.unfreeze.approve`, `users.credentials.invalidate`, `money.transactions.read`, `audit.read`, `agents.read`, `agents.suspend`, `couriers.suspend`, `approvals.read` |
-| `compliance` | `ops.dashboard.read`, `kyc.review`, `users.search`, `users.read`, `users.read.sensitive`, `users.unfreeze.approve`, `agents.read`, `agents.onboard`, `agents.manage`, `agents.suspend`, `couriers.onboard`, `couriers.suspend`, `distributors.read`, `distributors.manage`, `audit.read`, `approvals.read` |
+| `support` | `ops.dashboard.read`, `support.tickets.read`, `support.tickets.write`, `support.calls`, `users.search`, `users.read`, `users.freeze`, `money.transactions.read`, `agents.read`, `distributors.read`, `businesses.read` |
+| `risk` | `ops.dashboard.read`, `risk.held.read`, `risk.held.decide`, `risk.alerts.read`, `risk.alerts.ack`, `users.search`, `users.read`, `users.read.sensitive`, `users.freeze`, `users.unfreeze.request`, `users.unfreeze.approve`, `users.credentials.invalidate`, `money.transactions.read`, `audit.read`, `agents.read`, `agents.suspend`, `couriers.suspend`, `approvals.read`, `businesses.read` |
+| `compliance` | `ops.dashboard.read`, `kyc.review`, `users.search`, `users.read`, `users.read.sensitive`, `users.unfreeze.approve`, `agents.read`, `agents.onboard`, `agents.manage`, `agents.suspend`, `couriers.onboard`, `couriers.suspend`, `distributors.read`, `distributors.manage`, `audit.read`, `approvals.read`, `businesses.read`, `merchants.verify` |
 | `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `risk.held.read`, `agents.read`, `approvals.read` |
 | `finance_approver` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.reports.read`, `finance.adjust.approve`, `finance.agent_float.approve`, `finance.refund.approve`, `approvals.read` |
 | `sysadmin` | `ops.health.read`, `ops.dashboard.read`, `admin.roles.read`, `admin.roles.manage`, `audit.read`, `approvals.read` |
@@ -742,12 +768,24 @@ The owner (`Business.ownerId`) holds every capability. Members hold a capability
 
 | Capability | Member roles |
 |---|---|
-| `business.read` | viewer, staff, sales, warehouse, hr_admin, admin, cfo, ceo, owner |
-| `business.wallet.read` | admin, cfo, ceo, owner |
-| `business.treasury` | admin, cfo, ceo, owner |
-| `business.pay` | hr_admin, admin, cfo, ceo, owner |
-| `business.admin` | hr_admin, admin, cfo, ceo, owner |
-| `business.members.manage` | admin, ceo, owner |
-| `business.catalog.manage` | sales, warehouse, admin, ceo, owner |
+| `business.read` | manager, cashier, inventory, fulfillment, finance, viewer, staff, sales, warehouse, hr_admin, admin, cfo, ceo, owner |
+| `business.profile.manage` | manager, admin, ceo, owner |
+| `business.members.manage` | manager, admin, ceo, owner |
+| `business.catalog.manage` | manager, inventory, sales, warehouse, admin, ceo, owner |
+| `business.inventory.adjust` | manager, inventory, admin, ceo, owner |
+| `business.orders.read` | manager, cashier, inventory, fulfillment, finance, admin, cfo, ceo, owner |
+| `business.orders.fulfill` | manager, fulfillment, admin, ceo, owner |
+| `business.orders.cancel` | manager, admin, ceo, owner |
+| `business.refund` | manager, finance, admin, cfo, ceo, owner |
+| `business.charges.create` | manager, cashier, admin, ceo, owner |
+| `business.charges.read` | manager, cashier, finance, admin, cfo, ceo, owner |
+| `business.customers.read` | manager, fulfillment, admin, ceo, owner |
+| `business.activity.read` | manager, finance, admin, cfo, ceo, owner |
+| `business.analytics.read` | manager, finance, admin, cfo, ceo, owner |
+| `business.wallet.read` | finance, admin, cfo, ceo, owner |
+| `business.treasury` | finance, admin, cfo, ceo, owner |
+| `business.pay` | finance, hr_admin, admin, cfo, ceo, owner |
+| `business.admin` | finance, hr_admin, admin, cfo, ceo, owner |
+| `business.payroll.read` | finance, hr_admin, admin, cfo, ceo, owner |
 
 Only the owner may grant `owner`, `admin`, `cfo` or `ceo`. Nobody may grant a role above their own level.
