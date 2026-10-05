@@ -36,3 +36,13 @@ The J3 gate was accepted **locally**. Not deployed. Production untouched; branch
 | D15 | Initial maker-checker thresholds: **5 000 ₭** platform adjustment, **10 000 ₭** refund, **500 000 XOF** agent float. They are conservative, configurable defaults, not permanent policy, and their usage is instrumented for later calibration. | `LIMITS` in `lib/authz/catalog.js`; usage reported by `GET admin/money/limits-usage` (J4). |
 | D16 | Diaspora/local status may affect product routing, country context, rails, currency, UX or services, but must **not** inherently change authentication trust, fraud score, identity confidence or security permissions. Never use ethnicity, nationality, language, name, neighbourhood or diaspora identity as a proxy for trustworthiness. | J4: the pre-J3 device-login flag ("foreign IP unless diaspora") is replaced by an account-relative "new login country for this account" signal. Regression tests cover it (`tests/unit/fraud-rules.test.js`). |
 | D17 | Passkeys and KYC re-verification stay recorded as **future security work**. They are not faked to make a gate green. | Listed as open in the gate reports. |
+
+## D-J4: Money vertical slices (recorded at J4 acceptance, 2026-10-05)
+
+The J4 gate was accepted **locally**. It has not been deployed: production is untouched, Vercel branch deployments stay disabled, and the database deployment step stays inert.
+
+| # | Decision | How it applies |
+|---|---|---|
+| D18 | **Fees are 0** for P2P, money requests, merchant payments, internal Jokko transfers and cash-out. No fee schedule is invented without real provider, agent and unit-economics data. The fee architecture stays configurable and ledger-backed. Every future fee must be (1) server-authoritative, (2) disclosed before confirmation, (3) posted as a **separate ledger posting**, (4) attributed to the correct funded/revenue account, and (5) shown on the receipt. | `lib/money/policy.js` defaults every flow to 0. `MONEY_FEES_BPS` is ignored for all flows until a flow has a separate fee posting wired into the kernel (today only cash-out has one). The preview and the receipt show the fee line. |
+| D19 | **Pre-J4 money requests are not retroactively expired.** They are preserved until production has been inspected read-only. New requests use the 7-day expiry policy. | Legacy rows keep `expiresAt = NULL` (proven in the J4 rehearsal). No backfill or expiry job runs on them. |
+| D20 | J4 follow-ups are ordinary cleanup: the money-request UI shows the expired and limit states; the merchant UI for creating and showing J4 charge QR codes is completed in J5. The J4 architecture is not reopened unless a regression is found. | Request UI fixed at the start of J5. Merchant charge UI is part of J5 §D. |

@@ -12,7 +12,11 @@ import { useAppState } from '../state/AppState';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
 import { useBlink, useEntrance, usePopIn, useSuccessHaptic } from '../hooks/animations';
 import { useToast } from '../components/Toast';
-import { transferRequest, getTransferRequests, acceptTransferRequest, denyTransferRequest } from '../lib/api-client';
+import { transferRequest, getTransferRequests, acceptTransferRequest, denyTransferRequest, cancelTransferRequest } from '../lib/api-client';
+import { requestCreateProblem, requestRow } from '../lib/money-ux';
+import { useMoneySubmit } from '../hooks/useMoneySubmit';
+import StepUpOverlay from '../components/StepUpOverlay';
+import { useSecurity } from '../context/SecurityContext';
 import { formatKori } from '../lib/kori.js';
 import KoriAmount from '../components/KoriAmount';
 
@@ -23,7 +27,7 @@ function AmountCursor() {
   return <Animated.View style={[styles.ahCursor, { opacity: blink }]} />;
 }
 
-function RequestStep({ amount, setAmount, reason, setReason, handle, setHandle, loading, onSend, onBack }) {
+function RequestStep({ amount, setAmount, reason, setReason, handle, setHandle, loading, onSend, onBack, problem }) {
   const inputRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const popIn = usePopIn(0, 400, 0.8);
@@ -90,6 +94,12 @@ function RequestStep({ amount, setAmount, reason, setReason, handle, setHandle, 
       </ScrollView>
 
       <View style={styles.footer}>
+        {problem ? (
+          <View style={styles.problemBox}>
+            <Text style={styles.problemText}>{problem.message}</Text>
+            {problem.nextStep ? <Text style={styles.problemText}>{problem.nextStep}</Text> : null}
+          </View>
+        ) : null}
         <GlowButton
           label={loading ? 'Envoi…' : `Demander ${formatKori(amount)} →`}
           onPress={onSend}
@@ -100,32 +110,62 @@ function RequestStep({ amount, setAmount, reason, setReason, handle, setHandle, 
   );
 }
 
-function InboxStep({ requests, loading, onAccept, onDeny, onBack }) {
-  const pending = requests.filter((r) => r.status === 'pending');
+function RequestCard({ req, row, onAccept, onDeny, onCancel, busy }) {
+  const who = row.incoming ? req.requester?.name || req.requester?.handle : req.payer?.name || req.payer?.handle;
+  return (
+    <View style={[styles.inboxCard, !row.canPay && !row.canCancel && styles.inboxCardMuted]}>
+      <Text style={styles.inboxTitle}>
+        {row.incoming ? `${who} demande ${formatKori(req.amount)}` : `Tu as demandé ${formatKori(req.amount)} à ${who}`}
+      </Text>
+      {req.note ? <Text style={styles.inboxNote}>{req.note}</Text> : null}
+      <Text style={styles.inboxStatus}>
+        {row.statusLabel}
+        {row.expiryLabel ? ` · ${row.expiryLabel}` : ''}
+      </Text>
+      {row.canPay ? (
+        <View style={styles.inboxActions}>
+          <PressScale scaleTo={0.95} onPress={() => !busy && onDeny(req.id)} style={styles.denyBtn}>
+            <Text style={styles.denyText}>Refuser</Text>
+          </PressScale>
+          <PressScale scaleTo={0.95} onPress={() => !busy && onAccept(req.id)} style={styles.acceptBtn}>
+            <Text style={styles.acceptText}>{busy ? 'Vérification…' : 'Payer'}</Text>
+          </PressScale>
+        </View>
+      ) : null}
+      {row.canCancel ? (
+        <View style={styles.inboxActions}>
+          <PressScale scaleTo={0.95} onPress={() => onCancel(req.id)} style={styles.denyBtn}>
+            <Text style={styles.denyText}>Annuler la demande</Text>
+          </PressScale>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function InboxStep({ requests, me, loading, busyId, onAccept, onDeny, onCancel, onBack }) {
+  const rows = requests.map((req) => ({ req, row: requestRow(req, { me }) }));
+  const toPay = rows.filter((r) => r.row.canPay);
+  const mine = rows.filter((r) => !r.row.incoming).slice(0, 20);
+  const pastIncoming = rows.filter((r) => r.row.incoming && !r.row.canPay).slice(0, 10);
 
   return (
     <View style={{ flex: 1 }}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: spacing.huge }}>
-        <ScreenHeader onBack={onBack} title="Demandes reçues" style={styles.topRow} />
+        <ScreenHeader onBack={onBack} title="Demandes" style={styles.topRow} />
         {loading ? <Text style={styles.reasonHint}>Chargement…</Text> : null}
-        {!loading && pending.length === 0 ? (
-          <Text style={styles.reasonHint}>Aucune demande en attente.</Text>
-        ) : null}
-        {pending.map((req) => (
-          <View key={req.id} style={styles.inboxCard}>
-            <Text style={styles.inboxTitle}>
-              {req.requester?.name ?? req.requester?.handle} demande {formatKori(req.amount)}
-            </Text>
-            {req.note ? <Text style={styles.inboxNote}>{req.note}</Text> : null}
-            <View style={styles.inboxActions}>
-              <PressScale scaleTo={0.95} onPress={() => onDeny(req.id)} style={styles.denyBtn}>
-                <Text style={styles.denyText}>Refuser</Text>
-              </PressScale>
-              <PressScale scaleTo={0.95} onPress={() => onAccept(req.id)} style={styles.acceptBtn}>
-                <Text style={styles.acceptText}>Payer</Text>
-              </PressScale>
-            </View>
-          </View>
+        <Text style={styles.inboxSection}>À payer</Text>
+        {!loading && toPay.length === 0 ? <Text style={styles.reasonHint}>Aucune demande en attente.</Text> : null}
+        {toPay.map(({ req, row }) => (
+          <RequestCard key={req.id} req={req} row={row} busy={busyId === req.id} onAccept={onAccept} onDeny={onDeny} onCancel={onCancel} />
+        ))}
+        {mine.length ? <Text style={styles.inboxSection}>Mes demandes</Text> : null}
+        {mine.map(({ req, row }) => (
+          <RequestCard key={req.id} req={req} row={row} onAccept={onAccept} onDeny={onDeny} onCancel={onCancel} />
+        ))}
+        {pastIncoming.length ? <Text style={styles.inboxSection}>Déjà traitées</Text> : null}
+        {pastIncoming.map(({ req, row }) => (
+          <RequestCard key={req.id} req={req} row={row} onAccept={onAccept} onDeny={onDeny} onCancel={onCancel} />
         ))}
       </ScrollView>
     </View>
@@ -183,12 +223,17 @@ export default function ReceiveScreen({ navigation }) {
   const [handle, setHandle] = useState('');
   const [loading, setLoading] = useState(false);
   const [inbox, setInbox] = useState([]);
+  const [busyId, setBusyId] = useState(null);
+  const [problem, setProblem] = useState(null);
+  const [stepUpFor, setStepUpFor] = useState(null);
   const { profile, refreshWallet } = useAppState();
+  const security = useSecurity();
+  const moneySubmit = useMoneySubmit();
 
   const loadInbox = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await getTransferRequests('incoming');
+      const list = await getTransferRequests('all');
       setInbox(Array.isArray(list) ? list : []);
     } catch (err) {
       showToast(err.message ?? 'Impossible de charger');
@@ -203,17 +248,40 @@ export default function ReceiveScreen({ navigation }) {
     }, [mode, loadInbox]),
   );
 
-  const acceptRequest = async (id) => {
-    setLoading(true);
+  // A request is never debit authority: paying it is the payer's own money
+  // action — one intent key per attempt, PIN when required, and a lost
+  // response resolves through the intent instead of a second payment.
+  const acceptRequest = async (id, stepUpToken) => {
+    if (moneySubmit.busy) return;
+    setBusyId(id);
     try {
-      await acceptTransferRequest(id);
-      await refreshWallet();
-      showToast('Paiement envoyé ✓');
+      const out = await moneySubmit.submit((intentKey) =>
+        acceptTransferRequest(id, { stepUpToken: stepUpToken ?? security.stepUpToken, intentKey }),
+      );
+      if (out.state === 'needs_pin') {
+        setStepUpFor(id);
+        return;
+      }
+      if (out.state === 'done' || out.state === 'accepted_pending') {
+        await refreshWallet();
+        showToast('Paiement envoyé ✓');
+      } else {
+        showToast(out.nextStep ? `${out.message} ${out.nextStep}` : out.message ?? 'Paiement impossible');
+      }
+      if (out.state !== 'checking') moneySubmit.reset();
+      loadInbox();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const cancelRequest = async (id) => {
+    try {
+      await cancelTransferRequest(id);
+      showToast('Demande annulée');
       loadInbox();
     } catch (err) {
-      showToast(err.message ?? 'Paiement impossible');
-    } finally {
-      setLoading(false);
+      showToast(err.message ?? 'Erreur');
     }
   };
 
@@ -242,9 +310,11 @@ export default function ReceiveScreen({ navigation }) {
     setLoading(true);
     try {
       await transferRequest({ recipientHandle: handle, amount, note: reason.trim() || undefined });
+      setProblem(null);
       setStep('sent');
     } catch (err) {
-      showToast(err.message ?? 'Demande impossible');
+      // Limit / unavailable are shown as a notice on the form, not a passing toast.
+      setProblem(requestCreateProblem(err));
     } finally {
       setLoading(false);
     }
@@ -263,7 +333,7 @@ export default function ReceiveScreen({ navigation }) {
           </PressScale>
         </View>
         {mode === 'inbox' ? (
-          <InboxStep requests={inbox} loading={loading} onAccept={acceptRequest} onDeny={denyRequest} onBack={() => navigation.goBack()} />
+          <InboxStep requests={inbox} me={profile.handle} loading={loading} busyId={busyId} onAccept={acceptRequest} onDeny={denyRequest} onCancel={cancelRequest} onBack={() => navigation.goBack()} />
         ) : null}
         {mode === 'request' && step === 'request' && (
           <StepTransition>
@@ -277,6 +347,7 @@ export default function ReceiveScreen({ navigation }) {
               loading={loading}
               onSend={sendRequest}
               onBack={() => navigation.goBack()}
+              problem={problem}
             />
           </StepTransition>
         )}
@@ -286,6 +357,15 @@ export default function ReceiveScreen({ navigation }) {
           </StepTransition>
         )}
       </SafeAreaView>
+      <StepUpOverlay
+        visible={Boolean(stepUpFor)}
+        onCancel={() => setStepUpFor(null)}
+        onVerified={(token) => {
+          const id = stepUpFor;
+          setStepUpFor(null);
+          acceptRequest(id, token);
+        }}
+      />
     </View>
   );
 }
@@ -325,6 +405,11 @@ const styles = StyleSheet.create({
   modePillOn: { backgroundColor: colors.goldA20 },
   modeText: { fontSize: 11, fontWeight: '700', color: 'rgba(5,8,5,0.5)' },
   modeTextOn: { color: colors.goldDark },
+  inboxCardMuted: { opacity: 0.6 },
+  inboxStatus: { fontSize: 11, color: 'rgba(5,8,5,0.55)', marginTop: 4 },
+  inboxSection: { fontSize: 11, fontWeight: '700', letterSpacing: 1, color: 'rgba(5,8,5,0.45)', marginTop: spacing.lg, marginBottom: spacing.sm, textTransform: 'uppercase' },
+  problemBox: { backgroundColor: 'rgba(200,80,40,0.08)', borderRadius: radius.lg, padding: spacing.lg, marginTop: spacing.md },
+  problemText: { fontSize: 12, color: colors.terracottaDark },
   inboxCard: { backgroundColor: 'rgba(255,255,255,0.6)', borderRadius: radius.lg, borderWidth: 1, borderColor: 'rgba(5,8,5,0.08)', padding: spacing.lg, marginBottom: spacing.md },
   inboxTitle: { fontFamily: fontFamily.bodyBold, fontSize: 13, color: colors.ink },
   inboxNote: { fontSize: 11, color: 'rgba(5,8,5,0.5)', marginTop: spacing.xs },

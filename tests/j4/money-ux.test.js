@@ -93,3 +93,26 @@ test('charge QR carries only an opaque code — no amount, no merchant id', () =
   // A forged QR adding an amount is ignored: the code is all the client keeps.
   assert.deepEqual(parseK21Qr('k21://charge/CHG7XK2P9QABZZ41?amount=1'), { kind: 'pay_charge', code: 'CHG7XK2P9QABZZ41' });
 });
+
+test('money requests: pending shows expiry; expired / answered are visible but never payable; legacy requests show no expiry (D19)', async () => {
+  const { requestRow, requestCreateProblem } = await import('../../src/lib/money-ux.js');
+  const now = new Date('2026-10-05T12:00:00Z');
+  const base = { id: 'r1', amount: 100, requester: { id: 'a', handle: 'awa' }, payer: { id: 'b', handle: 'bara' } };
+  const pending = requestRow({ ...base, status: 'pending', expiresAt: '2026-10-10T12:00:00Z' }, { me: 'bara', now });
+  assert.equal(pending.canPay, true);
+  assert.equal(pending.expiryLabel, 'Expire dans 5 j');
+  const lapsed = requestRow({ ...base, status: 'pending', expiresAt: '2026-10-05T11:00:00Z' }, { me: 'b', now });
+  assert.equal(lapsed.status, 'expired');
+  assert.equal(lapsed.statusLabel, 'Expirée');
+  assert.equal(lapsed.canPay, false);
+  const legacy = requestRow({ ...base, status: 'pending', expiresAt: null }, { me: 'b', now });
+  assert.equal(legacy.canPay, true);
+  assert.equal(legacy.expiryLabel, null, 'no invented expiry');
+  for (const st of ['accepted', 'denied', 'cancelled', 'expired']) assert.equal(requestRow({ ...base, status: st }, { me: 'b', now }).canPay, false, st);
+  const mine = requestRow({ ...base, status: 'pending', expiresAt: null }, { me: 'awa', now });
+  assert.equal(mine.incoming, false);
+  assert.equal(mine.canPay, false, 'a requester can never pay their own request');
+  assert.equal(mine.canCancel, true);
+  assert.equal(requestCreateProblem({ status: 429, code: 'request_limit', message: 'Trop' }).kind, 'limit');
+  assert.equal(requestCreateProblem({ status: 403, code: 'recipient_unavailable' }).kind, 'unavailable');
+});

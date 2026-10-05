@@ -1291,11 +1291,12 @@ export function getTransferRequests(role = 'all') {
   return apiFetch(`/api/transfers/requests?role=${encodeURIComponent(role)}`, { skipCache: true });
 }
 
-export function acceptTransferRequest(id, { stepUpToken } = {}) {
+export function acceptTransferRequest(id, { stepUpToken, intentKey } = {}) {
   return apiFetch(`/api/transfers/requests/${encodeURIComponent(id)}/accept`, {
     method: 'POST',
     stepUpToken,
     skipCache: true,
+    idempotencyKey: intentKey,
   });
 }
 

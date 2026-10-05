@@ -115,3 +115,51 @@ export function balanceView(home) {
     ].filter(Boolean),
   };
 }
+
+const REQUEST_LABELS = {
+  pending: 'En attente',
+  accepted: 'Payée',
+  denied: 'Refusée',
+  cancelled: 'Annulée',
+  expired: 'Expirée',
+};
+
+/**
+ * One money request for display. Only a pending, unexpired request is
+ * actionable; expired / answered requests stay visible with a plain status.
+ * Pre-J4 requests have no expiry (decision D19) and never show one.
+ */
+/** `me`: the viewer's user id or handle. */
+export function requestRow(req, { me, now = new Date() } = {}) {
+  const expiresAt = req.expiresAt ? new Date(req.expiresAt) : null;
+  const expired = req.status === 'expired' || (req.status === 'pending' && expiresAt && expiresAt <= now);
+  const status = expired ? 'expired' : req.status;
+  const incoming = me ? req.payer?.id === me || (req.payer?.handle && req.payer.handle === me) : true;
+  let expiryLabel = null;
+  if (status === 'pending' && expiresAt) {
+    const hours = Math.max(0, Math.round((expiresAt - now) / 3_600_000));
+    expiryLabel = hours >= 48 ? `Expire dans ${Math.round(hours / 24)} j` : hours >= 1 ? `Expire dans ${hours} h` : 'Expire bientôt';
+  }
+  return {
+    key: req.id,
+    status,
+    statusLabel: REQUEST_LABELS[status] ?? status,
+    expiryLabel,
+    incoming,
+    canPay: incoming && status === 'pending',
+    canDecline: incoming && status === 'pending',
+    canCancel: !incoming && status === 'pending',
+  };
+}
+
+/** A refused request-creation, as a user-facing notice (not a generic toast). */
+export function requestCreateProblem(error) {
+  const e = error ?? {};
+  if (e.code === 'request_limit' || e.status === 429) {
+    return { kind: 'limit', message: e.message ?? 'Trop de demandes en attente.', nextStep: 'Attends une réponse à tes demandes en cours, ou annule-en une.' };
+  }
+  if (e.code === 'recipient_unavailable') {
+    return { kind: 'unavailable', message: e.message ?? 'Impossible d’envoyer une demande à ce membre.', nextStep: null };
+  }
+  return { kind: 'error', message: e.message ?? 'Demande impossible', nextStep: e.data?.nextStep ?? null };
+}
