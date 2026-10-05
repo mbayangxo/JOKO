@@ -2445,28 +2445,45 @@ model ChannelFollow {
  * K21 in-person agent — float-backed cash-in/out at agent points.
  */
 model AgentProfile {
-  id                String   @id @default(cuid())
-  userId            String   @unique
-  agentCode         String   @unique
-  displayName       String
-  locationLabel     String?
-  arrondissement    String?
-  lat               Float?
-  lng               Float?
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  agentCode          String    @unique
+  displayName        String
+  locationLabel      String?
+  arrondissement     String?
+  lat                Float?
+  lng                Float?
   /**
    * standard = retail point; business = large float / gros retraits
    */
-  tier              String   @default("standard")
-  floatBalance      Int      @default(0)
-  floatLimit        Int      @default(500000)
-  maxDepositXof     Int      @default(500000)
-  maxWithdrawXof    Int      @default(500000)
-  commissionBps     Int      @default(100)
-  monthlyFlatFeeXof Int      @default(25000)
-  volumeBonusBps    Int      @default(50)
-  status            String   @default("active")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  tier               String    @default("standard")
+  floatBalance       Int       @default(0)
+  floatLimit         Int       @default(500000)
+  maxDepositXof      Int       @default(500000)
+  maxWithdrawXof     Int       @default(500000)
+  commissionBps      Int       @default(100)
+  monthlyFlatFeeXof  Int       @default(25000)
+  volumeBonusBps     Int       @default(50)
+  /// J6.1 lifecycle: applied → under_review → approved → active ⇄ suspended → terminated
+  /// (rejected from any pre-active state). Legacy rows: 'pending' ≡ applied, 'revoked' ≡ terminated.
+  /// No self-activation; float never activates.
+  status             String    @default("applied")
+  /// J6.1: individual | business (business agents are backed by a verified J5 Business)
+  agentType          String    @default("individual")
+  organizationId     String?
+  servicePointId     String?
+  identityVerifiedAt DateTime?
+  identityVerifiedBy String?
+  approvedBy         String?
+  approvedAt         DateTime?
+  activatedBy        String?
+  activatedAt        DateTime?
+  suspendedAt        DateTime?
+  suspensionReason   String?
+  terminatedAt       DateTime?
+  terminationReason  String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   user               User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
   deposits           AgentDeposit[]
@@ -3480,4 +3497,186 @@ model StockMovement {
   @@index([productId, createdAt])
   @@index([businessId, createdAt])
   @@index([orderId])
+}
+
+// ─── J6: Agents & cash network ───────────────────────────────────────────────
+
+/// Append-only lifecycle history of an agent (who moved it, when, why).
+model AgentStatusEvent {
+  id         String   @id @default(cuid())
+  agentId    String
+  fromStatus String?
+  toStatus   String
+  actorType  String
+  actorId    String?
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([agentId, createdAt])
+}
+
+/// An individual operator or a business-backed agent network.
+model AgentOrganization {
+  id           String    @id @default(cuid())
+  kind         String
+  name         String
+  /// business kind: the verified J5 Business behind the network (never its wallet)
+  businessId   String?   @unique
+  ownerUserId  String
+  status       String    @default("applied")
+  statusReason String?
+  approvedBy   String?
+  approvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([ownerUserId])
+}
+
+/// A public place where cash services are offered. Never a home address.
+model AgentServicePoint {
+  id                      String    @id @default(cuid())
+  organizationId          String
+  name                    String
+  publicAddress           String
+  area                    String?
+  /// rounded (~1 km) for discovery ordering only
+  approxLat               Float?
+  approxLng               Float?
+  /// declared weekly hours: {"mon":[["08:00","20:00"]], …} (Africa/Dakar)
+  hoursJson               String?
+  cashIn                  Boolean   @default(true)
+  cashOut                 Boolean   @default(true)
+  merchantAssist          Boolean   @default(false)
+  /// compliance decision; merchantAssist is refused without it
+  merchantAssistPermitted Boolean   @default(false)
+  status                  String    @default("pending")
+  approvedBy              String?
+  approvedAt              DateTime?
+  createdBy               String
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+/// J6.4/J6.5: one physical-cash transaction (cash_in | cash_out) and its state machine.
+model AgentCashTransaction {
+  id                  String    @id @default(cuid())
+  reference           String    @unique
+  kind                String
+  customerId          String
+  agentId             String?
+  servicePointId      String?
+  amountXof           Int
+  amountKori          Int
+  state               String
+  /// sha256 of the purpose-bound handoff challenge (the raw value is only in the QR)
+  challengeHash       String    @unique
+  challengeExpiresAt  DateTime
+  /// sha256(tx, kind, customer, agent, service point, amount, expiry) fixed at binding
+  bindingHash         String?
+  boundAt             DateTime?
+  customerConfirmedAt DateTime?
+  completedAt         DateTime?
+  terminalAt          DateTime?
+  reviewDeadline      DateTime?
+  idempotencyKey      String?
+  customerDeviceId    String?
+  failureReason       String?
+  riskReasons         String?
+  commissionKori      Int       @default(0)
+  scanFailures        Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([customerId, idempotencyKey])
+  @@index([agentId, createdAt])
+  @@index([customerId, createdAt])
+  @@index([state, challengeExpiresAt])
+}
+
+/// Append-only state history of a cash transaction.
+model AgentCashEvent {
+  id        String   @id @default(cuid())
+  txId      String
+  fromState String?
+  toState   String
+  actorType String
+  actorId   String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([txId, createdAt])
+}
+
+/// Commission rule (finance-proposed, approved by a different operator). Agents never set it.
+model AgentCommissionRule {
+  id           String    @id @default(cuid())
+  purpose      String
+  bps          Int       @default(0)
+  flatKori     Int       @default(0)
+  minAmountXof Int       @default(0)
+  capKori      Int       @default(0)
+  status       String    @default("proposed")
+  createdBy    String
+  approvedBy   String?
+  approvedAt   DateTime?
+  retiredAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([purpose, status])
+}
+
+/// One commission per eligible completed cash transaction (funded or explicitly unfunded).
+model AgentCommission {
+  id                String    @id @default(cuid())
+  agentId           String
+  txId              String    @unique
+  ruleId            String?
+  amountKori        Int
+  status            String
+  ineligibleReason  String?
+  ledgerReference   String?
+  settledReference  String?
+  clawbackReference String?
+  createdAt         DateTime  @default(now())
+  settledAt         DateTime?
+
+  @@index([agentId, status])
+}
+
+/// Physical cash on hand as REPORTED by the agent. Self-reported; never authoritative.
+model AgentCashReport {
+  id             String   @id @default(cuid())
+  agentId        String
+  servicePointId String?
+  amountXof      Int
+  note           String?
+  createdAt      DateTime @default(now())
+
+  @@index([agentId, createdAt])
+}
+
+/// J6.12 assisted merchant onboarding: a rep introduces, the merchant owns.
+model MerchantOnboardingAssist {
+  id               String    @id @default(cuid())
+  introducerType   String
+  introducerId     String
+  repUserId        String
+  territoryId      String?
+  codeHash         String    @unique
+  status           String    @default("started")
+  merchantUserId   String?
+  businessId       String?
+  proposedName     String
+  proposedCategory String?
+  consentAt        DateTime?
+  expiresAt        DateTime
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([introducerType, introducerId])
+  @@index([repUserId])
 }
