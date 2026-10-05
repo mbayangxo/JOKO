@@ -1347,6 +1347,8 @@ model MoneyRequest {
   status           String    @default("pending")
   reference        String    @unique
   respondedAt      DateTime?
+  /// J4: requests expire (null = pre-J4 row, treated as never expiring).
+  expiresAt        DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -3178,4 +3180,27 @@ model WebhookReceipt {
   createdAt   DateTime @default(now())
 
   @@unique([provider, receiptHash])
+}
+
+/// J4 — a merchant-issued payment reference (QR / link). The QR carries only
+/// the opaque id; the merchant, amount and expiry are SERVER state. It can be
+/// paid once, before it expires, by the payer who confirms it.
+model MerchantCharge {
+  id           String    @id @default(cuid())
+  /// Opaque public code printed in the QR (unguessable).
+  code         String    @unique
+  businessId   String
+  createdBy    String
+  amountKori   Int
+  label        String?
+  /// open → paid | cancelled | expired
+  status       String    @default("open")
+  expiresAt    DateTime
+  paidBy       String?
+  paidAt       DateTime?
+  paymentRef   String?   @unique
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([businessId, status])
 }

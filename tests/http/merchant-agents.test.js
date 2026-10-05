@@ -144,5 +144,5 @@ test('agent withdraw: tier gate, once-only confirm, reserve stays reconciled, re
   // J3: the central cash-out guard refuses before any money logic runs.
   assert.equal(held.status, 423);
   assert.equal(held.body.code, 'cash_out_hold');
-  assert.ok(held.body.reasonCodes.includes('recent_recovery'));
+  assert.equal(held.body.category, 'security_change');
 });

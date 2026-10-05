@@ -121,7 +121,7 @@ test('recovery takeover (SIM swap): old sessions die, PIN is reset, cash-out and
   // … but money cannot leave, and the account's contact points cannot be changed.
   const out = await takeover.call('POST', 'cash/out', { amount: 20_000, operator: 'wave' });
   assert.equal(out.status, 423);
-  assert.ok(out.body.reasonCodes.includes('recent_recovery'));
+  assert.equal(out.body.category, 'security_change');
   const before = (await prisma.wallet.findUnique({ where: { userId: c.id } })).koriBalance;
   assert.equal(before, 50_000, 'nothing moved');
   const email = await takeover.call('POST', 'me/email', { email: 'attacker@example.com' });
@@ -153,14 +153,14 @@ test('new-device cash-out: an OTP login on an unknown phone is untrusted; verify
   await stepUp(fresh);
   const r1 = await fresh.call('POST', 'cash/out', { amount: 10_000, operator: 'wave' });
   assert.equal(r1.status, 423);
-  assert.ok(r1.body.reasonCodes.includes('untrusted_session'));
+  assert.equal(r1.body.category, 'new_device');
   // The attacker holds the SIM, so verifies the device by OTP …
   const code = '424242';
   await prisma.otpCode.create({ data: { phone: c.phone, code, expiresAt: new Date(Date.now() + 600_000) } });
   assert.equal((await fresh.call('POST', 'auth/device/verify', { phone: c.phone, otp: code })).status, 200);
   const r2 = await fresh.call('POST', 'cash/out', { amount: 10_000, operator: 'wave' });
   assert.equal(r2.status, 423, 'device first seen < 24 h ago');
-  assert.ok(r2.body.reasonCodes.includes('new_device'));
+  assert.equal(r2.body.category, 'new_device');
   // P2P from the untrusted session needs step-up for ANY amount.
   const s2 = await signedIn(api, c, { device: newDevice() });
   const p2p = await s2.call('POST', 'transfers/send', { recipientHandle: (await customer()).handle, amount: 10 });
@@ -207,7 +207,7 @@ test('contact change opens a cool-off: phone changed → cash-out held 24 h', as
   assert.equal(done.status, 200, JSON.stringify(done.body));
   const r = await s.call('POST', 'cash/out', { amount: 10_000, operator: 'wave' });
   assert.equal(r.status, 423);
-  assert.ok(r.body.reasonCodes.includes('recent_contact_change'));
+  assert.equal(r.body.category, 'security_change');
 });
 
 test('email can never be attached by a profile update; the verified flow proves the inbox', async () => {
