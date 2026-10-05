@@ -81,6 +81,8 @@ await insert('BusinessWallet', { id: randomUUID(), businessId: biz.id, balance: 
 await insert('PaymentFund', { id: randomUUID(), userId: users[1].id, name: 'Épargne', balanceKori: 1_500 });
 await insert('MerchantVoucher', { id: randomUUID(), userId: users[2].id, businessId: biz.id, balanceKori: 400 });
 const agent = await insert('AgentProfile', { id: randomUUID(), userId: users[3].id, agentCode: 'AGT-LEG1', displayName: 'Agent legacy', floatBalance: 120_000 });
+// The legacy createAgentProfile also wrote an active agent role.
+await insert('AccountRole', { id: randomUUID(), userId: users[3].id, role: 'agent', status: 'active' });
 const tontine = await insert('TontineGroup', { id: randomUUID(), name: 'Tontine legacy', createdBy: users[4].id, amountPerMember: 500, potBalance: 1_000 });
 await insert('TontineContribution', { id: randomUUID(), groupId: tontine.id, userId: users[4].id, cycleKey: '2026-08', amountKori: 500, reference: 'LEG-TC-1' });
 const order = await insert('Order', { id: randomUUID(), buyerId: users[5].id, businessId: biz.id, totalAmount: 1500 });
@@ -235,6 +237,45 @@ step('J5 migration behaviour-preserving on production shape (owner settlement ke
   j5,
   flow: flow5,
   invariantsAfter: check4.status === 0 ? 'ok' : JSON.parse(check4.stdout || '{}').violations,
+});
+
+// J6.0 + J6 (additive): historical partner payments stay legacy-labelled; the
+// legacy agent keeps its status and float, cannot operate until adopted and its
+// service point approved, then runs a real J6 cash-in on migrated data.
+const j6 = (await db2.query(`SELECT
+  (SELECT COUNT(*) FROM "_prisma_migrations" WHERE (migration_name LIKE '%_j6_partner_settlement' OR migration_name LIKE '%_j6_cash_network') AND finished_at IS NOT NULL)::int AS j6_applied,
+  (SELECT status FROM "AgentProfile" WHERE id = $1) AS agent_status,
+  (SELECT "floatBalance" FROM "AgentProfile" WHERE id = $1)::int AS agent_float,
+  (SELECT "servicePointId" FROM "AgentProfile" WHERE id = $1) AS agent_point,
+  (SELECT status FROM "Business" WHERE id = $2) AS business_status,
+  (SELECT COUNT(*) FROM pg_trigger WHERE tgname IN ('AgentCashTransaction_immutable', 'AgentCashEvent_append_only', 'AgentStatusEvent_append_only'))::int AS j6_guards`, [agent.id, biz.id])).rows[0];
+const j6flow = node(['--input-type=module', '-e', `
+  const { prisma } = await import('./lib/prisma.js');
+  const L = await import('./lib/agents/lifecycle.js');
+  const C = await import('./lib/agents/cash.js');
+  const out = {};
+  try { await L.requireOperatingAgent(prisma, '${users[3].id}', 'cash_in'); out.beforeAdoption = 'operating'; } catch (e) { out.beforeAdoption = e.code; }
+  const adopted = await L.adoptLegacyAgent('reh-compliance', '${agent.id}', { reason: 'J6 rehearsal adoption', servicePoint: { name: 'Boutique legacy', publicAddress: 'Marché Sandaga, Dakar' } });
+  try { await L.requireOperatingAgent(prisma, '${users[3].id}', 'cash_in'); out.beforeApproval = 'operating'; } catch (e) { out.beforeApproval = e.code; }
+  await L.decideServicePoint('reh-compliance-2', adopted.servicePointId, { status: 'active', reason: 'premises visited (rehearsal)' });
+  const { row, challenge } = await C.createCashIn('${users[1].id}', { amountXof: 10000, idempotencyKey: 'reh-j6-1' });
+  const bound = await C.scanAndBind('${users[3].id}', { qr: challenge.qr });
+  await C.customerCommit('${users[1].id}', row.id, { bindingHash: bound.bindingHash });
+  const done = await C.agentComplete('${users[3].id}', row.id, { bindingHash: bound.bindingHash });
+  const a = await prisma.agentProfile.findUnique({ where: { id: '${agent.id}' } });
+  out.state = done.state; out.floatAfter = a.floatBalance; out.statusAfter = a.status;
+  console.log(JSON.stringify(out));
+  await prisma.$disconnect();
+`]);
+const check5 = node(['scripts/money-check.mjs', '--json']);
+let flow6 = null;
+try { flow6 = JSON.parse(j6flow.stdout.trim().split('\n').pop()); } catch { flow6 = { error: j6flow.stderr.slice(0, 600) }; }
+step('J6 migrations additive on production shape (legacy agent kept + fail-closed until adopted and point approved; real J6 cash-in on migrated data)', {
+  ok: j6.j6_applied === 2 && j6.agent_status === 'active' && j6.agent_float === 120_000 && j6.agent_point === null && j6.business_status === 'active' && j6.j6_guards === 3
+    && flow6?.beforeAdoption === 'service_point_inactive' && flow6?.beforeApproval === 'service_point_inactive' && flow6?.state === 'completed' && flow6?.floatAfter === 110_000 && flow6?.statusAfter === 'active' && check5.status === 0,
+  j6,
+  flow: flow6,
+  invariantsAfter: check5.status === 0 ? 'ok' : JSON.parse(check5.stdout || '{}').violations,
 });
 
 const directWrite = await prisma2.$executeRawUnsafe(`UPDATE "Wallet" SET "koriBalance" = "koriBalance" + 1 WHERE id = (SELECT id FROM "Wallet" LIMIT 1)`).then(() => 'ACCEPTED', (e) => e.message);

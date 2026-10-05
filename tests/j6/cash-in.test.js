@@ -73,7 +73,7 @@ test('duplicate submit (same key ×5 concurrent) → one transaction; duplicate 
   assert.ok(runs.every((r) => r.status < 300 || r.body.code === 'idempotency_in_progress'), JSON.stringify(runs.map((r) => r.body)));
   assert.equal(new Set(runs.filter((r) => r.status < 300).map((r) => r.body.transaction.id)).size, 1);
   assert.equal(await prisma.agentCashTransaction.count({ where: { customerId: cust.id } }), 1);
-  assert.equal((await cust.call('POST', 'agent-cash/in', { amountXof: 12_000 }, withKey(k))).body.code, 'idempotency_key_reuse', 'same key, changed amount');
+  assert.equal((await cust.call('POST', 'agent-cash/in', { amountXof: 12_000 }, withKey(k))).body.code, 'idempotency_conflict', 'same key, changed amount');
   const qr = runs.find((r) => r.body?.qr)?.body.qr;
   const scan = await ag.s.call('POST', 'agent/cash/scan', { qr });
   const b = scan.body.transaction.bindingHash;

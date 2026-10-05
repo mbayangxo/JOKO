@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**446 routes.** Column legend:
+**492 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -41,6 +41,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST cron/daily-financial-report` | cron | cron.daily_financial_report | cron_secret |  |  |  |  | job |  |
 | `GET cron/delivery-auto-release` | cron | cron.delivery_auto_release | cron_secret |  |  |  |  | job |  |
 | `POST cron/delivery-auto-release` | cron | cron.delivery_auto_release | cron_secret |  |  |  |  | job |  |
+| `GET cron/agent-cash-sweep` | cron | cron.agent_cash_sweep | cron_secret |  |  |  |  | job |  |
+| `POST cron/agent-cash-sweep` | cron | cron.agent_cash_sweep | cron_secret |  |  |  |  | job |  |
 | `GET cron/agent-monthly-payout` | cron | cron.agent_monthly_payout | cron_secret |  |  |  |  | job |  |
 | `POST cron/agent-monthly-payout` | cron | cron.agent_monthly_payout | cron_secret |  |  |  |  | job |  |
 
@@ -70,9 +72,26 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET admin/reports/daily` | admin | finance.reports.read | operator_scope |  |  |  |  |  |  |
 | `GET admin/agents` | admin | agents.read | operator_scope |  |  |  |  |  |  |
 | `POST admin/agents` | admin | agents.onboard | operator_scope |  |  |  |  | admin+identity | no initial float here (finance tops up separately) |
-| `GET admin/agents/reconcile` | admin | agents.read | operator_scope |  |  |  |  |  |  |
+| `GET admin/agents/reconcile` | admin | agents.read | operator_scope |  |  |  |  |  | read-only report |
+| `POST admin/agents/reconcile` | admin | finance.position.read | operator_scope |  |  |  |  | admin | records exceptions; corrects nothing |
+| `GET admin/agents/liquidity` | admin | agents.read | operator_scope |  |  |  |  |  | ledger float; physical cash self-reported |
+| `GET admin/agents/:id/overview` | admin | agents.read | operator_scope |  |  |  |  |  | support-safe inspection |
+| `POST admin/agents/:id/verify-identity` | admin | agents.onboard | operator_scope |  |  |  |  | admin+identity | requires applicant KYC tier ≥ 2 |
+| `POST admin/agents/:id/activate` | admin | agents.onboard | operator_scope |  |  |  |  | identity | maker-checker agent_activation (approve: agents.activate, different operator) |
+| `POST admin/agents/:id/terminate` | admin | agents.manage | operator_scope |  |  |  |  | admin+identity |  |
+| `POST admin/agents/:id/service-point` | admin | agents.manage | operator_scope |  |  |  |  | identity | same organization only |
+| `POST admin/agents/:id/adopt` | admin | agents.onboard | operator_scope |  |  |  |  | admin+identity | legacy agent → J6 org + PENDING point; activates nothing |
+| `POST admin/service-points/:id/status` | admin | agents.onboard | operator_scope |  |  |  |  | identity |  |
+| `POST admin/service-points/:id/merchant-assist` | admin | agents.manage | operator_scope |  |  |  |  | identity |  |
+| `POST admin/cash/:id/resolve` | admin | risk.held.decide | operator_scope |  |  |  |  | identity | maker-checker agent_cash_resolve (approve: finance.adjust.approve) |
+| `POST admin/cash/:id/risk-decision` | admin | risk.held.decide | operator_scope |  |  |  |  | admin+ledger | risk_hold only: resume or return funds to owner |
+| `GET admin/agents/commission-rules` | admin | finance.position.read | operator_scope |  |  |  |  |  |  |
+| `POST admin/agents/commission-rules` | admin | finance.commission.propose | operator_scope |  |  |  |  | admin |  |
+| `POST admin/agents/commission-rules/:id/activate` | admin | finance.commission.propose | operator_scope |  |  |  |  | identity | maker-checker (approve: finance.commission.approve) |
+| `POST admin/agents/commission-budget/fund` | admin | finance.adjust.request | operator_scope |  |  |  |  | identity | maker-checker treasury funding |
+| `POST admin/agents/commissions/:id/clawback` | admin | risk.held.decide | operator_scope |  |  |  |  | identity | maker-checker; unsettled only |
 | `POST admin/agents/:id/float` | admin | finance.agent_float | operator_scope |  |  |  |  | admin+ledger | ≤ AGENT_FLOAT_SINGLE_MAX_XOF single; above → maker-checker (agent_float_topup) |
-| `POST admin/agents/:id/approve` | admin | agents.onboard | operator_scope |  |  |  |  | admin+identity |  |
+| `POST admin/agents/:id/approve` | admin | agents.onboard | operator_scope |  |  |  |  | admin+identity | review decision; operator ≠ identity verifier; does NOT activate |
 | `POST admin/agents/:id/reject` | admin | agents.onboard | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/agents/:id/suspend` | admin | agents.suspend | operator_scope |  |  |  |  | admin+identity |  |
 | `GET admin/agent-float-requests` | admin | finance.agent_float | operator_scope |  |  |  |  |  |  |
@@ -99,6 +118,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST admin/money/adjustments` | admin | finance.adjust.request | operator_scope |  |  |  |  | admin+ledger | D10: low-risk single path or dual authorization |
 | `POST admin/money/adjustments/:id/approve` | admin | finance.adjust.approve | operator_scope |  |  |  |  | admin+ledger |  |
 | `POST admin/money/adjustments/:id/reject` | admin | finance.adjust.approve | operator_scope |  |  |  |  | admin |  |
+| `GET admin/partner-payments/held` | admin | finance.position.read | operator_scope |  |  |  |  |  |  |
+| `POST admin/partner-payments/:id/release` | admin | finance.adjust.request | operator_scope |  |  |  |  | admin+ledger | J6.0: release only to the business bound at creation, mapping + merchant active |
+| `POST admin/partner-payments/:id/release/approve` | admin | finance.adjust.approve | operator_scope |  |  |  |  | admin+ledger | dual authorization; constrained adjustment |
 | `POST admin/couriers/:id/approve` | admin | couriers.onboard | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/couriers/:id/suspend` | admin | couriers.suspend | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/couriers/:id/revoke` | admin | couriers.suspend | operator_scope |  |  |  |  | admin+identity |  |
@@ -113,6 +135,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET admin/money/limits-usage` | admin | finance.position.read | operator_scope |  |  |  |  |  | D15 maker-checker threshold calibration |
 | `GET admin/businesses/lookup` | admin | businesses.read | operator_scope |  |  |  |  |  | read-only: verification, settlement, staff + authority history, order/charge/refund states |
 | `POST admin/businesses/:id/verification` | admin | merchants.verify | operator_scope |  |  |  |  | identity | operator cannot verify own business |
+| `POST admin/businesses/:id/status` | admin | businesses.suspend | operator_scope |  |  |  |  | identity | J6.0: suspended / closed business is refused as a settlement target |
 
 ## Partner
 
@@ -193,6 +216,29 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST agent/deposits/:id/confirm` | user | agent.deposit.confirm | agent-session (this agent) | agent |  |  |  | ledger+risk |  |
 | `POST agent/withdrawals/scan` | user | agent.withdraw.scan | agent-session | agent |  |  |  | ledger+risk |  |
 | `POST agent/withdrawals/:id/confirm` | user | agent.withdraw.confirm | agent-session (this agent) | agent |  |  |  | ledger+risk |  |
+| `POST agent/cash/scan` | user | agent.cash.scan | agent-session | agent |  |  |  | ledger+risk | operating agent at an active service point |
+| `POST agent/cash/:id/complete` | user | agent.cash.complete | the bound agent | agent |  |  |  | ledger+risk | agent PIN step-up |
+| `POST agent/cash/:id/decline` | user | agent.cash.decline | the bound agent | agent |  |  |  | ledger+risk |  |
+| `GET agent/cash` | user | agent.cash.read | self | agent |  |  |  |  |  |
+| `POST agent/cash-report` | user | agent.cash_report | self | agent |  |  |  |  | self-reported; never authoritative |
+| `GET agent/commissions` | user | agent.commissions.read | self | agent |  |  |  |  |  |
+| `POST agent/commissions/settle` | user | agent.commissions.settle | self | agent |  |  |  | ledger+risk |  |
+| `GET agent/lifecycle` | user | agent.lifecycle.read | self |  |  |  |  |  |  |
+| `POST agent/service-points` | user | agent.service_point.propose | organization owner |  |  |  |  |  | pending until compliance approves |
+| `PATCH agent/service-points/:id` | user | agent.service_point.update | organization owner |  |  |  |  |  | merchant assist only if permitted |
+
+## User — agent-cash
+
+| Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| `POST agent-cash/in` | user | cash.in.create | self |  |  |  |  | ledger+risk | intent only; no money until the agent completes |
+| `POST agent-cash/out` | user | cash.out.create | self |  | 2 | always | cash_out | ledger+risk | risk + PIN + tier; funds held at creation |
+| `GET agent-cash/tx` | user | cash.tx.read | self |  |  |  |  |  |  |
+| `GET agent-cash/tx/:id` | user | cash.tx.read | party (customer or the bound agent) |  |  |  |  |  |  |
+| `POST agent-cash/tx/:id/confirm` | user | cash.tx.commit | customer of this transaction |  |  |  |  | ledger+risk | cash-out: PIN step-up; binding hash must match |
+| `POST agent-cash/tx/:id/cancel` | user | cash.tx.cancel | customer of this transaction |  |  |  |  | ledger+risk | only before the customer committed |
+| `POST agent-cash/tx/:id/challenge` | user | cash.tx.challenge | customer of this transaction |  |  |  |  |  | only while unbound; old QR dies |
+| `GET agent-cash/points` | user | cash.points.read | public |  |  |  |  |  | active service points; declared hours only; no float |
 
 ## User — agents
 
@@ -578,6 +624,16 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 |---|---|---|---|---|---|---|---|---|---|
 | `POST offline/sync` | user | offline.sync | self |  |  | amount |  | ledger+risk | replays through the same guarded handlers |
 
+## User — onboarding
+
+| Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| `POST onboarding/assist` | user | onboarding.assist.start | distribution rep (capability) or permitted service point |  |  |  |  | identity |  |
+| `GET onboarding/assist/mine` | user | onboarding.assist.read | self |  |  |  |  |  |  |
+| `POST onboarding/assist/open` | user | onboarding.assist.open | merchant (code holder) |  |  |  |  |  |  |
+| `POST onboarding/assist/accept` | user | onboarding.assist.accept | merchant (code holder, KYC tier 2) |  |  |  |  | identity | merchant becomes owner; introducer gets nothing |
+| `POST onboarding/assist/decline` | user | onboarding.assist.decline | merchant (code holder) |  |  |  |  |  |  |
+
 ## User — payment-funds
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
@@ -750,10 +806,10 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | Role | Permissions |
 |---|---|
 | `support` | `ops.dashboard.read`, `support.tickets.read`, `support.tickets.write`, `support.calls`, `users.search`, `users.read`, `users.freeze`, `money.transactions.read`, `agents.read`, `distributors.read`, `businesses.read` |
-| `risk` | `ops.dashboard.read`, `risk.held.read`, `risk.held.decide`, `risk.alerts.read`, `risk.alerts.ack`, `users.search`, `users.read`, `users.read.sensitive`, `users.freeze`, `users.unfreeze.request`, `users.unfreeze.approve`, `users.credentials.invalidate`, `money.transactions.read`, `audit.read`, `agents.read`, `agents.suspend`, `couriers.suspend`, `approvals.read`, `businesses.read` |
-| `compliance` | `ops.dashboard.read`, `kyc.review`, `users.search`, `users.read`, `users.read.sensitive`, `users.unfreeze.approve`, `agents.read`, `agents.onboard`, `agents.manage`, `agents.suspend`, `couriers.onboard`, `couriers.suspend`, `distributors.read`, `distributors.manage`, `audit.read`, `approvals.read`, `businesses.read`, `merchants.verify` |
-| `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `risk.held.read`, `agents.read`, `approvals.read` |
-| `finance_approver` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.reports.read`, `finance.adjust.approve`, `finance.agent_float.approve`, `finance.refund.approve`, `approvals.read` |
+| `risk` | `ops.dashboard.read`, `risk.held.read`, `risk.held.decide`, `risk.alerts.read`, `risk.alerts.ack`, `users.search`, `users.read`, `users.read.sensitive`, `users.freeze`, `users.unfreeze.request`, `users.unfreeze.approve`, `users.credentials.invalidate`, `money.transactions.read`, `audit.read`, `agents.read`, `agents.suspend`, `couriers.suspend`, `approvals.read`, `businesses.read`, `businesses.suspend` |
+| `compliance` | `ops.dashboard.read`, `kyc.review`, `users.search`, `users.read`, `users.read.sensitive`, `users.unfreeze.approve`, `agents.read`, `agents.onboard`, `agents.activate`, `agents.manage`, `agents.suspend`, `couriers.onboard`, `couriers.suspend`, `distributors.read`, `distributors.manage`, `audit.read`, `approvals.read`, `businesses.read`, `businesses.suspend`, `merchants.verify` |
+| `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `finance.commission.propose`, `risk.held.read`, `agents.read`, `approvals.read` |
+| `finance_approver` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.reports.read`, `finance.adjust.approve`, `finance.agent_float.approve`, `finance.commission.approve`, `finance.refund.approve`, `approvals.read` |
 | `sysadmin` | `ops.health.read`, `ops.dashboard.read`, `admin.roles.read`, `admin.roles.manage`, `audit.read`, `approvals.read` |
 
 **Separation-of-duty conflicts:** these pairs can never be held by one operator.
@@ -770,6 +826,11 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `admin_role_grant` | `admin.roles.manage` | `admin.roles.manage` |
 | `user_unfreeze` | `users.unfreeze.request` | `users.unfreeze.approve` |
 | `agent_float_topup` | `finance.agent_float` | `finance.agent_float.approve` |
+| `agent_activation` | `agents.onboard` | `agents.activate` |
+| `agent_cash_resolve` | `risk.held.decide` | `finance.adjust.approve` |
+| `agent_commission_rule_activate` | `finance.commission.propose` | `finance.commission.approve` |
+| `agent_commission_budget_fund` | `finance.adjust.request` | `finance.adjust.approve` |
+| `agent_commission_clawback` | `risk.held.decide` | `finance.adjust.approve` |
 | `support_refund` | `finance.refund` | `finance.refund.approve` |
 
 **Single-operator ceilings** (decision D10):

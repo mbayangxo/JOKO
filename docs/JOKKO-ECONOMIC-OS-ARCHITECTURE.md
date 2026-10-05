@@ -61,7 +61,7 @@ The rule for every phase: **build the link you need without cutting the chain.**
 |---|---|---|---|
 | Business link (identity mapping) | Kabu ↔ Jokko | The Jokko business **owner** creates a one-time code. Kabu, authenticated with its partner key, presents the code and its business id (`POST /api/v1/business-links`). The result is an `ExternalLink(system=kebu, objectType=business)`. Revocable by the owner. | ACTIVE (J5) |
 | Payment acceptance | Kabu → Jokko → Kabu | Kabu creates a payment intent (`POST /api/v1/checkout/sessions` or `/payments/collect`). The J2 kernel / provider settles it. A signed webhook returns the result to Kabu, and **Kabu updates its own order**. | ACTIVE (Partner API) |
-| Settlement into the linked merchant's business wallet | Jokko | Partner collections settle today to one configured wallet (`PARTNER_SETTLEMENT_USER_ID`). Routing them to the linked business wallet is a J2 recipe change (provider cash-in → business account). | DORMANT, migration needed |
+| Settlement into the linked merchant's business wallet | Jokko | J6.0 (D24): a payment carrying `merchant.external_business_id` resolves through the calling partner's active link and settles via a J2 ExternalOperation bound at creation to `business:<id>:wallet`. A mapping revoked / re-pointed or a merchant suspended before confirmation → **held for review** (`partner:<id>:unallocated` + exception); release only by maker/checker to the business bound at creation. Unmapped payments: **LEGACY** platform wallet (`PARTNER_SETTLEMENT_USER_ID`, D23), can be switched off. | ACTIVE (J6.0); legacy path isolated |
 | Employee payouts / payroll | Kabu → Jokko | Kabu staff authority → Jokko payout instruction → J3 authorization (the business capability `business.pay`) → J2 posting → the employee is paid. | Payouts ACTIVE (Partner API); payroll instructions DORMANT |
 | Supplier payments / B2B purchasing | Kabu business ↔ Jokko distribution | The linked business uses Jokko B2B ordering, trade accounts and invoices. | ARCHITECTED (link exists; ordering via Jokko UI) |
 | Trade credit | Supplier → buyer | Supplier-granted terms only (§7). | Supplier credit ACTIVE (B2B); financing DORMANT |
@@ -309,7 +309,13 @@ Each item is DORMANT / ARCHITECTED / NOT ACTIVATED until it can be operated safe
 | Jokko Fulfilment | `fulfillmentOwner=jokko` (refused); inventory kinds | Facilities, operations, stock positions |
 | Jokko Logistics | Outbox events | J8 |
 | Advanced routing / freight / predictive placement | Territories, inventory locations, aggregates | J8+ |
-| Kabu per-merchant settlement, payroll instructions, product mapping, webhooks | ExternalLink, contract | Kabu-side build + J2 recipe for business settlement |
+| Kabu payroll instructions, per-merchant payouts, product mapping, webhooks | ExternalLink, contract (per-merchant settlement ACTIVE since J6.0) | Kabu-side build; merchant authority for debits |
+| Agent credit lines | None (float can never go negative) | A funded credit facility, licence / partner, credit-risk policy |
+| Agent cash prediction | Liquidity view labels `cashPrediction: NOT IMPLEMENTED` | Data history + model governance |
+| Agent-to-agent rebalancing | Liquidity view `rebalancing: ARCHITECTED-DORMANT`; float moves only via finance | Rebalancing recipe (float → float) + maker/checker + physical logistics |
+| Armored cash logistics, bank cash settlement | Physical cash only self-reported (`AgentCashReport`) | Contracts with CIT / banks; reconciliation against bank statements |
+| Cross-border agents | None (XOF peg only) | Licensed corridors, FX, regulator approval |
+| Franchise / multi-level agent hierarchies | `AgentOrganization` (one level: organization → service points → agents) | Hierarchy model + commission split rules + J3 authority |
 | Marketplace / WhatsApp / restaurant channels | Channel registry (refused) | Adapters |
 | OpportunityOS feed | `demandAggregates` | Governance approval + consumer |
 
@@ -342,7 +348,7 @@ A feature request that falls in "Out" goes to Kabu, or to a contract between the
 | Phase | Builds on this architecture |
 |---|---|
 | J5 | Business Lite + shared business infrastructure + contracts (this document) |
-| J6 | Production readiness of J2–J5; merchant settlement migration decision; Kabu link activation |
+| J6 | Agents & cash network (lifecycle, organizations, service points, secure cash-in/out, funded commissions, liquidity, reconciliation) + Kabu per-merchant settlement (J6.0) |
 | J7 | Distribution network operations (wholesale catalog UI, restocking, collections) |
 | J8 | Jokko Logistics (consumes the outbox), then fulfilment |
 | Later | Licensed card acceptance, receivables financing (IAWIC / partners), OpportunityOS feed |

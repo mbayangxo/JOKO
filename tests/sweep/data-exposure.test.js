@@ -84,6 +84,8 @@ async function candidatesFor(path, me, myBizIds) {
     'deposits/agent/:reference': `SELECT "reference" FROM "AgentDeposit" ORDER BY random() LIMIT 2`,
     'deposits/card/:reference': `SELECT "reference" FROM "StripeDeposit" ORDER BY random() LIMIT 2`,
     'withdrawals/agent/:reference': `SELECT "reference" FROM "AgentWithdrawal" ORDER BY random() LIMIT 2`,
+    // J6: someone else's cash transaction (the attacker holds the agent role but is bound to none).
+    'agent-cash/tx/:id': `SELECT "id" FROM "AgentCashTransaction" WHERE "customerId" <> '${me}' ORDER BY random() LIMIT 2`,
     'hubs/parcels/:id': `SELECT "id" FROM "HubParcel" ORDER BY random() LIMIT 2`,
     'marketplace/orders/:id': `SELECT "id" FROM "Order" ORDER BY random() LIMIT 2`,
     'support/tickets/:id': `SELECT "id" FROM "SupportTicket" ORDER BY random() LIMIT 2`,
@@ -126,6 +128,7 @@ async function candidatesFor(path, me, myBizIds) {
 const QUERY_DEFAULTS = {
   'users/lookup': '?q=test',
   'agents/nearby': '?lat=14.69&lng=-17.44',
+  'agent-cash/points': '?lat=14.69&lng=-17.44&service=cash_out',
   'deliveries/nearby': '?lat=14.69&lng=-17.44',
   'marketplace/shops/nearby': '?lat=14.69&lng=-17.44',
   'marketplace/search': '?q=a',
