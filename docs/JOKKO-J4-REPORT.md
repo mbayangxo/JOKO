@@ -343,8 +343,8 @@ The tests were not weakened. `tests/load/concurrent.test.js` is unchanged, and t
 ## 17. J2 invariant results
 
 Every J4 test asserts `assertInvariants` after each scenario. Other results:
-- `npm run money:check` on the gate DB: ⟨MC⟩;
-- after load, sweep and soak: ⟨MC2⟩;
+- `npm run money:check` on the gate DB: OK (908 entries, 1 871 postings, 590 accounts after the full suite);
+- after load, sweep and soak: OK;
 - in the rehearsal, after migration, flows and J4 legacy-request payment: ok.
 
 ## 18. J3 authorization sweep results
@@ -359,13 +359,28 @@ Every J4 test asserts `assertInvariants` after each scenario. Other results:
   - `money/payments/:reference/refund` (must be refused for non-payees).
 - The permission matrix was regenerated: 400 routes, all with policies.
 
-Result: ⟨SWEEP⟩
+Result: **3/3 pass** on the gate DB after the full suite: 114 authenticated GET routes probed by an unrelated multi-role attacker with other people's ids (no PII, balance, secret or raw-row leak; no foreign 2xx; no 5xx); every admin route refuses a user token; 90 mutating id-routes / 174 calls on other people's objects all refused, money invariants intact.
 
 ## 19. Full fresh-DB gate
 
-Fresh database `joko_j4_gate`, commit ⟨COMMIT⟩:
+Fresh database `joko_j4_gate`, commit `8523cba`:
 
-⟨GATE⟩
+| Step | Result |
+|---|---|
+| Fresh DB + `test:db:setup` (schema + DB guards) | exit 0 |
+| `npm test` (unit, integration, security, http, money, j3, **j4**) | **440 / 440 pass**, 0 skipped (J3 gate: 412) |
+| `money:check` | OK |
+| `test:load` (1 000 concurrent senders; overdraft race; cash-out race) | 3 / 3 |
+| `test:sweep` (data exposure, admin refusal, mutation sweep) | 3 / 3 |
+| Soak 5 × 1 000, **no retries** | 5 000 sends, **0 failures**, invariants ok, p99 ≤ 154 ms |
+| Message-request migration dry run | exit 0 |
+| `prisma migrate diff` migrations ⇄ schema | no drift (exit 0) |
+| `money:check` after load / sweep / soak | OK |
+| Production-shaped rehearsal | **15 / 15** (includes the J4 step) |
+| `db-migrate-deploy.mjs` without activation | inert, exit 3 (expected) |
+| `tsc --noEmit` | 5 errors, all pre-existing in `supabase/functions/cron-proxy/index.ts` (Deno), unchanged since J3; none from J4 |
+| `expo export --platform web` | exit 0 |
+| `npm audit --omit=dev` | 42 (13 moderate, 29 high, 0 critical), unchanged since J3 |
 
 ## 20. Production-shaped rehearsal (schema changed)
 
@@ -379,7 +394,7 @@ Migration `20261006000000_j4_money` is **additive only**:
 - `MerchantCharge` is empty;
 - invariants are ok.
 
-Result: ⟨REH⟩
+Result: **15 / 15 ok**: baseline production shape → legacy value seeded → no destructive diff → deploy refuses without activation and before baselining → baseline + `migrate deploy` (J1–J4) → backfill dry run/execute → invariants → legacy totals == ledger → kernel flows on migrated data → invariants → **J4 step** (migration applied, legacy pending request intact with `expiresAt` NULL, accepted through the J4 service, `MerchantCharge` empty, invariants ok) → direct balance write refused → read-only exposure pack.
 
 ## 21. Unresolved risks
 
@@ -395,7 +410,17 @@ Result: ⟨REH⟩
 
 ## 22. Exact commits
 
-⟨COMMITS⟩
+All on `claude/jokko-forensic-audit-rprqia` (pushed; no PR; nothing deployed):
+
+| Commit | Content |
+|---|---|
+| `c1af530` | J3 decisions D11–D17; device trust no longer reads diaspora status (D16) + regression tests |
+| `0efd8a0` | J4 server: money home / activity / receipts, preview, intents, charges (QR), refunds, support lookup, limits usage, user-safe reasons, block/expiry/spam rules, idempotency-after-commit fix, J4 migration |
+| `1a6c519` | J4 client: single-intent submit + intent polling (send, merchant/charge, cash), wallet balance/history/receipts, charge QR routing; client UX tests; intent tests |
+| `ca16e10` | Item P: account-open race fix, lock-order fix, soak harness, regression tests, J4 sweeps, J4 rehearsal step, regenerated matrix |
+| `cebb6b6`, `7a16dd1` | This report |
+| `8523cba` | Soak harness: collision-free test phone numbers (gate commit) |
+| *(this commit)* | Report: gate results |
 
 ## 23. J5 recommendation
 
