@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**388 routes.** Column legend:
+**400 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -109,6 +109,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST admin/approvals/:id/approve` | admin | (authenticated) | operator_scope |  |  |  |  | identity | approve permission depends on the action |
 | `POST admin/approvals/:id/reject` | admin | (authenticated) | operator_scope |  |  |  |  | identity | approver or requester |
 | `GET admin/identity-events` | admin | audit.read | operator_scope |  |  |  |  |  |  |
+| `GET admin/money/lookup` | admin | money.transactions.read | operator_scope |  |  |  |  |  | read-only stage of any reference; cannot change balances |
+| `GET admin/money/limits-usage` | admin | finance.position.read | operator_scope |  |  |  |  |  | D15 maker-checker threshold calibration |
 
 ## Partner
 
@@ -491,6 +493,21 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 |---|---|---|---|---|---|---|---|---|---|
 | `POST merchants/:id/pay` | user | merchant.pay | payer→counterparty |  | 1 | amount |  | ledger+risk |  |
 | `GET merchants/:id/public` | user | merchant.public.read | public |  |  |  |  |  |  |
+
+## User — money
+
+| Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| `GET money/home` | user | wallet.read | self |  |  |  |  |  | available / held / pending + allowed actions with user-safe reasons |
+| `GET money/activity` | user | wallet.history.read | self |  |  |  |  |  | ledger-based history |
+| `GET money/activity/:reference` | user | wallet.receipt.read | party (the reference touches the caller’s accounts / own operation) |  |  |  |  |  |  |
+| `POST money/preview` | user | wallet.preview | self |  |  |  |  |  | server-authoritative amount / fee / total; executes nothing |
+| `GET money/intents/:id` | user | wallet.intent.read | self (own Idempotency-Key namespace) |  |  |  |  |  |  |
+| `POST money/charges` | user | merchant.charge.create | business:business.catalog.manage |  |  |  |  | ledger |  |
+| `GET money/charges/:id` | user | merchant.charge.view | opaque code holder (server-provided merchant + amount only) |  |  |  |  |  |  |
+| `POST money/charges/:id/pay` | user | merchant.charge.pay | payer (pays own wallet → merchant; once; before expiry; amount must match) |  | 1 | amount |  | ledger+risk |  |
+| `POST money/charges/:id/cancel` | user | merchant.charge.cancel | business:business.catalog.manage |  |  |  |  |  |  |
+| `POST money/payments/:reference/refund` | user | merchant.refund | payee of the original payment (or its business treasury) |  |  |  |  | ledger+risk |  |
 
 ## User — notifications
 

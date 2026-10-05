@@ -49,6 +49,9 @@ const PUBLIC_BY_DESIGN = new Set([
   'channels/:id',
   'affiliate/resolve/:code',
   'trending/alerts/:id',
+  // J4: a charge code is a bearer payment reference shown on a QR — whoever
+  // holds it may see merchant name + amount (never payer identity or balances).
+  'money/charges/:id',
 ]);
 
 /**
@@ -57,6 +60,8 @@ const PUBLIC_BY_DESIGN = new Set([
  * the exact dropoff or buyer id.
  */
 const ROLE_BY_DESIGN = {
+  // J4: intent lookup is per caller — someone else's key reads as "not_found", nothing else.
+  'money/intents/:id': (b) => b?.state === 'not_found' && Array.isArray(b?.references) && b.references.length === 0,
   'deliveries/:id': (b) => b?.status === 'open' && b?.dropoff?.exact == null && b?.dropoff?.lat == null && b?.buyerId === undefined,
 };
 
@@ -64,7 +69,7 @@ const ROLE_BY_DESIGN = {
 const UPSTREAM_ROUTES = new Set(['charts/search', 'geo/search']);
 
 /** Routes where the attacker's OWN balance legitimately appears. */
-const OWN_BALANCE_ROUTES = new Set(['wallet', 'me', 'me/summary', 'kori/reserve', 'agent/me', 'businesses/mine', 'businesses/:id/wallet']);
+const OWN_BALANCE_ROUTES = new Set(['wallet', 'money/home', 'me', 'me/summary', 'kori/reserve', 'agent/me', 'businesses/mine', 'businesses/:id/wallet']);
 
 const pick = async (sql) => (await prisma.$queryRawUnsafe(sql)).map((r) => Object.values(r)[0]).filter(Boolean);
 
@@ -90,6 +95,9 @@ async function candidatesFor(path, me, myBizIds) {
     'profiles/:id': `SELECT "id" FROM "User" WHERE ${notMine('"id"')} ORDER BY random() LIMIT 2`,
     'merchants/:id': otherBiz,
     'marketplace/shops/:id': otherBiz,
+    'money/activity/:reference': `(SELECT e."reference" FROM "JournalEntry" e JOIN "Posting" p ON p."entryId" = e."id" JOIN "LedgerAccount" a ON a."id" = p."accountId" WHERE a."code" LIKE 'customer:%' AND a."code" NOT LIKE 'customer:${me}:%' ORDER BY random() LIMIT 2) UNION ALL (SELECT "reference" FROM "ExternalOperation" WHERE "userId" <> '${me}' ORDER BY random() LIMIT 1)`,
+    'money/intents/:id': `SELECT regexp_replace("key", '^api:[^:]+:[^:]+:', '') FROM "ApiIdempotency" WHERE "provider" = 'api' AND "userId" <> '${me}' ORDER BY random() LIMIT 2`,
+    'money/charges/:id': `SELECT "code" FROM "MerchantCharge" ORDER BY random() LIMIT 1`,
     'affiliate/resolve/:code': `SELECT "linkCode" FROM "AffiliateLink" ORDER BY random() LIMIT 1`,
   };
   const prefix = Object.keys(table).find((k) => path === k || path.startsWith(`${k}/`));

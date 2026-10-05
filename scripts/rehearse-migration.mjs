@@ -88,6 +88,8 @@ const task = await insert('DeliveryTask', { id: randomUUID(), orderId: order.id,
 await insert('DeliveryEscrow', { id: randomUUID(), deliveryTaskId: task.id, buyerId: users[5].id, amountNational: 1500, koriPayout: 150, status: 'reserved', reference: 'LEG-ESC-1' });
 const offering = await insert('KebuInvestmentOffering', { id: randomUUID(), businessId: biz.id, title: 'Legacy raise', targetKori: 100_000 });
 await insert('KebuInvestment', { id: randomUUID(), offeringId: offering.id, investorId: users[2].id, amountKori: 2_500, reference: 'LEG-INV-1' });
+// J4: a legacy pending money request (pre-expiry) must survive unchanged.
+const legacyRequest = await insert('MoneyRequest', { id: randomUUID(), requesterId: users[0].id, payerId: users[1].id, amount: 700, status: 'pending', reference: 'LEG-REQ-1' });
 
 const legacy = (await db.query(`SELECT
   (SELECT SUM("koriBalance") FROM "Wallet")::int AS wallets,
@@ -172,6 +174,30 @@ step('kernel flows on migrated data (P2P + legacy escrow refund)', { ok: flows.s
 const check2 = node(['scripts/money-check.mjs', '--json']);
 const c2 = JSON.parse(check2.stdout || '{}');
 step('invariant checker after flows', { ok: check2.status === 0, violations: c2.violations, stats: c2.stats });
+
+// J4 migration (additive): legacy request untouched, never auto-expired (no invented expiry),
+// charges table present and empty; the request is still payable through the J4 service.
+const j4 = (await db2.query(`SELECT
+  (SELECT COUNT(*) FROM "_prisma_migrations" WHERE migration_name LIKE '%_j4_money' AND finished_at IS NOT NULL)::int AS j4_applied,
+  (SELECT COUNT(*) FROM "MerchantCharge")::int AS charges,
+  (SELECT status FROM "MoneyRequest" WHERE id = $1) AS req_status,
+  (SELECT "expiresAt" FROM "MoneyRequest" WHERE id = $1) AS req_expires,
+  (SELECT amount FROM "MoneyRequest" WHERE id = $1)::int AS req_amount`, [legacyRequest.id])).rows[0];
+const legacyPay = node(['--input-type=module', '-e', `
+  const { prisma } = await import('./lib/prisma.js');
+  const { acceptMoneyRequest } = await import('./lib/money-request-service.js');
+  await acceptMoneyRequest(prisma, { requestId: '${legacyRequest.id}', payerUserId: '${users[1].id}' });
+  const r = await prisma.moneyRequest.findUnique({ where: { id: '${legacyRequest.id}' } });
+  console.log(r.status);
+  await prisma.$disconnect();
+`]);
+const check3 = node(['scripts/money-check.mjs', '--json']);
+step('J4 migration additive on production shape (legacy request preserved, no invented expiry, still payable; charges empty)', {
+  ok: j4.j4_applied === 1 && j4.charges === 0 && j4.req_status === 'pending' && j4.req_expires === null && j4.req_amount === 700 && legacyPay.status === 0 && check3.status === 0,
+  j4: { ...j4, req_expires: j4.req_expires ?? null },
+  legacyRequestPaidThroughJ4: legacyPay.stdout.trim() || legacyPay.stderr.slice(0, 300),
+  invariantsAfter: check3.status === 0 ? 'ok' : JSON.parse(check3.stdout || '{}').violations,
+});
 
 const directWrite = await prisma2.$executeRawUnsafe(`UPDATE "Wallet" SET "koriBalance" = "koriBalance" + 1 WHERE id = (SELECT id FROM "Wallet" LIMIT 1)`).then(() => 'ACCEPTED', (e) => e.message);
 step('direct balance write after migration is refused', { ok: directWrite !== 'ACCEPTED', result: directWrite.slice(0, 120) });

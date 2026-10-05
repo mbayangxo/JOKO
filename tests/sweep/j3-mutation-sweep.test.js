@@ -53,6 +53,8 @@ const PUBLIC_BY_DESIGN = new Set([
   // request). Pickup/deliver/confirm on someone else's job stay refused.
   'POST deliveries/:id/accept',
   'POST deliveries/:id/claim',
+  // J4: paying a merchant's charge (QR) is paying that merchant — the attacker's own money, server amount.
+  'POST money/charges/:id/pay',
 ]);
 
 /** Object id sources for each param route (rows that are NOT the attacker's). */
@@ -95,6 +97,8 @@ function sourceFor(routeKey) {
     [/^businesses\/:id\/school\/periods\/:subId/, `SELECT "businessId" || '|' || "id" FROM "SchoolFeePeriod" WHERE "businessId" NOT IN ($MYBIZ)`],
     [/^businesses\/:id\/cooperative\/deliveries\/:subId/, `SELECT "businessId" || '|' || "id" FROM "FarmerDeliveryLog" WHERE "businessId" NOT IN ($MYBIZ)`],
     [/^businesses\/:id/, `SELECT "id" FROM "Business" WHERE "id" NOT IN ($MYBIZ)`],
+    [/^money\/charges\/:id/, `SELECT "code" FROM "MerchantCharge" WHERE "businessId" NOT IN ($MYBIZ)`],
+    [/^money\/payments\/:reference/, `SELECT e."reference" FROM "JournalEntry" e WHERE e."kind" IN ('pay_merchant','merchant_payment','charge_payment','business_payment') AND NOT EXISTS (SELECT 1 FROM "Posting" p JOIN "LedgerAccount" a ON a."id" = p."accountId" WHERE p."entryId" = e."id" AND (a."code" LIKE 'customer:' || $ME || ':%' OR a."ownerId" IN ($ME, $MYBIZ)))`],
     [/^roles\/:id/, null], // self-scoped: covered by tests/j3/authz-roles (no foreign object)
   ];
   const hit = map.find(([re]) => re.test(path));
@@ -155,6 +159,12 @@ test('every mutating id-route, called by an unrelated multi-role attacker on oth
   await prisma.userPoll.create({ data: { userId: victim.id, question: 'Q?', options: ['a', 'b'] } });
   const friendA = await createUserWithWallet({});
   await prisma.friendRequest.create({ data: { fromId: victim.id, toId: friendA.id } }).catch(() => {});
+  const vBiz = await prisma.business.findFirst({ where: { id: { notIn: myBiz } }, select: { id: true, ownerId: true } });
+  if (vBiz) {
+    await prisma.merchantCharge.create({
+      data: { code: `SWEEP${crypto.randomBytes(8).toString('hex')}`, businessId: vBiz.id, createdBy: vBiz.ownerId, amountKori: 100, expiresAt: new Date(Date.now() + 30 * 60_000) },
+    });
+  }
 
   const routes = listRoutes().filter((r) => r.auth === 'user' && r.method !== 'GET' && r.path.includes(':'));
   const findings = [];
