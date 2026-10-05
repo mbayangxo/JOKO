@@ -86,7 +86,10 @@ function describe(error) {
     stack: String(error?.stack ?? '').split('\n').slice(1, 6).map((l) => l.trim()),
   };
 }
-const uniquePhone = () => `+22177${crypto.randomInt(1e6, 9999999)}${crypto.randomInt(10, 99)}`;
+// Collision-free synthetic numbers (a random generator collided after ~45k users).
+const RUN = `${Date.now()}`.slice(-7);
+let phoneSeq = 0;
+const uniquePhone = () => `+999${RUN}${String(++phoneSeq).padStart(6, '0')}`;
 
 const summary = { rounds: ROUNDS, senders: SENDERS, concurrency: CONCURRENCY, retry: RETRY, sends: 0, failures: [], retriedOk: 0, roundStats: [] };
 const t0 = Date.now();
