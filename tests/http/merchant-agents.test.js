@@ -123,6 +123,24 @@ test('agent deposit respects KYC tier balance caps (tier 1: 5 000 ₭)', async (
   assert.equal((await prisma.agentProfile.findUnique({ where: { id: ag.profile.id } })).floatBalance, 200_000);
 });
 
+test('agent withdraw: the customer no longer has the funds at confirmation → clean 4xx, nothing moves (was HTTP 500)', async () => {
+  const ag = await agent(100_000);
+  const cust = await actor(3000, 2);
+  const w1 = await call('POST', 'withdrawals/agent', cust, { body: { amount: 20_000 } });
+  const w2 = await call('POST', 'withdrawals/agent', cust, { body: { amount: 20_000 } });
+  assert.equal(w1.status, 201, JSON.stringify(w1.body));
+  assert.equal(w2.status, 201, JSON.stringify(w2.body));
+  const [r1, r2] = await Promise.all([w1, w2].map((w) => prisma.agentWithdrawal.findUnique({ where: { reference: w.body.reference } })));
+  assert.ok((await call('POST', `agent/withdrawals/${r1.id}/confirm`, ag)).status < 300);
+  const floatBefore = (await prisma.agentProfile.findUnique({ where: { id: ag.profile.id } })).floatBalance;
+  const second = await call('POST', `agent/withdrawals/${r2.id}/confirm`, ag);
+  assert.equal(second.status, 400, JSON.stringify(second.body));
+  assert.equal(second.body.code, 'customer_insufficient_funds');
+  assert.equal(await bal(cust), 1000);
+  assert.equal((await prisma.agentProfile.findUnique({ where: { id: ag.profile.id } })).floatBalance, floatBefore);
+  assert.equal((await prisma.agentWithdrawal.findUnique({ where: { id: r2.id } })).status, 'pending');
+});
+
 test('agent withdraw: tier gate, once-only confirm, reserve stays reconciled, recovery hold', async () => {
   const ag = await agent(100_000);
   const t1 = await actor(3000, 1);
