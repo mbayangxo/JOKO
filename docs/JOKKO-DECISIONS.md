@@ -60,3 +60,17 @@ The J5 gate was accepted **locally**. The code gate is `fa0700c` and the report 
 | D25 | **Distribution representatives, merchant staff and financial agents are separate authority domains.** Their permissions are never combined implicitly; one role never grants another. | J3/J5 business capabilities vs J6 agent authority; tested adversarially (J6.13). |
 | D26 | **J5 Business Lite stays deliberately lighter than Kabu Shop.** Kabu/Shopify is not rebuilt inside Jokko. | Scope guard in the architecture document, §16. |
 | D27 | `docs/JOKKO-ECONOMIC-OS-ARCHITECTURE.md` is a **binding architectural constraint** for later phases. | Changing it is a recorded decision. |
+
+## J6: proposed decisions (awaiting acceptance)
+
+These are the choices J6 was built on. They are **not accepted decisions** until the owner says so. Each is reversible without data loss.
+
+| # | Proposal | Why / where |
+|---|---|---|
+| P-J6-1 | The legacy bearer-QR agent routes (`deposits/agent`, `withdrawals/agent`, `agent/deposits/*`, `agent/withdrawals/*` writes) are **retired (410)**. Their history stays readable. | Whoever held the withdrawal QR could collect the cash (J6 report §0 A1). |
+| P-J6-2 | Legacy active agents are **fail-closed** until compliance adopts them (organization + approved service point). No bulk migration; read-only production inspection first (as D22). | `POST admin/agents/:id/adopt`; rehearsal §27. |
+| P-J6-3 | **Customer fee 0** for agent cash-in and cash-out (consistent with D18). Agent commissions come only from the funded commission budget. | `lib/agents/commission.js`. |
+| P-J6-4 | **No commission rule is active and the budget is 0 by default.** Rates are a finance/business decision, made through the rule + maker-checker machinery. The legacy monthly "prime" estimate stays LEGACY and accrues nothing new. | J6 report §9, risk 5. |
+| P-J6-5 | Physical cash is **self-reported only** and never shown as authoritative. | `AgentCashReport`, liquidity view. |
+| P-J6-6 | Default cash-network limits (`lib/agents/limits.js`): challenge 15 min; completion window 30 min, then review; customer cash-out 1 000 000 XOF/day and 6/day; standard point 500 000 per operation; business agent required above 500 000. | Configurable, validated `AGENT_CASH_LIMITS_JSON`. |
+| P-J6-7 | Unmapped Kabu payments keep the **legacy platform settlement by default**, with a switch (`PARTNER_LEGACY_PLATFORM_SETTLEMENT=false`). Recommended to switch off once Kabu sends `merchant.external_business_id` for every mapped merchant, **after** deciding how Kabu payouts are funded (risk 4). | J6.0. |
