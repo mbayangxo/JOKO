@@ -46,3 +46,17 @@ The J4 gate was accepted **locally**. It has not been deployed: production is un
 | D18 | **Fees are 0** for P2P, money requests, merchant payments, internal Jokko transfers and cash-out. No fee schedule is invented without real provider, agent and unit-economics data. The fee architecture stays configurable and ledger-backed. Every future fee must be (1) server-authoritative, (2) disclosed before confirmation, (3) posted as a **separate ledger posting**, (4) attributed to the correct funded/revenue account, and (5) shown on the receipt. | `lib/money/policy.js` defaults every flow to 0. `MONEY_FEES_BPS` is ignored for all flows until a flow has a separate fee posting wired into the kernel (today only cash-out has one). The preview and the receipt show the fee line. |
 | D19 | **Pre-J4 money requests are not retroactively expired.** They are preserved until production has been inspected read-only. New requests use the 7-day expiry policy. | Legacy rows keep `expiresAt = NULL` (proven in the J4 rehearsal). No backfill or expiry job runs on them. |
 | D20 | J4 follow-ups are ordinary cleanup: the money-request UI shows the expired and limit states; the merchant UI for creating and showing J4 charge QR codes is completed in J5. The J4 architecture is not reopened unless a regression is found. | Request UI fixed at the start of J5. Merchant charge UI is part of J5 §D. |
+
+## D-J5: Merchant + Business OS (recorded at J5 acceptance)
+
+The J5 gate was accepted **locally**. The code gate is `fa0700c` and the report commit is `025654a`. Nothing is deployed: production is untouched, branch deployments stay disabled, the database deploy step stays inert unless explicitly activated, and the Kebu Supabase project is not touched.
+
+| # | Decision | How it applies |
+|---|---|---|
+| D21 | **New businesses settle merchant payments into their business wallet.** | `Business.settlementMode` defaults to `business`. |
+| D22 | **Existing businesses keep their current owner-personal settlement** until read-only production inspection. **No bulk migration.** | The J5 migration sets existing non-brand businesses to `owner`. Only the owner can switch, one-way. |
+| D23 | Kabu's current **platform-wide settlement wallet** (`PARTNER_SETTLEMENT_USER_ID`) is **legacy integration behaviour**, not the desired architecture. | The path is isolated and labelled legacy (J6.0); new mapped businesses never use it. |
+| D24 | Kabu merchants mapped through the consented Kabu↔Jokko business mapping **settle to the mapped merchant's business wallet**. | J6.0 settlement recipe. |
+| D25 | **Distribution representatives, merchant staff and financial agents are separate authority domains.** Their permissions are never combined implicitly; one role never grants another. | J3/J5 business capabilities vs J6 agent authority; tested adversarially (J6.13). |
+| D26 | **J5 Business Lite stays deliberately lighter than Kabu Shop.** Kabu/Shopify is not rebuilt inside Jokko. | Scope guard in the architecture document, §16. |
+| D27 | `docs/JOKKO-ECONOMIC-OS-ARCHITECTURE.md` is a **binding architectural constraint** for later phases. | Changing it is a recorded decision. |
