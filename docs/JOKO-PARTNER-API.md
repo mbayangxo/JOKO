@@ -77,7 +77,21 @@ Response:
 
 `payment_url` always present — hosted Joko pay page. Buyer enters phone; MM is push-to-phone in live mode.
 
-Idempotency: same `partnerId` + `reference` + same `amount_xof` returns existing session.
+Idempotency: same `partnerId` + `reference` + same `amount_xof` + same merchant returns the existing session; a different amount or merchant is `409 idempotency_conflict`.
+
+### Per-merchant settlement (J6.0 — mapped merchants)
+
+Send the Kabu shop id of a merchant linked through `POST /v1/business-links`:
+
+```json
+{ "reference": "shop_order_…", "amount_xof": 5000, "merchant": { "external_business_id": "kabu_shop_123" } }
+```
+
+- Resolves **only** through the consented, active link of the calling partner. Unknown / revoked → `409 merchant_not_linked`; suspended merchant → `409 merchant_inactive`. Optional `merchant.jokko_business_id` is an assertion (`409 mapping_mismatch` if different), never an instruction.
+- On provider confirmation the money settles to **that merchant's business wallet** — never the platform settlement wallet, never another business.
+- If the link was revoked / re-pointed or the merchant suspended between creation and confirmation, the collected funds are **held for review** (`settlement.status = held_for_review`) and released only by Jokko finance (maker/checker) to the merchant the payment was created for.
+- Every response and the `paid` webhook carry `settlement: { target, legacy, external_business_id, status, ledger_reference }`.
+- **LEGACY:** a payment without `merchant.external_business_id` settles to `PARTNER_SETTLEMENT_USER_ID` (`settlement.target = legacy_platform`). `PARTNER_LEGACY_PLATFORM_SETTLEMENT=false` refuses such requests (`400 merchant_required`). Payouts still debit the platform settlement wallet (per-merchant payouts: DORMANT).
 
 ### `POST /v1/payments/collect`
 

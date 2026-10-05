@@ -323,6 +323,12 @@ model Business {
   /// J5: retail | services | restaurant | distribution | wholesale | manufacturer | cooperative.
   /// Distribution / wholesale unlock merchant relationships + territories.
   operatingMode              String    @default("retail")
+  /// J6.0: active | suspended | closed. A non-active business is refused as
+  /// a settlement target (partner payments are held for review instead).
+  status                     String    @default("active")
+  statusReason               String?
+  statusChangedAt            DateTime?
+  statusChangedBy            String?
   phone                      String?
   createdAt                  DateTime  @default(now())
   updatedAt                  DateTime  @updatedAt
@@ -1504,31 +1510,40 @@ model RailTransaction {
  * External shop / partner collect sessions (Kebu, Rect, …).
  */
 model PartnerPayment {
-  id               String    @id @default(cuid())
-  partnerId        String
-  reference        String
-  amountXof        Int
-  currency         String    @default("XOF")
-  status           String    @default("pending")
-  phone            String?
-  method           String    @default("auto")
-  description      String?
-  metadataJson     String?   @db.Text
-  webhookUrl       String?
-  returnUrl        String?
-  cancelUrl        String?
-  checkoutToken    String    @unique
-  railReference    String?
-  settlementUserId String?
-  failureReason    String?
-  completedAt      DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                   String    @id @default(cuid())
+  partnerId            String
+  reference            String
+  amountXof            Int
+  currency             String    @default("XOF")
+  status               String    @default("pending")
+  phone                String?
+  method               String    @default("auto")
+  description          String?
+  metadataJson         String?   @db.Text
+  webhookUrl           String?
+  returnUrl            String?
+  cancelUrl            String?
+  checkoutToken        String    @unique
+  railReference        String?
+  settlementUserId     String?
+  /// J6.0 (D23/D24): legacy_platform (LEGACY: PARTNER_SETTLEMENT_USER_ID wallet)
+  /// | business_wallet (consented Kabu↔Jokko mapping) | held_for_review
+  /// (collected but not routable — partner unallocated + reconciliation exception).
+  settlementTarget     String    @default("legacy_platform")
+  externalBusinessId   String?
+  settlementBusinessId String?
+  externalLinkId       String?
+  settlementReference  String?
+  failureReason        String?
+  completedAt          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   webhookDeliveries PartnerWebhookDelivery[]
 
   @@unique([partnerId, reference])
   @@index([status, createdAt])
+  @@index([settlementBusinessId])
   @@index([phone])
 }
 

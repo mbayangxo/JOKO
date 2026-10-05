@@ -164,7 +164,7 @@ test('credit is never self-selected; dormant capabilities are refused, not faked
   assert.equal(methods.softpos_card, 'DORMANT');
   assert.equal(methods.device_tap, 'DORMANT');
   assert.equal(methods.cash, 'ACTIVE');
-  assert.equal(caps.body.kabuContract.perMerchantSettlement.status, 'DORMANT');
+  assert.equal(caps.body.kabuContract.perMerchantSettlement.status, 'ACTIVE');
 });
 
 test('addresses: a home is never public; a customer’s delivery address is shared only with fulfilment roles while the order is active', async () => {
