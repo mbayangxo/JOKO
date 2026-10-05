@@ -156,6 +156,16 @@ test('every mutating id-route, called by an unrelated multi-role attacker on oth
   const own = await prisma.business.create({ data: { ownerId: user.id, name: `Sweep ${crypto.randomBytes(3).toString('hex')}` } });
   await prisma.accountRole.createMany({ data: ['personal', 'driver', 'agent'].map((role) => ({ userId: user.id, role, status: 'active' })) });
   await prisma.agentProfile.create({ data: { userId: user.id, agentCode: `MS${crypto.randomBytes(3).toString('hex')}`, displayName: 'Sweep agent', status: 'active' } });
+
+  // J6: legacy agent sessions are no longer created by any flow, but production has them
+  // (history routes stay live): seed one foreign legacy deposit + withdrawal to attack.
+  {
+    const victim = await createUserWithWallet({ koriBalance: 0 });
+    const k = crypto.randomBytes(6).toString('hex');
+    const exp = new Date(Date.now() + 15 * 60_000);
+    await prisma.agentDeposit.create({ data: { reference: `AGD-LEG-${k}`, token: `legdep${k}`, userId: victim.id, amountXof: 5000, status: 'pending', expiresAt: exp } });
+    await prisma.agentWithdrawal.create({ data: { reference: `AGW-LEG-${k}`, token: `legwd${k}`, userId: victim.id, amountXof: 5000, status: 'pending', expiresAt: exp } });
+  }
   const employer = await prisma.business.findFirst({ where: { ownerId: { not: user.id }, id: { not: own.id } }, select: { id: true } });
   if (employer) await prisma.businessMember.create({ data: { businessId: employer.id, userId: user.id, role: 'staff', status: 'active' } });
   const myBiz = [own.id, employer?.id].filter(Boolean);
