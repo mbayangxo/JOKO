@@ -330,7 +330,8 @@ Cell sources:
 |---|---|---|---|
 | Before the fixes (no retry) | 5 000 | 2 (23505) | money ok |
 | After fix 1, concurrent with a sweep run | 25 000 | 1 (40P01) | The deadlock was against the sweep's own bulk `UPDATE "User"` (test interference: the sweep was run against the same DB at the same time). It is excluded as a product finding, but disclosed. |
-| After both fixes, clean | ⟨SOAK_N⟩ | ⟨SOAK_F⟩ | ⟨SOAK_NOTE⟩ |
+| After both fixes, clean (run A) | 19 000 | **0** | Harness stopped in round 20 *setup*: its random test-phone generator collided (P2002 on `User.phone`). Fixed in the harness (`8523cba`); not a product issue. |
+| After both fixes, clean (run B) | **25 000** | **0** | Money ok every round; invariants ok; p99 ≤ 226 ms, max 380 ms; 278 s. |
 
 **Residual risk, not reproduced in the product:**
 - A transaction that pre-locks *some* accounts and then posts to others can still invert against a transaction locking the same pair in the opposite order.
