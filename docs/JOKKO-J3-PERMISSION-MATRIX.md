@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**426 routes.** Column legend:
+**446 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -126,6 +126,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST v1/pos/sessions` | partner | partner.pos | partner_key |  |  |  |  |  |  |
 | `GET v1/pos/:reference` | partner | partner.pos.read | partner_key |  |  |  |  |  |  |
 | `POST v1/payouts` | partner | partner.payout | partner_key |  |  |  |  | external_op | submitted payouts → provider reconciliation / admin review (D9) |
+| `POST v1/business-links` | partner | partner.business_link | partner_key |  |  |  |  |  | consented link: owner one-time code + partner key |
 | `GET v1/payouts/:reference` | partner | partner.payout.read | partner_key |  |  |  |  |  |  |
 | `POST v1/payouts/:reference/sandbox-complete` | partner | partner.sandbox | partner_key |  |  |  |  |  | non-production only |
 | `POST v1/support/agents` | partner | partner.support.agents | partner_key |  |  |  |  |  |  |
@@ -156,6 +157,14 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST admin/auth/setup-2fa` | public | admin.totp.setup | challenge token |  |  |  |  |  |  |
 | `POST admin/auth/confirm-2fa` | public | admin.totp.confirm | challenge token |  |  |  |  | admin |  |
 | `POST admin/auth/verify-2fa` | public | admin.totp.verify | challenge token |  |  |  |  | admin |  |
+
+## User — addresses
+
+| Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| `GET addresses` | user | addresses.mine | self |  |  |  |  |  |  |
+| `POST addresses` | user | addresses.create | self, or business:business.profile.manage; homes never public |  |  |  |  |  |  |
+| `GET addresses/:id` | user | addresses.view | owner full; business members; delivery fulfilment roles for an active order; otherwise coarse area only |  |  |  |  |  |  |
 
 ## User — affiliate
 
@@ -250,6 +259,19 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET businesses/:id/os/customers` | user | business.os.customers | business:business.customers.read (name/handle + history with this business only) |  |  |  |  |  |  |
 | `GET businesses/:id/os/today` | user | business.os.today | business member (each block by capability) |  |  |  |  |  |  |
 | `GET businesses/:id/os/charges` | user | business.os.charges | business:business.charges.read (payer identity not shown) |  |  |  |  |  |  |
+| `POST businesses/:id/os/operating-mode` | user | business.os.operating_mode | business owner only |  |  |  |  | identity |  |
+| `GET businesses/:id/distribution/territories` | user | distribution.territories.read | business:business.distribution.invite (distribution mode) |  |  |  |  |  |  |
+| `POST businesses/:id/distribution/territories` | user | distribution.territories.create | business:business.distribution.manage (distribution mode) |  |  |  |  |  |  |
+| `GET businesses/:id/distribution/relationships` | user | distribution.relationships.read | business:business.distribution.invite (reps: own introductions only) |  |  |  |  |  |  |
+| `POST businesses/:id/distribution/relationships` | user | distribution.relationships.invite | business:business.distribution.invite — invitation grants NO access to the merchant |  |  |  |  |  |  |
+| `GET businesses/:id/os/relationships` | user | merchant.relationships.read | business:business.relationships.manage |  |  |  |  |  |  |
+| `POST businesses/:id/os/relationships/:subId/respond` | user | merchant.relationships.respond | business:business.relationships.manage (merchant side accepts) |  |  |  |  |  |  |
+| `POST businesses/:id/os/relationships/:subId/end` | user | relationships.end | either side: business.relationships.manage \| business.distribution.manage |  |  |  |  |  |  |
+| `GET businesses/:id/os/payments` | user | business.os.payments | business:business.charges.read \| business.activity.read |  |  |  |  |  |  |
+| `POST businesses/:id/os/sales/manual` | user | business.os.sales.manual | business:business.charges.create — off-ledger record, never Jokko money |  |  |  |  |  |  |
+| `POST businesses/:id/os/integrations/link-code` | user | integrations.link_code | business owner only |  |  |  |  |  |  |
+| `GET businesses/:id/os/integrations` | user | integrations.list | business:business.profile.manage |  |  |  |  |  |  |
+| `POST businesses/:id/os/integrations/:subId/revoke` | user | integrations.revoke | business owner only |  |  |  |  | identity |  |
 | `GET businesses/:id/reviews` | user | business.reviews.read | public |  |  |  |  |  |  |
 | `POST businesses/:id/reviews` | user | business.reviews.create | verified customer |  |  |  |  |  |  |
 | `GET businesses/:id/kebu-score` | user | business.score.read | business:business.read |  |  |  |  |  |  |
@@ -305,6 +327,12 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST charts/submit` | user | charts.submit | self |  |  |  |  |  |  |
 | `POST charts/vote` | user | charts.vote | self |  |  |  |  |  |  |
 | `GET charts/search` | user | charts.read | public |  |  |  |  |  |  |
+
+## User — commerce
+
+| Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| `GET commerce/capabilities` | user | commerce.capabilities | any user (ACTIVE / DORMANT catalogue) |  |  |  |  |  |  |
 
 ## User — culture
 
@@ -506,6 +534,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST me/email/confirm` | user | profile.email.confirm | self |  |  | always | sensitive_change | identity |  |
 | `POST me/phone` | user | profile.phone.request | self |  |  | always | sensitive_change | identity |  |
 | `POST me/phone/confirm` | user | profile.phone.confirm | self |  |  | always | sensitive_change | identity |  |
+| `GET me/distribution-invitations` | user | distribution.invitations.mine | self (assisted onboarding) |  |  |  |  |  |  |
+| `POST me/distribution-invitations/:id/respond` | user | distribution.invitations.respond | invited person; attaches a business they OWN |  |  |  |  |  |  |
 
 ## User — merchant-vouchers
 
@@ -768,7 +798,7 @@ The owner (`Business.ownerId`) holds every capability. Members hold a capability
 
 | Capability | Member roles |
 |---|---|
-| `business.read` | manager, cashier, inventory, fulfillment, finance, viewer, staff, sales, warehouse, hr_admin, admin, cfo, ceo, owner |
+| `business.read` | manager, distribution_rep, cashier, inventory, fulfillment, finance, viewer, staff, sales, warehouse, hr_admin, admin, cfo, ceo, owner |
 | `business.profile.manage` | manager, admin, ceo, owner |
 | `business.members.manage` | manager, admin, ceo, owner |
 | `business.catalog.manage` | manager, inventory, sales, warehouse, admin, ceo, owner |
@@ -787,5 +817,8 @@ The owner (`Business.ownerId`) holds every capability. Members hold a capability
 | `business.pay` | finance, hr_admin, admin, cfo, ceo, owner |
 | `business.admin` | finance, hr_admin, admin, cfo, ceo, owner |
 | `business.payroll.read` | finance, hr_admin, admin, cfo, ceo, owner |
+| `business.relationships.manage` | manager, admin, ceo, owner |
+| `business.distribution.manage` | manager, owner |
+| `business.distribution.invite` | manager, distribution_rep, owner |
 
 Only the owner may grant `owner`, `admin`, `cfo` or `ceo`. Nobody may grant a role above their own level.
