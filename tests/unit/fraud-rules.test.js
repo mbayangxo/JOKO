@@ -202,21 +202,43 @@ test('Kori mint without a verified national deposit is held', async () => {
   assert.ok(!backed.flags.includes('kori_unbacked_increase'));
 });
 
-test('login from outside WAEMU requires verification unless diaspora-flagged', async () => {
-  const local = await createUserWithWallet();
-  const fromFrance = await registerDeviceLogin(
-    local.id,
-    mockReq({ headers: { 'x-device-id': `device-${local.id}`, 'x-vercel-ip-country': 'FR' } }),
-  );
-  assert.ok(fromFrance.flags.includes('device_foreign_ip'));
-  assert.equal(fromFrance.requiresVerification, true);
+// J4 decision 6: diaspora/local status never changes authentication trust.
+// The only location signal is account-relative ("a country this account has
+// never logged in from"), identical for every user.
+test('device trust: diaspora and local users are treated identically; location signal is account-relative only', async () => {
+  const outcomes = [];
+  for (const isDiaspora of [false, true]) {
+    const u = await createUserWithWallet({ isDiaspora });
+    const login = (device, country) =>
+      registerDeviceLogin(u.id, mockReq({ headers: { 'x-device-id': `${device}-${u.id}`, 'x-vercel-ip-country': country } }));
+    const first = await login('d1', 'FR'); // first login anywhere: baseline, no country flag
+    const sameCountry = await login('d1', 'FR');
+    const newCountry = await login('d1', 'SN'); // a country this account never used
+    outcomes.push({
+      first: first.flags.filter((f) => f !== 'device_new'),
+      same: sameCountry.flags,
+      newCountry: newCountry.flags,
+      sameReq: sameCountry.requiresVerification,
+      newReq: newCountry.requiresVerification,
+    });
+  }
+  assert.deepEqual(outcomes[0], outcomes[1], 'diaspora status must not change any trust outcome');
+  assert.ok(!outcomes[0].first.includes('device_new_country'));
+  assert.ok(!outcomes[0].same.includes('device_new_country'));
+  assert.ok(outcomes[0].newCountry.includes('device_new_country'));
+});
 
-  const diaspora = await createUserWithWallet({ isDiaspora: true });
-  const diasporaLogin = await registerDeviceLogin(
-    diaspora.id,
-    mockReq({ headers: { 'x-device-id': `device-${diaspora.id}`, 'x-vercel-ip-country': 'FR' } }),
-  );
-  assert.ok(!diasporaLogin.flags.includes('device_foreign_ip'));
+test('security modules never read diaspora status, nationality, language or neighbourhood', async () => {
+  const { readFileSync } = await import('node:fs');
+  for (const f of ['device-session.js', 'risk/engine.js', 'risk-engine.js', 'authz/enforce.js', 'step-up.js', 'identity/sessions.js']) {
+    const src = readFileSync(new URL(`../../lib/${f}`, import.meta.url), 'utf8')
+      .split('\n')
+      .filter((l) => !/^\s*(\*|\/\/)/.test(l))
+      .join('\n');
+    for (const forbidden of [/isDiaspora/, /nationalit/i, /languag/i, /arrondissement/i, /ethnic/i]) {
+      assert.ok(!forbidden.test(src), `${f} must not read ${forbidden}`);
+    }
+  }
 });
 
 test(`${RISK_LIMITS.DEVICES_24H}+ devices in 24 hours flags multi-device`, async () => {
