@@ -88,7 +88,7 @@ The lifecycle is invite → accept (invitee only) → active → role change (`P
 
 On a role change, the previous membership row is kept as `removed` (reason `role_changed:<role>`). Every past action therefore stays attributed to the role held at the time. Every step writes an `IdentityAuditEvent`.
 
-The generated route matrix ([`JOKKO-J3-PERMISSION-MATRIX.md`](JOKKO-J3-PERMISSION-MATRIX.md)) covers 426 routes, all with a policy.
+The generated route matrix ([`JOKKO-J3-PERMISSION-MATRIX.md`](JOKKO-J3-PERMISSION-MATRIX.md)) covers 446 routes, all with a policy. The J5 contracts add `distribution_rep` (`business.read` + `business.distribution.invite`), plus `business.relationships.manage` and `business.distribution.manage` for owner and manager (§25).
 
 ## 3. Business wallet trace
 
@@ -361,8 +361,8 @@ Sources: `tests/j5/business-roles.test.js`, `commerce-loop.test.js`, `business-o
 ## 17. J2 invariant results
 
 `assertInvariants` runs after every J5 test. Further results:
-- `money:check` on the gate DB: ⟨MC⟩;
-- after load, sweep and soak: ⟨MC2⟩;
+- `money:check` on the gate DB: OK (995 entries, 2 047 postings, 650 accounts after the full suite);
+- after load, sweep and soak: OK;
 - rehearsal: ok after the J4 and J5 flows on migrated data.
 
 ## 18. J3 authorization sweep results
@@ -372,11 +372,16 @@ The sweeps now resolve J5 sub-objects to other businesses' own rows:
 - `os/stock|catalog/:subId` → foreign products;
 - `os/locations/:subId` → foreign locations.
 
-All new GET routes are in the data-exposure sweep. Result: ⟨SWEEP⟩
+All new GET routes are in the data-exposure sweep. Result: **3/3 pass** on the final gate DB, after the full suite:
+- 134 authenticated GET routes probed by an unrelated multi-role attacker: no PII, balance, secret or raw-row leak; no foreign 2xx (someone else's address only at area precision); no 5xx.
+- Every admin route refuses a user token.
+- **112 mutating id-routes / 217 calls** on other people's objects (orders, products, stock, locations, relationships, integrations, invitations, charges, refunds…): all refused; money invariants intact.
+
+An earlier gate run surfaced one pre-existing 500 in agent withdrawal confirmation; it is fixed (`ccd8310`).
 
 ## 19. J4 money regression results
 
-All J4 suites run in the gate: journeys (cash, pay), intents, money-UX, account-open race and lock order. ⟨J4⟩
+All J4 suites run in the gate: journeys (cash, pay), intents, money-UX, account-open race and lock order. All pass in the gate (the 26 tests in `tests/j4`).
 
 Pre-J5 tests updated to the **decided** behaviour (not weakened):
 - merchant pay and marketplace orders settle to the business wallet;
@@ -386,7 +391,30 @@ Pre-J5 tests updated to the **decided** behaviour (not weakened):
 
 ## 20. Full fresh-database gate
 
-⟨GATE⟩
+Fresh database `joko_j5_gate`, **commit `fa0700c`**:
+
+| Step | Result |
+|---|---|
+| Fresh DB + `test:db:setup` | exit 0 |
+| `npm test` (unit, integration, security, http, money, j3, j4, **j5**) | **479 / 479 pass**, 0 skipped (J4 gate: 440) |
+| `money:check` | OK |
+| `test:load` | 3 / 3 |
+| `test:sweep` | 3 / 3 (134 GET routes; 112 mutating id-routes, 217 calls) |
+| Soak 5 × 1 000, no retries (J2/J4 money regression) | 5 000 sends, **0 failures**, invariants ok, p99 ≤ 340 ms |
+| Message-request migration dry run | exit 0 |
+| `prisma migrate diff` migrations ⇄ schema | no drift |
+| `money:check` after load / sweep / soak | OK |
+| Production-shaped rehearsal | **16 / 16** (J4 + J5 steps) |
+| `db-migrate-deploy.mjs` without activation | inert, exit 3 |
+| `tsc --noEmit` | 5 errors, all pre-existing in `supabase/functions/cron-proxy/index.ts`; none from J5 |
+| `expo export --platform web` | exit 0 |
+| `npm audit --omit=dev` | 42 (13 moderate, 29 high, 0 critical), unchanged |
+
+Earlier gate runs, disclosed:
+- `1a0a49c` found the new-business wallet race (fixed in `2b3e3f1`);
+- `2b3e3f1` found the agent-withdrawal 500 (fixed in `ccd8310`).
+
+This final run is on the head that includes the economic-OS contracts.
 
 ## 21. Production-shaped migration rehearsal
 
@@ -410,7 +438,14 @@ The J5 rehearsal step shows, on migrated data:
 - a real order + customer cancellation pays 400 / refunds 400 with stock 6 → 4 → 6;
 - invariants are ok.
 
-Result: ⟨REH⟩
+Result: **16 / 16 ok.** The J5 step, on the 2026-08-17 production shape after both J5 migrations:
+- the existing shop keeps `owner` settlement;
+- `verified` maps to `verificationStatus = verified`;
+- the stock guard is present;
+- a real order + customer cancellation pays 400 / refunds 400, with stock 6 → 4 → 6;
+- invariants are ok.
+
+The J5-contracts migration is additive. Existing distribution/brand businesses get `operatingMode = distribution`; nothing else changes.
 
 ## 22. Unresolved risks / product gaps
 
@@ -425,7 +460,7 @@ Result: ⟨REH⟩
 3. **Refunds that need people:** split-payment (affiliate) and B2B credit refunds are refused and need support.
 4. **Funds can run short:** a business wallet without enough balance cannot refund. The refund is refused with a clear message; there is no negative balance or credit line.
 5. **Fees** remain 0 (D18).
-6. **Pre-existing:** 5 `tsc` errors (Deno `cron-proxy`) and 42 `npm audit` advisories. ⟨AUDIT⟩
+6. **Pre-existing:** 5 `tsc` errors (Deno `cron-proxy`) and 42 `npm audit` advisories. Both unchanged since J3.
 7. **Production** is still unverified (BLOCKED workstream).
 8. **Partner (Kabu) collections settle to one configured wallet**, not to the selling merchant's business wallet. This is classified "migration needed" (architecture §3, §14). Fixing it is a J2 recipe change (provider cash-in → business account) plus a decision on existing partner settlement.
 9. **Catalog surfaces overlap:** the legacy merchant catalog screen and the Business Lite catalog both exist. They should converge on `lib/commerce/catalog.js`, without destructive migration (classified LEGACY/DUPLICATIVE).
@@ -433,7 +468,19 @@ Result: ⟨REH⟩
 
 ## 23. Exact commits
 
-⟨COMMITS⟩
+All on `claude/jokko-forensic-audit-rprqia` (pushed; no PR; nothing deployed):
+
+| Commit | Content |
+|---|---|
+| `b9c04c0` | D18–D20 recorded; request UI shows expiry / limit states; fees fail closed |
+| `f32e290` | J5 core: capability roles, identity, settlement, catalog, inventory, order state machine, cancellations / refunds, business money / analytics / customers, support tooling; migration `20261008000000_j5_business` |
+| `2a8419b` | Merchant mode UI; failure / concurrency + adversarial suites; safe media references |
+| `1a0a49c` | Sweeps cover business-OS sub-objects; rehearsal J5 step; migration guard-function fix |
+| `2b3e3f1` | Race-safe first wallet / primary location (gate finding) |
+| `ccd8310` | Agent withdrawal customer-funds refusal is 400, not 500 (sweep finding) |
+| `b1a9083` | Economic-OS architecture + contracts; migration `20261009000000_j5_economic_contracts` |
+| `fa0700c` | Permission matrix regenerated (446 routes) — **gate commit** |
+| `314c7fc` + this commit | Report |
 
 ## 24. Recommendation for J6
 
