@@ -255,8 +255,16 @@ test('1 ₭ round trips create no value (no unfunded "earn" mint)', async () => 
     assert.equal((await live.client('POST', 'transfers/send', { ...as(a), body: { recipientHandle: hb, amount: i } })).status, 201);
     assert.equal((await live.client('POST', 'transfers/send', { ...as(b), body: { recipientHandle: ha, amount: i } })).status, 201);
   }
-  assert.equal((await bal(a.user)) + (await bal(b.user)), 200, 'system total conserved');
-  assert.equal(await prisma.koriTransaction.count({ where: { recipientId: { in: [a.user.id, b.user.id] }, transactionType: 'earn' } }), 0);
+  // A reward paid from the FUNDED incentive budget (if a previous test left it funded) is real
+  // money moving in, not value created; anything else must be conserved to the ₭.
+  const rewards = await prisma.$queryRaw`
+    SELECT COALESCE(SUM(p.amount), 0)::int AS n FROM "Posting" p
+      JOIN "JournalEntry" j ON j.id = p."entryId" JOIN "LedgerAccount" acc ON acc.id = p."accountId"
+     WHERE j.kind = 'reward' AND p.side = 'credit' AND acc.code IN (${`customer:${a.user.id}:available`}, ${`customer:${b.user.id}:available`})`;
+  assert.equal((await bal(a.user)) + (await bal(b.user)), 200 + Number(rewards[0].n), 'system total conserved (funded rewards aside)');
+  // Every "earn" history row must be backed by a reward posting from the funded budget.
+  const earn = await prisma.koriTransaction.aggregate({ where: { recipientId: { in: [a.user.id, b.user.id] }, transactionType: 'earn' }, _sum: { amountKori: true } });
+  assert.equal(Number(earn._sum.amountKori ?? 0), Number(rewards[0].n), 'no unfunded earn');
 });
 
 test('double-spend: two concurrent sends that together exceed the balance → exactly one succeeds', async () => {

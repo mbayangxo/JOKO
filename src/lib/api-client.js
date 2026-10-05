@@ -428,12 +428,31 @@ export function depositNational({ amount, source = 'beta' }) {
   });
 }
 
-export function createAgentDeposit({ amount }) {
-  return apiFetch('/api/deposits/agent', {
-    method: 'POST',
-    body: { amount },
-    skipCache: true,
-  });
+/** J6: cash-in intent at an agent. One `intentKey` per attempt (never a second intent on retry). */
+export function createCashIntent({ kind, amountXof, intentKey, stepUpToken }) {
+  return apiFetch(kind === 'cash_out' ? '/api/agent-cash/out' : '/api/agent-cash/in', { method: 'POST', body: { amountXof }, idempotencyKey: intentKey, stepUpToken, skipCache: true });
+}
+
+export function getCashTx(id) {
+  return apiFetch(`/api/agent-cash/tx/${encodeURIComponent(id)}`, { skipCache: true });
+}
+
+export function listCashTx() {
+  return apiFetch('/api/agent-cash/tx', { skipCache: true });
+}
+
+/** Customer confirms the bound point + amount (cash-in) or authorizes it with the PIN (cash-out). */
+export function confirmCashTx(id, bindingHash, stepUpToken) {
+  return apiFetch(`/api/agent-cash/tx/${encodeURIComponent(id)}/confirm`, { method: 'POST', body: { bindingHash }, stepUpToken, skipCache: true });
+}
+
+export function cancelCashTx(id) {
+  return apiFetch(`/api/agent-cash/tx/${encodeURIComponent(id)}/cancel`, { method: 'POST', skipCache: true });
+}
+
+/** New QR for the SAME (still unbound) transaction; the previous QR stops working. */
+export function reissueCashChallenge(id) {
+  return apiFetch(`/api/agent-cash/tx/${encodeURIComponent(id)}/challenge`, { method: 'POST', skipCache: true });
 }
 
 export function getAgentDepositStatus(reference) {
@@ -456,19 +475,30 @@ export function getAgentMe() {
   return apiFetch('/api/agent/me', { skipCache: true });
 }
 
-export function agentScanDeposit({ token, qr }) {
-  return apiFetch('/api/agent/deposits/scan', {
-    method: 'POST',
-    body: { token, qr },
-    skipCache: true,
-  });
+/** J6: agent scans the customer's QR (binds this point; reserves float for a cash-in). */
+export function agentScanCash(qr) {
+  return apiFetch('/api/agent/cash/scan', { method: 'POST', body: { qr }, skipCache: true });
 }
 
-export function agentConfirmDeposit(depositId) {
-  return apiFetch(`/api/agent/deposits/${encodeURIComponent(depositId)}/confirm`, {
-    method: 'POST',
-    skipCache: true,
-  });
+/** J6: agent completes after the physical handoff — PIN step-up required. */
+export function agentCompleteCash(id, bindingHash, stepUpToken) {
+  return apiFetch(`/api/agent/cash/${encodeURIComponent(id)}/complete`, { method: 'POST', body: { bindingHash }, stepUpToken, skipCache: true });
+}
+
+export function agentDeclineCash(id, reason) {
+  return apiFetch(`/api/agent/cash/${encodeURIComponent(id)}/decline`, { method: 'POST', body: { reason }, skipCache: true });
+}
+
+export function getAgentCommissions() {
+  return apiFetch('/api/agent/commissions', { skipCache: true });
+}
+
+export function settleAgentCommissions(intentKey) {
+  return apiFetch('/api/agent/commissions/settle', { method: 'POST', idempotencyKey: intentKey, skipCache: true });
+}
+
+export function getAgentCash() {
+  return apiFetch('/api/agent/cash', { skipCache: true });
 }
 
 export function getMboloThreads() {
@@ -723,42 +753,22 @@ export function getMyFloatTopUpRequests() {
   return apiFetch('/api/agent/float/topup-requests/mine', { skipCache: true });
 }
 
+/** J6.14: active service points only; declared hours; no float / availability claims. */
 export function getAgentsNearby({ lat, lng, mode = 'deposit', amount } = {}) {
   const params = new URLSearchParams();
   if (lat != null) params.set('lat', String(lat));
   if (lng != null) params.set('lng', String(lng));
-  if (mode) params.set('mode', mode);
+  params.set('service', mode === 'withdraw' ? 'cash_out' : 'cash_in');
   if (amount != null) params.set('amount', String(amount));
-  const q = params.toString();
-  return apiFetch(`/api/agents/nearby${q ? `?${q}` : ''}`, { skipCache: true });
+  return apiFetch(`/api/agent-cash/points?${params.toString()}`, { skipCache: true });
 }
 
-export function createAgentWithdraw({ amount }) {
-  return apiFetch('/api/withdrawals/agent', {
-    method: 'POST',
-    body: { amount },
-    skipCache: true,
-  });
-}
 
 export function getAgentWithdrawStatus(reference) {
   return apiFetch(`/api/withdrawals/agent/${encodeURIComponent(reference)}`, { skipCache: true });
 }
 
-export function agentScanWithdraw({ token, qr }) {
-  return apiFetch('/api/agent/withdrawals/scan', {
-    method: 'POST',
-    body: { token, qr },
-    skipCache: true,
-  });
-}
 
-export function agentConfirmWithdraw(withdrawalId) {
-  return apiFetch(`/api/agent/withdrawals/${encodeURIComponent(withdrawalId)}/confirm`, {
-    method: 'POST',
-    skipCache: true,
-  });
-}
 
 export function getInviteShare() {
   return apiFetch('/api/invite/share', { skipCache: true });

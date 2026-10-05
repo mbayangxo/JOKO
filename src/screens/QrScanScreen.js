@@ -26,7 +26,7 @@ export default function QrScanScreen({ navigation, route }) {
       : mode === 'friend'
         ? 'Ajouter un ami'
         : mode === 'agent'
-          ? 'Scanner dépôt client'
+          ? 'Scanner le code client'
           : mode === 'tontine_member'
             ? 'Scanner un membre'
             : mode === 'group_join'

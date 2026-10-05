@@ -2,8 +2,6 @@ import '../helpers/setup.js';
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  applyForAgentProfile,
-  approveAgentProfile,
   requestAgentFloatTopUp,
   getMyFloatTopUpRequests,
   listFloatTopUpRequests,
@@ -11,15 +9,16 @@ import {
   rejectFloatTopUpRequest,
   AgentError,
 } from '../../lib/agent-service.js';
-import { createUserWithWallet, prisma } from '../helpers/db.js';
+import { prisma } from '../helpers/db.js';
+import { activeAgent } from '../j6/helpers.js';
 
 after(() => prisma.$disconnect());
 
 async function makeActiveAgent(name) {
-  const user = await createUserWithWallet({ name });
-  const profile = await applyForAgentProfile({ userId: user.id, displayName: name });
-  const approved = await approveAgentProfile(profile.id, 'admin-test');
-  return { user, profile: approved };
+  // J6: through the full lifecycle (identity → review → maker-checker activation), no float.
+  const a = await activeAgent(null, { floatXof: 0, signed: false });
+  await prisma.agentProfile.update({ where: { id: a.profile.id }, data: { displayName: name } });
+  return { user: a.user, profile: a.profile };
 }
 
 test('agent float top-up request: create, approve — float actually increases', async () => {

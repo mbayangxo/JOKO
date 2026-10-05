@@ -66,11 +66,12 @@ export async function routeQrScan({ raw, mode, navigation, route, api, showToast
   }
 
   if (mode === 'agent') {
-    if (parsed?.kind === 'agent_deposit' || parsed?.kind === 'agent_withdraw' || text.includes('agent-deposit') || text.includes('agent-withdraw')) {
+    // J6: jokko://cash/<token> — opaque, purpose-bound; the server decides what it is.
+    if (parsed?.kind === 'agent_cash' || /^jokko:\/\/cash\//i.test(text)) {
       navigation.navigate('AgentHome', { scannedQr: text });
       return { ok: true };
     }
-    showToast('QR agent requis (agent-deposit ou agent-withdraw)');
+    showToast('Code client Jokko requis');
     return { ok: false };
   }
 

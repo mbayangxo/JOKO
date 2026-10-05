@@ -7,9 +7,10 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 
-import { createUserWithWallet, createVerifiedDevice, establishedSessionToken, fundedRewardsFor, prisma, resetReserveToWallets } from '../helpers/db.js';
+import { createUserWithWallet, createVerifiedDevice, establishedSessionToken, fundedRewardsFor, fundUser, prisma, resetReserveToWallets } from '../helpers/db.js';
 import { freshIp, startApiServer } from '../helpers/http-harness.js';
-import { createAgentProfile } from '../../lib/agent-service.js';
+import { customer as j3customer, signedIn as j3signedIn } from '../j3/helpers.js';
+import { activeAgent, cashIn, cashOut, idem, pinned } from '../j6/helpers.js';
 import { reconcileKoriReserve } from '../../lib/kori-reserve.js';
 
 const ACCESS_SECRET = 'http-test-access-secret-0123456789';
@@ -79,11 +80,6 @@ test('merchant cannot refund or reverse a customer payment', async () => {
   assert.ok([401, 403].includes((await call('POST', 'admin/refunds', owner, { body: { recipientUserId: payer.id, amount: 50, reason: 'x' } })).status));
 });
 
-async function agent(float = 200_000) {
-  const a = await actor();
-  const profile = await createAgentProfile({ userId: a.id, displayName: `Agent ${crypto.randomBytes(3).toString('hex')}`, initialFloat: float, floatLimit: 500_000 });
-  return { ...a, profile };
-}
 
 test('agent role cannot be self-assigned; non-agents cannot use agent endpoints', async () => {
   const u = await actor();
@@ -92,76 +88,74 @@ test('agent role cannot be self-assigned; non-agents cannot use agent endpoints'
   assert.equal(self.status, 403);
   assert.equal(self.body.code, 'role_requires_onboarding');
   assert.equal(await prisma.accountRole.count({ where: { userId: u.id, role: 'agent' } }), 0);
-  assert.equal((await call('POST', 'agent/deposits/scan', u, { body: { token: 'xxxxxxxxxxxx' } })).status, 403);
+  assert.equal((await call('POST', 'agent/cash/scan', u, { body: { qr: 'jokko://cash/AAAAAAAAAAAAAAAAAAAAAAAA' } })).status, 403);
+  // J6: the legacy bearer-QR routes are retired.
+  assert.equal((await call('POST', 'withdrawals/agent', u, { body: { amount: 20_000 } })).status, 410);
 });
 
-test('agent deposit: confirmed exactly once under concurrency; agent sees masked phone only', async () => {
-  const ag = await agent();
-  const cust = await actor(0, 2);
-  const dep = await call('POST', 'deposits/agent', cust, { body: { amount: 20_000 } });
-  assert.equal(dep.status, 201);
-  const row = await prisma.agentDeposit.findUnique({ where: { reference: dep.body.reference } });
-  const scan = await call('POST', 'agent/deposits/scan', ag, { body: { token: row.token } });
-  assert.equal(scan.status, 200);
+// J6: agent cash moved to the secure handoff (customer confirms / authorizes in-app,
+// agent completes with PIN). Full matrices: tests/j6/cash-in.test.js, cash-out.test.js.
+const j6person = async (tier = 2, kori = 0) => {
+  const c = await j3customer({ tier });
+  if (kori) await fundUser(c.id, kori);
+  return j3signedIn(api, c);
+};
+
+test('agent deposit: completed exactly once under concurrency; agent sees no phone / id', async () => {
+  const ag = await activeAgent(api);
+  const cust = await j6person();
+  const c = await cust.call('POST', 'agent-cash/in', { amountXof: 20_000 }, idem());
+  const scan = await ag.s.call('POST', 'agent/cash/scan', { qr: c.body.qr });
   const text = JSON.stringify(scan.body);
-  assert.ok(!text.includes(cust.user.phone) && !text.includes(cust.id), 'no full phone / internal id for the agent');
-  const rs = await Promise.all([1, 2, 3].map(() => call('POST', `agent/deposits/${row.id}/confirm`, ag)));
-  assert.equal(rs.filter((r) => r.status === 201 || r.status === 200).length, 1);
+  assert.ok(!text.includes(cust.phone) && !text.includes(cust.id), 'no full phone / internal id for the agent');
+  await cust.call('POST', `agent-cash/tx/${c.body.transaction.id}/confirm`, { bindingHash: scan.body.transaction.bindingHash });
+  const headers = await pinned(ag.s);
+  const rs = await Promise.all([1, 2, 3].map(() => ag.s.call('POST', `agent/cash/${c.body.transaction.id}/complete`, { bindingHash: scan.body.transaction.bindingHash }, { headers })));
+  assert.ok(rs.every((r) => r.status === 200));
   assert.equal(await bal(cust), 2000);
   assert.equal((await prisma.agentProfile.findUnique({ where: { id: ag.profile.id } })).floatBalance, 180_000);
-  assert.equal((await call('GET', `deposits/agent/${dep.body.reference}`, ag)).status, 404, 'agent cannot read the customer session');
+  assert.equal((await ag.s.call('GET', `agent-cash/tx/${c.body.transaction.id}`)).body.transaction.state, 'completed');
 });
 
 test('agent deposit respects KYC tier balance caps (tier 1: 5 000 ₭)', async () => {
-  const ag = await agent();
-  const cust = await actor(0, 1);
-  const dep = await call('POST', 'deposits/agent', cust, { body: { amount: 100_000 } });
-  const row = await prisma.agentDeposit.findUnique({ where: { reference: dep.body.reference } });
-  const r = await call('POST', `agent/deposits/${row.id}/confirm`, ag);
-  assert.ok(r.status >= 400, String(r.status));
+  const cust = await j6person(1);
+  const r = await cust.call('POST', 'agent-cash/in', { amountXof: 100_000 }, idem());
+  assert.equal(r.status, 403);
+  assert.equal(r.body.code, 'tier_balance_cap');
   assert.equal(await bal(cust), 0);
-  assert.equal((await prisma.agentProfile.findUnique({ where: { id: ag.profile.id } })).floatBalance, 200_000);
 });
 
-test('agent withdraw: the customer no longer has the funds at confirmation → clean 4xx, nothing moves (was HTTP 500)', async () => {
-  const ag = await agent(100_000);
-  const cust = await actor(3000, 2);
-  const w1 = await call('POST', 'withdrawals/agent', cust, { body: { amount: 20_000 } });
-  const w2 = await call('POST', 'withdrawals/agent', cust, { body: { amount: 20_000 } });
+test('agent withdraw: funds are HELD at request — a second withdrawal on the same ₭ is refused up front (was a 500 at confirmation)', async () => {
+  const ag = await activeAgent(api, { floatXof: 100_000 });
+  const cust = await j6person(2, 3000);
+  const h = await pinned(cust);
+  const w1 = await cust.call('POST', 'agent-cash/out', { amountXof: 20_000 }, { headers: { ...idem().headers, ...h } });
+  const w2 = await cust.call('POST', 'agent-cash/out', { amountXof: 20_000 }, { headers: { ...idem().headers, ...h } });
   assert.equal(w1.status, 201, JSON.stringify(w1.body));
-  assert.equal(w2.status, 201, JSON.stringify(w2.body));
-  const [r1, r2] = await Promise.all([w1, w2].map((w) => prisma.agentWithdrawal.findUnique({ where: { reference: w.body.reference } })));
-  assert.ok((await call('POST', `agent/withdrawals/${r1.id}/confirm`, ag)).status < 300);
-  const floatBefore = (await prisma.agentProfile.findUnique({ where: { id: ag.profile.id } })).floatBalance;
-  const second = await call('POST', `agent/withdrawals/${r2.id}/confirm`, ag);
-  assert.equal(second.status, 400, JSON.stringify(second.body));
-  assert.equal(second.body.code, 'customer_insufficient_funds');
+  assert.equal(w2.status, 400);
+  assert.equal(w2.body.code, 'insufficient_funds');
   assert.equal(await bal(cust), 1000);
-  assert.equal((await prisma.agentProfile.findUnique({ where: { id: ag.profile.id } })).floatBalance, floatBefore);
-  assert.equal((await prisma.agentWithdrawal.findUnique({ where: { id: r2.id } })).status, 'pending');
+  assert.equal((await prisma.agentProfile.findUnique({ where: { id: ag.profile.id } })).floatBalance, 100_000);
 });
 
-test('agent withdraw: tier gate, once-only confirm, reserve stays reconciled, recovery hold', async () => {
-  const ag = await agent(100_000);
-  const t1 = await actor(3000, 1);
-  assert.equal((await call('POST', 'withdrawals/agent', t1, { body: { amount: 20_000 } })).status, 403);
-
-  const cust = await actor(5000, 2);
+test('agent withdraw: tier gate, once-only completion, reserve stays reconciled, recovery hold', async () => {
+  const ag = await activeAgent(api, { floatXof: 100_000 });
+  const t1 = await j6person(1, 3000);
+  assert.equal((await t1.call('POST', 'agent-cash/out', { amountXof: 20_000 }, { headers: { ...idem().headers, ...(await pinned(t1)) } })).status, 403);
+  const cust = await j6person(2, 5000);
   await resetReserveToWallets();
-  const w = await call('POST', 'withdrawals/agent', cust, { body: { amount: 20_000 } });
-  assert.equal(w.status, 201);
-  const row = await prisma.agentWithdrawal.findUnique({ where: { reference: w.body.reference } });
-  const rs = await Promise.all([1, 2].map(() => call('POST', `agent/withdrawals/${row.id}/confirm`, ag)));
-  assert.equal(rs.filter((r) => r.status < 300).length, 1);
+  const done = await cashOut(cust, ag, 20_000);
+  const again = await ag.s.call('POST', `agent/cash/${done.transaction.id}/complete`, { bindingHash: 'x'.repeat(64) }, { headers: await pinned(ag.s) });
+  assert.equal(again.body.transaction.state, 'completed');
   assert.equal(await bal(cust), 3000);
   const rec = await reconcileKoriReserve(prisma);
   assert.equal(rec.ok, true, JSON.stringify(rec));
-
-  const recovered = await actor(5000, 2);
+  const recovered = await j6person(2, 5000);
   await prisma.user.update({ where: { id: recovered.id }, data: { accountRecoveredAt: new Date() } });
-  const held = await call('POST', 'withdrawals/agent', recovered, { body: { amount: 10_000 } });
+  const held = await recovered.call('POST', 'agent-cash/out', { amountXof: 10_000 }, idem());
   // J3: the central cash-out guard refuses before any money logic runs.
   assert.equal(held.status, 423);
   assert.equal(held.body.code, 'cash_out_hold');
   assert.equal(held.body.category, 'security_change');
+  void cashIn;
 });

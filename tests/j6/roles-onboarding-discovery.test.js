@@ -33,7 +33,7 @@ test('role separation: distribution rep, merchant cashier and financial agent ne
   const cashier = await signedIn(api, cashierC);
   const ag = await activeAgent(api);
   const cust = await signedIn(api, await customer());
-  const intent = await cust.call('POST', 'cash/in', { amountXof: 10_000 }, idem());
+  const intent = await cust.call('POST', 'agent-cash/in', { amountXof: 10_000 }, idem());
 
   // Distribution rep → cash-in / cash-out / agent float: refused.
   for (const [m, p, b] of [['POST', 'agent/cash/scan', { qr: intent.body.qr }], ['GET', 'agent/cash'], ['POST', 'agent/commissions/settle', {}], ['POST', 'agent/float/topup-request', { amountXof: 1000 }]]) {
@@ -124,7 +124,7 @@ test('discovery: only active verified points; declared hours only; no phone / id
   // A pending application never appears.
   const pending = await signedIn(api, await customer());
   await pending.call('POST', 'agent/apply', { displayName: 'En attente', servicePoint: { name: 'Pending Point', publicAddress: 'Avenue Bourguiba, Dakar' } });
-  const r = await viewer.call('GET', 'cash/points?lat=16.01&lng=-16.5&service=cash_in');
+  const r = await viewer.call('GET', 'agent-cash/points?lat=16.01&lng=-16.5&service=cash_in');
   assert.equal(r.status, 200);
   const names = r.body.servicePoints.map((p) => p.name);
   assert.ok(!names.includes('Pending Point'));
@@ -140,8 +140,8 @@ test('discovery: only active verified points; declared hours only; no phone / id
   assert.ok(!JSON.stringify(legacy.body).includes('floatBalance'));
   const risk = await operator(api, ['risk']);
   await risk.call('POST', `admin/agents/${ag.profile.id}/suspend`, { reason: 'gone' });
-  const after = await viewer.call('GET', 'cash/points?lat=16.01&lng=-16.5&service=cash_in');
+  const after = await viewer.call('GET', 'agent-cash/points?lat=16.01&lng=-16.5&service=cash_in');
   assert.ok(!after.body.servicePoints.some((p) => p.id === ag.profile.servicePointId), 'a suspended agent’s point disappears');
-  const big = await viewer.call('GET', 'cash/points?service=cash_out&amount=900000');
+  const big = await viewer.call('GET', 'agent-cash/points?service=cash_out&amount=900000');
   assert.ok(big.body.servicePoints.every((p) => p.largeCashOut));
 });

@@ -11,27 +11,31 @@ import { coordsFromArrondissement } from '../lib/dakar-coords';
 import { getAgentsNearby } from '../lib/api-client';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
 
-function AgentCard({ agent, mode, onSelect }) {
+function openLabel(point) {
+  if (point.openNow == null) return 'Horaires non communiqués';
+  return point.openNow ? 'Ouvert (horaires déclarés)' : 'Fermé (horaires déclarés)';
+}
+
+/** J6.14: a public service point — no phone, no float, no live availability claim. */
+function AgentCard({ agent: point, mode, onSelect }) {
   return (
-    <PressScale scaleTo={0.98} onPress={() => onSelect(agent)} style={styles.card}>
+    <PressScale scaleTo={0.98} onPress={() => onSelect(point)} style={styles.card}>
       <View style={styles.cardTop}>
         <View style={styles.iconWrap}>
           <Text style={{ fontSize: 22 }}>🏪</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.name}>{agent.displayName}</Text>
-          <Text style={styles.loc}>{agent.locationLabel ?? agent.arrondissement ?? 'Dakar'}</Text>
+          <Text style={styles.name}>{point.name}</Text>
+          <Text style={styles.loc}>{point.publicAddress}{point.area ? ` · ${point.area}` : ''}</Text>
         </View>
-        {agent.distanceLabel ? (
-          <Text style={styles.dist}>{agent.distanceLabel}</Text>
-        ) : null}
+        {point.distanceLabel ? <Text style={styles.dist}>{point.distanceLabel}</Text> : null}
       </View>
       <Text style={styles.code}>
-        {agent.agentCode}
-        {agent.isBusinessAgent ? ' · Business' : ''} · Float OK
+        {[point.services?.cashIn ? 'Dépôt' : null, point.services?.cashOut ? 'Retrait' : null, point.largeCashOut ? 'Gros retraits' : null].filter(Boolean).join(' · ')}
+        {' · '}{openLabel(point)}
       </Text>
       <Text style={styles.hint}>
-        {mode === 'withdraw' ? 'Appuie pour générer ton QR de retrait' : 'Appuie pour générer ton QR de dépôt'}
+        {mode === 'withdraw' ? 'Appuie pour préparer ton retrait — tu confirmeras le point dans l’application' : 'Appuie pour préparer ton dépôt'}
       </Text>
     </PressScale>
   );
@@ -56,7 +60,7 @@ export default function AgentDiscoveryScreen({ navigation, route }) {
         mode,
         amount: prefilledAmount,
       });
-      setAgents(Array.isArray(data.agents) ? data.agents : data ?? []);
+      setAgents(Array.isArray(data.servicePoints) ? data.servicePoints : []);
     } catch {
       setAgents([]);
     } finally {
@@ -66,15 +70,12 @@ export default function AgentDiscoveryScreen({ navigation, route }) {
 
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
-  const selectAgent = (agent) => {
+  const selectAgent = () => {
     if (mode === 'withdraw') {
       navigation.navigate('AgentWithdrawQr', { amount: prefilledAmount ?? 5000 });
       return;
     }
-    navigation.navigate('AgentDepositQr', {
-      amount: prefilledAmount ?? 5000,
-      agentName: agent.displayName,
-    });
+    navigation.navigate('AgentDepositQr', { amount: prefilledAmount ?? 5000 });
   };
 
   return (
@@ -90,14 +91,14 @@ export default function AgentDiscoveryScreen({ navigation, route }) {
             {mode === 'withdraw'
               ? prefilledAmount > 500000
                 ? 'Montant élevé — agents business K21 (BAG) uniquement.'
-                : 'Choisis un agent, montre ton QR, reçois le cash.'
+                : 'Choisis un point, montre ton code, confirme le point dans l’application, reçois le cash.'
               : 'Marchés, boutiques, kiosques — recharge en cash sans Orange ni Free. L\'agent scanne ton QR.'}
           </Text>
 
           {loading ? <ActivityIndicator color={colors.green} style={{ marginVertical: spacing.xl }} /> : null}
           {!loading && agents.length === 0 ? (
             <View style={styles.empty}>
-              <Text style={styles.emptyText}>Aucun agent actif avec float dans ta zone pour l'instant.</Text>
+              <Text style={styles.emptyText}>Aucun point de service actif dans ta zone pour l'instant.</Text>
               <GlowButton
                 label="Devenir agent K21"
                 tone="gold"

@@ -56,11 +56,11 @@ test('enumeration / cross-agent access: other agents and customers see 404; agen
   const cust = await person(5000);
   const done = await cashIn(cust, a, 20_000);
   const id = done.transaction.id;
-  assert.equal((await b.s.call('GET', `cash/tx/${id}`)).status, 404);
+  assert.equal((await b.s.call('GET', `agent-cash/tx/${id}`)).status, 404);
   assert.equal((await b.s.call('POST', `agent/cash/${id}/decline`, { reason: 'x' })).status, 404);
   assert.ok(!(await b.s.call('GET', 'agent/cash')).body.transactions.some((t) => t.id === id));
-  for (const guess of [crypto.randomUUID(), 'cmuv0000000000000000000', `${id.slice(0, -1)}x`]) assert.equal((await cust.call('GET', `cash/tx/${guess}`)).status, 404);
-  const view = await a.s.call('GET', `cash/tx/${id}`);
+  for (const guess of [crypto.randomUUID(), 'cmuv0000000000000000000', `${id.slice(0, -1)}x`]) assert.equal((await cust.call('GET', `agent-cash/tx/${guess}`)).status, 404);
+  const view = await a.s.call('GET', `agent-cash/tx/${id}`);
   const text = JSON.stringify(view.body);
   for (const leak of ['koriBalance', 'balance"', cust.phone, cust.handle, cust.id]) assert.ok(!text.includes(leak), `agent view leaks ${leak}`);
   assert.ok(!JSON.stringify((await a.s.call('GET', 'agent/cash')).body).includes('koriBalance'));
@@ -71,7 +71,7 @@ test('recovery / new-device bypass: a fresh device or a recovered account cannot
   await fundUser(c.id, 5000);
   const fresh = await otpLogin(api, c.phone, { device: newDevice(), ip: freshIp() });
   assert.equal(fresh.status, 200);
-  const r = await api.client('POST', 'cash/out', { token: fresh.body.accessToken, device: newDevice(), ip: freshIp(), headers: { 'x-vercel-ip-country': 'SN', 'idempotency-key': 'nd-1' }, body: { amountXof: 10_000 } });
+  const r = await api.client('POST', 'agent-cash/out', { token: fresh.body.accessToken, device: newDevice(), ip: freshIp(), headers: { 'x-vercel-ip-country': 'SN', 'idempotency-key': 'nd-1' }, body: { amountXof: 10_000 } });
   assert.ok([403, 423].includes(r.status), JSON.stringify(r.body));
   assert.equal(await customerHeld(c.id), 0);
   assert.equal(await wallet(c.id), 5000);
@@ -85,9 +85,9 @@ test('operator abuse: no role → nothing; a single operator cannot activate, re
   }
   const both = await operator(api, ['risk', 'finance_approver']);
   const cust = await person(5000);
-  const r = await cust.call('POST', 'cash/out', { amountXof: 20_000 }, { headers: { ...idem().headers, ...(await pinned(cust)) } });
+  const r = await cust.call('POST', 'agent-cash/out', { amountXof: 20_000 }, { headers: { ...idem().headers, ...(await pinned(cust)) } });
   const s = await ag.s.call('POST', 'agent/cash/scan', { qr: r.body.qr });
-  await cust.call('POST', `cash/tx/${r.body.transaction.id}/confirm`, { bindingHash: s.body.transaction.bindingHash }, { headers: await pinned(cust) });
+  await cust.call('POST', `agent-cash/tx/${r.body.transaction.id}/confirm`, { bindingHash: s.body.transaction.bindingHash }, { headers: await pinned(cust) });
   await prisma.agentCashTransaction.update({ where: { id: r.body.transaction.id }, data: { reviewDeadline: new Date(Date.now() - 1000) } });
   const { sweepCash } = await import('../../lib/agents/cash.js');
   await sweepCash();
@@ -101,11 +101,11 @@ test('operator abuse: no role → nothing; a single operator cannot activate, re
 test('pending-funds spend: a cash-in that is not completed gives the customer nothing to spend or withdraw', async () => {
   const ag = await activeAgent(api);
   const cust = await person(0);
-  const c = await cust.call('POST', 'cash/in', { amountXof: 50_000 }, idem());
+  const c = await cust.call('POST', 'agent-cash/in', { amountXof: 50_000 }, idem());
   const s = await ag.s.call('POST', 'agent/cash/scan', { qr: c.body.qr });
-  await cust.call('POST', `cash/tx/${c.body.transaction.id}/confirm`, { bindingHash: s.body.transaction.bindingHash });
+  await cust.call('POST', `agent-cash/tx/${c.body.transaction.id}/confirm`, { bindingHash: s.body.transaction.bindingHash });
   assert.equal(await wallet(cust.id), 0);
-  const out = await cust.call('POST', 'cash/out', { amountXof: 10_000 }, { headers: { ...idem().headers, ...(await pinned(cust)) } });
+  const out = await cust.call('POST', 'agent-cash/out', { amountXof: 10_000 }, { headers: { ...idem().headers, ...(await pinned(cust)) } });
   assert.equal(out.body.code, 'insufficient_funds');
 });
 
@@ -113,8 +113,8 @@ test('destruction: 8 customers × mixed concurrent completes / cancels / decline
   const ag = await activeAgent(api, { floatXof: 400_000 });
   const custs = await Promise.all(Array.from({ length: 8 }, () => person(10_000)));
   const floatStart = await floatOf(ag.profile.id);
-  const ins = await Promise.all(custs.map((c) => c.call('POST', 'cash/in', { amountXof: 20_000 }, idem())));
-  const outs = await Promise.all(custs.map(async (c) => c.call('POST', 'cash/out', { amountXof: 30_000 }, { headers: { ...idem().headers, ...(await pinned(c)) } })));
+  const ins = await Promise.all(custs.map((c) => c.call('POST', 'agent-cash/in', { amountXof: 20_000 }, idem())));
+  const outs = await Promise.all(custs.map(async (c) => c.call('POST', 'agent-cash/out', { amountXof: 30_000 }, { headers: { ...idem().headers, ...(await pinned(c)) } })));
   const scanned = await Promise.all([...ins, ...outs].map((r) => ag.s.call('POST', 'agent/cash/scan', { qr: r.body.qr })));
   const agentPin = await pinned(ag.s);
   const pins = await Promise.all(custs.map((c) => pinned(c)));
@@ -125,8 +125,8 @@ test('destruction: 8 customers × mixed concurrent completes / cancels / decline
     const headers = pins[i % 8];
     const roll = i % 4;
     ops.push((async () => {
-      if (roll === 0) return c.call('POST', `cash/tx/${t.id}/cancel`, {});
-      await c.call('POST', `cash/tx/${t.id}/confirm`, { bindingHash: t.bindingHash }, { headers });
+      if (roll === 0) return c.call('POST', `agent-cash/tx/${t.id}/cancel`, {});
+      await c.call('POST', `agent-cash/tx/${t.id}/confirm`, { bindingHash: t.bindingHash }, { headers });
       if (roll === 1) return ag.s.call('POST', `agent/cash/${t.id}/decline`, { reason: 'chaos' });
       return Promise.all([1, 2, 3].map(() => ag.s.call('POST', `agent/cash/${t.id}/complete`, { bindingHash: t.bindingHash }, { headers: agentPin })));
     })());

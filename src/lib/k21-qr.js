@@ -123,6 +123,8 @@ export function parseK21Qr(raw) {
     return { kind: 'pay_user', handle: handleOnly[1].toLowerCase() };
   }
 
+  if (/^jokko:\/\/cash\/[A-Za-z0-9_-]{24}$/.test(text)) return { kind: 'agent_cash', qr: text };
+
   const urlMatch = text.match(/^k21:\/\/([^/?#]+)\/?(.*)$/i);
   if (urlMatch) {
     const path = urlMatch[1].toLowerCase();

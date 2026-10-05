@@ -72,7 +72,8 @@ test('commissions: no rule → nothing; unfunded budget → recorded as unfunded
   assert.equal(c2.status, 'accrued');
   assert.equal(c2.amountKori, 5 + Math.floor((2000 * 50) / 10_000));
   assert.equal(await acc('platform:agent_commission_budget'), funded - c2.amountKori);
-  assert.equal(await acc(`agent:${ag.profile.id}:commission`), c2.amountKori);
+  const accrued = await prisma.agentCommission.aggregate({ where: { agentId: ag.profile.id, status: 'accrued' }, _sum: { amountKori: true } });
+  assert.equal(await acc(`agent:${ag.profile.id}:commission`), accrued._sum.amountKori, 'commission account = Σ accrued (t1 too if the budget already had funds)');
 });
 
 test('commission farming / duplicate accrual: replayed completion accrues once; circular / repeated-pair activity earns nothing', async () => {
@@ -132,7 +133,7 @@ test('liquidity: ledger float, pending, low-float, demand; physical cash is self
   const ag = await activeAgent(api, { floatXof: 30_000 });
   const cust = await person();
   await ag.s.call('POST', 'agent/cash-report', { amountXof: 120_000, note: 'end of morning' });
-  const c = await cust.call('POST', 'cash/in', { amountXof: 10_000 }, idem());
+  const c = await cust.call('POST', 'agent-cash/in', { amountXof: 10_000 }, idem());
   await ag.s.call('POST', 'agent/cash/scan', { qr: c.body.qr });
   const support = await operator(api, ['support']);
   const v = await support.call('GET', 'admin/agents/liquidity');
@@ -153,11 +154,12 @@ test('reconciliation: clean network reconciles; a tampered state is an explicit 
   const cust = await person();
   await cashIn(cust, ag, 20_000);
   const clean = await reconcileAgents(prisma, { record: false });
-  const mine = clean.exceptions.filter((e) => e.ref === ag.profile.id || e.ref.startsWith('JC'));
+  const refs = new Set((await prisma.agentCashTransaction.findMany({ where: { agentId: ag.profile.id }, select: { reference: true } })).map((t) => t.reference));
+  const mine = clean.exceptions.filter((e) => e.ref === ag.profile.id || refs.has(e.ref));
   assert.deepEqual(mine, [], JSON.stringify(mine));
   // Tamper: mark a cancelled transaction completed directly in the DB (no posting).
-  const c = await cust.call('POST', 'cash/in', { amountXof: 10_000 }, idem());
-  await cust.call('POST', `cash/tx/${c.body.transaction.id}/cancel`, {});
+  const c = await cust.call('POST', 'agent-cash/in', { amountXof: 10_000 }, idem());
+  await cust.call('POST', `agent-cash/tx/${c.body.transaction.id}/cancel`, {});
   await prisma.$executeRaw`UPDATE "AgentCashTransaction" SET state = 'completed' WHERE id = ${c.body.transaction.id}`;
   const fin = await operator(api, ['finance_ops']);
   const run = await fin.call('POST', 'admin/agents/reconcile', {});

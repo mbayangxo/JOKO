@@ -354,18 +354,15 @@ test('tontine collection concurrent with the member spending the same funds: one
 test('agent cash-out concurrent with an ordinary cash-out of the same ₭: only one is funded', async () => {
   julaya({ init: { status: 'pending', id: uniqueRef('ext') } });
   const u = await createUserWithWallet({ koriBalance: 1_000 });
-  const { createAgentProfile, createAgentWithdrawSession, confirmAgentWithdraw } = await import('../../lib/agent-service.js');
-  const agentUser = await createUserWithWallet({ koriBalance: 0 });
-  const agent = await createAgentProfile({ userId: agentUser.id, displayName: 'Torture agent', initialFloat: 0, floatLimit: 500_000 });
-  const w = await createAgentWithdrawSession(u.id, 10_000);
+  // J6: an agent cash-out HOLDS the ₭ at request (lib/agents/cash.js).
+  const { createCashOut } = await import('../../lib/agents/cash.js');
   const [agentRes, railRes] = await settledAll([
-    confirmAgentWithdraw(w.id ?? w.withdrawal?.id, agentUser.id),
+    createCashOut(u.id, { amountXof: 10_000, idempotencyKey: uniqueRef('ag') }),
     startCashOut(prisma, rail(u, 10_000)),
   ]);
   const funded = [agentRes, railRes].filter((x) => x.status === 'fulfilled' && !(x.value?.rail?.status === 'failed')).length;
   assert.equal(funded, 1, `agent=${agentRes.status} rail=${railRes.status}`);
   assert.equal((await kori(u.id)) + (await heldOf(u.id)) <= 1_000, true);
-  assert.ok(agent);
 });
 
 test('rewards never create value: no funded budget → no reward; funded → paid from the budget only', async () => {

@@ -14,17 +14,17 @@ import ScreenBackground from '../components/ScreenBackground';
 import ScreenHeader from '../components/ScreenHeader';
 import ReceiptCard from '../components/ReceiptCard';
 import { useToast } from '../components/Toast';
+import StepUpOverlay from '../components/StepUpOverlay';
 import {
-  agentConfirmDeposit,
-  agentScanDeposit,
-  agentScanWithdraw,
-  agentConfirmWithdraw,
+  agentCompleteCash,
+  agentDeclineCash,
+  agentScanCash,
+  getAgentCommissions,
   getAgentMe,
-  getAgentPayouts,
+  getCashTx,
   requestAgentFloatTopUp,
   getMyFloatTopUpRequests,
 } from '../lib/api-client';
-import { parseK21Qr } from '../lib/k21-qr';
 import KoriAmount from '../components/KoriAmount';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
 
@@ -37,8 +37,8 @@ export default function AgentHomeScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [agentData, setAgentData] = useState(null);
   const [qrInput, setQrInput] = useState('');
-  const [operation, setOperation] = useState('deposit');
   const [pending, setPending] = useState(null);
+  const [stepUpVisible, setStepUpVisible] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [lastReceipt, setLastReceipt] = useState(null);
   const [payoutInfo, setPayoutInfo] = useState(null);
@@ -52,7 +52,7 @@ export default function AgentHomeScreen({ navigation, route }) {
     try {
       const [me, payouts, requests] = await Promise.all([
         getAgentMe(),
-        getAgentPayouts().catch(() => null),
+        getAgentCommissions().catch(() => null),
         getMyFloatTopUpRequests().catch(() => ({ requests: [] })),
       ]);
       setAgentData(me);
@@ -78,61 +78,72 @@ export default function AgentHomeScreen({ navigation, route }) {
     }
   }, [route.params?.scannedQr, navigation]);
 
+  // J6: the scanned operation is read back from the server until the
+  // customer has confirmed (cash-in) / authorized with their PIN (cash-out).
+  useEffect(() => {
+    if (!pending?.id || pending.state !== 'agent_bound') return undefined;
+    const poll = setInterval(async () => {
+      try {
+        setPending((await getCashTx(pending.id)).transaction);
+      } catch {
+        /* offline: keep the last known state */
+      }
+    }, 3000);
+    return () => clearInterval(poll);
+  }, [pending?.id, pending?.state]);
+
   const handleScan = async () => {
-    const parsed = parseK21Qr(qrInput.trim());
-    const depositToken = parsed?.kind === 'agent_deposit' ? parsed.token : null;
-    const withdrawToken = parsed?.kind === 'agent_withdraw' ? parsed.token : null;
-    const token = depositToken ?? withdrawToken ?? qrInput.trim();
-    if (!token || token.length < 8) {
-      showToast('Colle le QR agent-deposit ou agent-withdraw');
+    const qr = qrInput.trim();
+    if (qr.length < 8) {
+      showToast('Scanne le code du client');
       return;
     }
     setConfirming(true);
     try {
-      if (withdrawToken || operation === 'withdraw') {
-        const { withdrawal } = await agentScanWithdraw({ token });
-        setPending(withdrawal);
-        setOperation('withdraw');
-      } else {
-        const { deposit } = await agentScanDeposit({ token });
-        setPending(deposit);
-        setOperation('deposit');
-      }
+      const { transaction } = await agentScanCash(qr);
+      setPending(transaction);
     } catch (err) {
-      showToast(err.message ?? 'QR invalide');
+      showToast(err.message ?? 'Code invalide');
     } finally {
       setConfirming(false);
     }
   };
 
-  const handleConfirm = async () => {
-    if (!pending?.id) return;
+  const customerReady = pending && ['customer_confirmed', 'customer_authorized', 'needs_review'].includes(pending.state);
+
+  const handleConfirm = async (stepUpToken) => {
+    if (!pending?.id || !customerReady) return;
     setConfirming(true);
     try {
-      if (operation === 'withdraw') {
-        const result = await agentConfirmWithdraw(pending.id);
-        setLastReceipt({
-          user: result.user ?? pending.user,
-          amount: pending.amountXof,
-          floatBalance: result.agent?.floatBalance,
-          kind: 'withdraw',
-        });
-        showToast('Retrait confirmé — cash remis');
-      } else {
-        const result = await agentConfirmDeposit(pending.id);
-        setLastReceipt({
-          user: result.user ?? pending.user,
-          amount: pending.amountXof,
-          floatBalance: result.agent?.floatBalance,
-          kind: 'deposit',
-        });
-        showToast('Dépôt confirmé — wallet crédité');
-      }
+      const result = await agentCompleteCash(pending.id, pending.bindingHash, stepUpToken);
+      setLastReceipt({
+        user: pending.customer,
+        amount: pending.amountXof,
+        reference: result.receipt?.reference ?? pending.reference,
+        kind: pending.kind,
+      });
+      showToast(pending.kind === 'cash_out' ? 'Retrait finalisé' : 'Dépôt finalisé — client crédité');
       setPending(null);
       setQrInput('');
       await reload();
     } catch (err) {
-      showToast(err.message ?? 'Confirmation impossible');
+      if (err?.code === 'step_up_required') setStepUpVisible(true);
+      else showToast(err.message ?? 'Finalisation impossible — vérifie l’état, ne recommence pas l’opération');
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  const handleDecline = async () => {
+    if (!pending?.id) return;
+    setConfirming(true);
+    try {
+      await agentDeclineCash(pending.id, pending.kind === 'cash_out' ? 'cash non remis' : 'cash non reçu');
+      setPending(null);
+      setQrInput('');
+      await reload();
+    } catch (err) {
+      showToast(err.message ?? 'Refus impossible');
     } finally {
       setConfirming(false);
     }
@@ -229,22 +240,14 @@ export default function AgentHomeScreen({ navigation, route }) {
             )}
           </View>
 
-          {payoutInfo?.currentMonthPreview ? (
+          {payoutInfo?.summary ? (
             <View style={styles.payoutCard}>
-              <Text style={styles.payoutTitle}>Prime mensuelle (estimation)</Text>
-              <Text style={styles.payoutValue}>
-                {formatAmount(payoutInfo.currentMonthPreview.totalPaidXof ?? 0)} F
-              </Text>
+              <Text style={styles.payoutTitle}>Commissions (financées par Jokko)</Text>
+              <Text style={styles.payoutValue}>{payoutInfo.summary.accrued.amountKori} ₭ à verser</Text>
               <Text style={styles.payoutMeta}>
-                Volume ce mois · {formatAmount(payoutInfo.currentMonthPreview.totalVolumeXof ?? 0)} F
-                {' · '}
-                {payoutInfo.currentMonthPreview.depositCount ?? 0} dépôts
+                Déjà versé · {payoutInfo.summary.settled.amountKori} ₭ · {payoutInfo.summary.accrued.count} opérations en attente
               </Text>
-              <Text style={styles.payoutHint}>
-                Forfait {formatAmount(payoutInfo.terms?.flatFeeXof ?? 25_000)} F si ≥{' '}
-                {formatAmount(payoutInfo.terms?.minVolumeForFlatFee ?? 100_000)} F +{' '}
-                {(payoutInfo.terms?.volumeBonusBps ?? 50) / 100}% du volume. Payé le 1er sur ton wallet.
-              </Text>
+              <Text style={styles.payoutHint}>{payoutInfo.note}</Text>
             </View>
           ) : null}
 
@@ -252,53 +255,42 @@ export default function AgentHomeScreen({ navigation, route }) {
             <ReceiptCard
               style={{ marginBottom: spacing.xl }}
               rows={[
-                { key: 'u', label: 'Client', value: lastReceipt.user?.name || lastReceipt.user?.phone },
+                { key: 'u', label: 'Client', value: lastReceipt.user?.displayName ?? 'Client' },
                 { key: 'a', label: 'Montant', value: `${formatAmount(lastReceipt.amount)} F`, color: colors.greenDark },
-                { key: 'f', label: 'Float restant', value: `${formatAmount(lastReceipt.floatBalance ?? 0)} F` },
+                { key: 'r', label: 'Référence', value: lastReceipt.reference },
               ]}
             />
           ) : null}
 
-          <View style={styles.modeRow}>
-            {[
-              { key: 'deposit', label: 'Dépôt client' },
-              { key: 'withdraw', label: 'Retrait client' },
-            ].map((m) => (
-              <PressScale
-                key={m.key}
-                scaleTo={0.95}
-                onPress={() => { setOperation(m.key); setPending(null); }}
-                style={[styles.modeChip, operation === m.key && styles.modeChipOn]}
-              >
-                <Text style={[styles.modeChipText, operation === m.key && styles.modeChipTextOn]}>{m.label}</Text>
-              </PressScale>
-            ))}
-          </View>
-
           {pending ? (
             <View style={styles.pendingCard}>
               <Text style={styles.pendingTitle}>
-                {operation === 'withdraw' ? 'Confirmer le retrait' : 'Confirmer le dépôt'}
+                {pending.kind === 'cash_out' ? 'Retrait client' : 'Dépôt client'}
               </Text>
-              <Text style={styles.pendingRow}>Client · {pending.user?.name || pending.user?.phone}</Text>
+              <Text style={styles.pendingRow}>Client · {pending.customer?.displayName ?? 'Client'}</Text>
               <Text style={styles.pendingRow}>Montant · {formatAmount(pending.amountXof)} F CFA</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: spacing.xs }}>
                 <Text style={[styles.pendingRow, { marginBottom: 0 }]}>Kori · </Text>
-                <KoriAmount value={Math.floor(pending.amountXof / 10)} textStyle={[styles.pendingRow, { marginBottom: 0 }]} />
+                <KoriAmount value={pending.amountKori} textStyle={[styles.pendingRow, { marginBottom: 0 }]} />
               </View>
-              {pending.user?.verified ? (
-                <Text style={styles.verified}>✓ Identité vérifiée K21</Text>
+              {pending.customer?.verified ? (
+                <Text style={styles.verified}>✓ Identité vérifiée</Text>
               ) : (
-                <Text style={styles.unverified}>Tier 1 — vérifie la pièce si gros montant</Text>
+                <Text style={styles.unverified}>Identité non vérifiée — vérifie la pièce si gros montant</Text>
               )}
-              <GlowButton
-                label={confirming ? 'Confirmation…' : operation === 'withdraw' ? 'J’ai remis le cash — confirmer' : 'J’ai reçu le cash — confirmer'}
-                onPress={handleConfirm}
-                disabled={confirming}
-                style={{ marginTop: spacing.lg }}
-              />
-              <PressScale onPress={() => setPending(null)} style={styles.cancelBtn}>
-                <Text style={styles.cancelText}>Annuler</Text>
+              <Text style={styles.pendingRow}>{pending.nextStep}</Text>
+              {customerReady ? (
+                <GlowButton
+                  label={confirming ? 'Finalisation…' : pending.kind === 'cash_out' ? 'J’ai remis le cash — finaliser (PIN)' : 'J’ai reçu le cash — finaliser (PIN)'}
+                  onPress={() => handleConfirm()}
+                  disabled={confirming}
+                  style={{ marginTop: spacing.lg }}
+                />
+              ) : (
+                <Text style={styles.unverified}>En attente de la confirmation du client dans son application — ne remets / n’encaisse rien avant.</Text>
+              )}
+              <PressScale onPress={handleDecline} style={styles.cancelBtn}>
+                <Text style={styles.cancelText}>Refuser l’opération</Text>
               </PressScale>
             </View>
           ) : (
@@ -307,7 +299,7 @@ export default function AgentHomeScreen({ navigation, route }) {
               <TextInput
                 value={qrInput}
                 onChangeText={setQrInput}
-                placeholder="k21://agent-deposit/… ou agent-withdraw/…"
+                placeholder="jokko://cash/…"
                 placeholderTextColor={colors.appCanvas.textMuted}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -340,6 +332,7 @@ export default function AgentHomeScreen({ navigation, route }) {
           ) : null}
         </ScrollView>
       </SafeAreaView>
+      <StepUpOverlay visible={stepUpVisible} onCancel={() => setStepUpVisible(false)} onVerified={(t) => { setStepUpVisible(false); handleConfirm(t); }} />
     </View>
   );
 }

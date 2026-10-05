@@ -34,12 +34,12 @@ export const customerHeld = async (userId) => Number((await prisma.ledgerAccount
 
 /** Full cash-in over HTTP; returns the final transaction. */
 export async function cashIn(cust, agent, amountXof) {
-  const c = await cust.call('POST', 'cash/in', { amountXof }, idem());
+  const c = await cust.call('POST', 'agent-cash/in', { amountXof }, idem());
   if (c.status !== 201) throw new Error(`cash/in ${c.status} ${JSON.stringify(c.body)}`);
   const scan = await agent.s.call('POST', 'agent/cash/scan', { qr: c.body.qr });
   if (scan.status !== 200) throw new Error(`scan ${scan.status} ${JSON.stringify(scan.body)}`);
   const b = scan.body.transaction.bindingHash;
-  const conf = await cust.call('POST', `cash/tx/${c.body.transaction.id}/confirm`, { bindingHash: b });
+  const conf = await cust.call('POST', `agent-cash/tx/${c.body.transaction.id}/confirm`, { bindingHash: b });
   if (conf.status !== 200) throw new Error(`confirm ${conf.status} ${JSON.stringify(conf.body)}`);
   const done = await agent.s.call('POST', `agent/cash/${c.body.transaction.id}/complete`, { bindingHash: b }, { headers: await pinned(agent.s) });
   if (done.status !== 200) throw new Error(`complete ${done.status} ${JSON.stringify(done.body)}`);
@@ -48,12 +48,12 @@ export async function cashIn(cust, agent, amountXof) {
 
 /** Full cash-out over HTTP. */
 export async function cashOut(cust, agent, amountXof) {
-  const c = await cust.call('POST', 'cash/out', { amountXof }, { headers: { ...idem().headers, ...(await pinned(cust)) } });
+  const c = await cust.call('POST', 'agent-cash/out', { amountXof }, { headers: { ...idem().headers, ...(await pinned(cust)) } });
   if (c.status !== 201) throw new Error(`cash/out ${c.status} ${JSON.stringify(c.body)}`);
   const scan = await agent.s.call('POST', 'agent/cash/scan', { qr: c.body.qr });
   if (scan.status !== 200) throw new Error(`scan ${scan.status} ${JSON.stringify(scan.body)}`);
   const b = scan.body.transaction.bindingHash;
-  const auth = await cust.call('POST', `cash/tx/${c.body.transaction.id}/confirm`, { bindingHash: b }, { headers: await pinned(cust) });
+  const auth = await cust.call('POST', `agent-cash/tx/${c.body.transaction.id}/confirm`, { bindingHash: b }, { headers: await pinned(cust) });
   if (auth.status !== 200) throw new Error(`authorize ${auth.status} ${JSON.stringify(auth.body)}`);
   const done = await agent.s.call('POST', `agent/cash/${c.body.transaction.id}/complete`, { bindingHash: b }, { headers: await pinned(agent.s) });
   if (done.status !== 200) throw new Error(`complete ${done.status} ${JSON.stringify(done.body)}`);

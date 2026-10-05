@@ -26,7 +26,7 @@ async function funded(kori = 5000, tier = 2) {
   return signedIn(api, c);
 }
 async function request(cust, amountXof, key) {
-  return cust.call('POST', 'cash/out', { amountXof }, { headers: { ...(key ? withKey(key) : idem()).headers, ...(await pinned(cust)) } });
+  return cust.call('POST', 'agent-cash/out', { amountXof }, { headers: { ...(key ? withKey(key) : idem()).headers, ...(await pinned(cust)) } });
 }
 async function boundOut(cust, ag, amountXof = 20_000) {
   const r = await request(cust, amountXof);
@@ -39,7 +39,7 @@ async function boundOut(cust, ag, amountXof = 20_000) {
 test('happy path: funds held at request; customer PIN authorizes the bound agent; agent PIN completes; settled once', async () => {
   const ag = await activeAgent(api);
   const cust = await funded(5000);
-  const noPin = await cust.call('POST', 'cash/out', { amountXof: 20_000 }, idem());
+  const noPin = await cust.call('POST', 'agent-cash/out', { amountXof: 20_000 }, idem());
   assert.equal(noPin.status, 403);
   assert.equal(noPin.body.code, 'step_up_required');
   const r = await request(cust, 20_000);
@@ -52,7 +52,7 @@ test('happy path: funds held at request; customer PIN authorizes the bound agent
   // The agent cannot pay out before the customer authorizes on their own device.
   const early = await ag.s.call('POST', `agent/cash/${r.body.transaction.id}/complete`, { bindingHash: b }, { headers: await pinned(ag.s) });
   assert.equal(early.body.code, 'not_completable');
-  const auth = await cust.call('POST', `cash/tx/${r.body.transaction.id}/confirm`, { bindingHash: b }, { headers: await pinned(cust) });
+  const auth = await cust.call('POST', `agent-cash/tx/${r.body.transaction.id}/confirm`, { bindingHash: b }, { headers: await pinned(cust) });
   assert.equal(auth.body.transaction.state, 'customer_authorized');
   const done = await ag.s.call('POST', `agent/cash/${r.body.transaction.id}/complete`, { bindingHash: b }, { headers: await pinned(ag.s) });
   assert.equal(done.status, 200, JSON.stringify(done.body));
@@ -75,7 +75,7 @@ test('tier / recovery / new device / insufficient funds are refused before anyth
   assert.equal(await wallet(t1.id), 5000);
   const rec = await funded(5000);
   await prisma.user.update({ where: { id: rec.id }, data: { accountRecoveredAt: new Date() } });
-  const r2 = await rec.call('POST', 'cash/out', { amountXof: 10_000 }, idem());
+  const r2 = await rec.call('POST', 'agent-cash/out', { amountXof: 10_000 }, idem());
   assert.equal(r2.status, 423);
   assert.equal(r2.body.code, 'cash_out_hold');
   const poor = await funded(500);
@@ -96,14 +96,14 @@ test('held funds cannot be spent twice: second cash-out / P2P on the same ₭ is
   assert.ok(p2p.status >= 400, 'the held ₭ are not spendable');
   const many = await funded(5000);
   const headers = await pinned(many);
-  const runs = await Promise.all([1, 2, 3, 4, 5].map(() => many.call('POST', 'cash/out', { amountXof: 20_000 }, { headers: { ...idem().headers, ...headers } })));
+  const runs = await Promise.all([1, 2, 3, 4, 5].map(() => many.call('POST', 'agent-cash/out', { amountXof: 20_000 }, { headers: { ...idem().headers, ...headers } })));
   assert.equal(runs.filter((r) => r.status === 201).length, 2, '5000 ₭ funds two 2000 ₭ withdrawals');
   assert.equal(await wallet(many.id), 1000);
   assert.equal(await customerHeld(many.id), 4000);
   // Same key, concurrently: one request.
   const same = await funded(5000);
   const sh = await pinned(same);
-  const dup = await Promise.all([1, 2, 3].map(() => same.call('POST', 'cash/out', { amountXof: 10_000 }, { headers: { 'idempotency-key': 'dup-out-1', ...sh } })));
+  const dup = await Promise.all([1, 2, 3].map(() => same.call('POST', 'agent-cash/out', { amountXof: 10_000 }, { headers: { 'idempotency-key': 'dup-out-1', ...sh } })));
   assert.equal(new Set(dup.filter((r) => r.status < 300).map((r) => r.body.transaction.id)).size, 1);
   assert.equal(await customerHeld(same.id), 1000);
 });
@@ -135,9 +135,9 @@ test('screenshot / forwarded QR: a thief’s agent can bind it but can never com
   assert.equal(pay.body.code, 'not_completable', 'no completion without the customer');
   // The same screenshot at an honest agent: already bound.
   assert.equal((await honest.s.call('POST', 'agent/cash/scan', { qr: r.body.qr })).body.code, 'already_bound');
-  const view = await victim.call('GET', `cash/tx/${r.body.transaction.id}`);
+  const view = await victim.call('GET', `agent-cash/tx/${r.body.transaction.id}`);
   assert.equal(view.body.transaction.servicePoint.agentCode, thiefAgent.profile.agentCode, 'the victim sees which point holds the code');
-  assert.equal((await victim.call('POST', `cash/tx/${r.body.transaction.id}/cancel`, {})).status, 200);
+  assert.equal((await victim.call('POST', `agent-cash/tx/${r.body.transaction.id}/cancel`, {})).status, 200);
   assert.equal(await wallet(victim.id), 5000);
   assert.equal(await customerHeld(victim.id), 0);
   assert.equal(await floatOf(thiefAgent.profile.id), 200_000);
@@ -149,9 +149,9 @@ test('customer authorization is bound to the exact agent + amount + transaction 
   const a = await boundOut(cust, ag, 20_000);
   const b = await boundOut(cust, ag, 30_000);
   assert.notEqual(a.b, b.b);
-  const cross = await cust.call('POST', `cash/tx/${a.id}/confirm`, { bindingHash: b.b }, { headers: await pinned(cust) });
+  const cross = await cust.call('POST', `agent-cash/tx/${a.id}/confirm`, { bindingHash: b.b }, { headers: await pinned(cust) });
   assert.equal(cross.body.code, 'binding_mismatch', 'an authorization for another transaction never applies');
-  await cust.call('POST', `cash/tx/${a.id}/confirm`, { bindingHash: a.b }, { headers: await pinned(cust) });
+  await cust.call('POST', `agent-cash/tx/${a.id}/confirm`, { bindingHash: a.b }, { headers: await pinned(cust) });
   assert.equal((await ag.s.call('POST', `agent/cash/${a.id}/complete`, { bindingHash: b.b }, { headers: await pinned(ag.s) })).body.code, 'binding_mismatch');
   assert.equal(await customerHeld(cust.id), 5000);
 });
@@ -160,12 +160,12 @@ test('cancel before authorization releases once; after authorization only the ag
   const ag = await activeAgent(api);
   const cust = await funded(5000);
   const t = await boundOut(cust, ag);
-  await Promise.all([1, 2, 3].map(() => cust.call('POST', `cash/tx/${t.id}/cancel`, {})));
+  await Promise.all([1, 2, 3].map(() => cust.call('POST', `agent-cash/tx/${t.id}/cancel`, {})));
   assert.equal(await wallet(cust.id), 5000);
   assert.equal(await prisma.journalEntry.count({ where: { reference: { endsWith: '-RELEASE' }, kind: 'cash_out_release', postings: { some: { account: { code: `customer:${cust.id}:held` } } } } }), 1);
   const t2 = await boundOut(cust, ag);
-  await cust.call('POST', `cash/tx/${t2.id}/confirm`, { bindingHash: t2.b }, { headers: await pinned(cust) });
-  assert.equal((await cust.call('POST', `cash/tx/${t2.id}/cancel`, {})).body.code, 'not_cancellable');
+  await cust.call('POST', `agent-cash/tx/${t2.id}/confirm`, { bindingHash: t2.b }, { headers: await pinned(cust) });
+  assert.equal((await cust.call('POST', `agent-cash/tx/${t2.id}/cancel`, {})).body.code, 'not_cancellable');
   assert.equal((await ag.s.call('POST', `agent/cash/${t2.id}/decline`, { reason: 'no cash in the till' })).body.transaction.state, 'declined');
   assert.equal(await wallet(cust.id), 5000);
 });
@@ -178,7 +178,7 @@ test('stale / offline: unbound expiry releases; customer never authorizes → ex
   const t = await boundOut(cust, ag);
   await prisma.agentCashTransaction.update({ where: { id: t.id }, data: { reviewDeadline: new Date(Date.now() - 1000) } });
   const t2 = await boundOut(cust, ag, 30_000);
-  await cust.call('POST', `cash/tx/${t2.id}/confirm`, { bindingHash: t2.b }, { headers: await pinned(cust) });
+  await cust.call('POST', `agent-cash/tx/${t2.id}/confirm`, { bindingHash: t2.b }, { headers: await pinned(cust) });
   await prisma.agentCashTransaction.update({ where: { id: t2.id }, data: { reviewDeadline: new Date(Date.now() - 1000) } });
   await Promise.all([sweepCash(), sweepCash(), sweepCash()]);
   const states = await prisma.agentCashTransaction.findMany({ where: { id: { in: [r.body.transaction.id, t.id, t2.id] } } });
@@ -192,7 +192,7 @@ test('stale / offline: unbound expiry releases; customer never authorizes → ex
   assert.equal(late.status, 200, JSON.stringify(late.body));
   assert.equal(await customerHeld(cust.id), 0);
   assert.equal(await floatOf(ag.profile.id), 230_000);
-  const view = await cust.call('GET', `cash/tx/${t2.id}`);
+  const view = await cust.call('GET', `agent-cash/tx/${t2.id}`);
   assert.ok(!/réessa|recommence|try again/i.test(view.body.transaction.nextStep));
 });
 
@@ -200,7 +200,7 @@ test('agent suspended after authorization → needs_review; maker-checker comple
   const ag = await activeAgent(api);
   const cust = await funded(10_000);
   const t = await boundOut(cust, ag);
-  await cust.call('POST', `cash/tx/${t.id}/confirm`, { bindingHash: t.b }, { headers: await pinned(cust) });
+  await cust.call('POST', `agent-cash/tx/${t.id}/confirm`, { bindingHash: t.b }, { headers: await pinned(cust) });
   const risk = await operator(api, ['risk']);
   await risk.call('POST', `admin/agents/${ag.profile.id}/suspend`, { reason: 'audit' });
   assert.equal((await prisma.agentCashTransaction.findUnique({ where: { id: t.id } })).state, 'needs_review');
@@ -229,11 +229,11 @@ test('risk: rapid cash-in → cash-out goes to risk_hold (funds held, no QR); ri
   const risk = await operator(api, ['risk']);
   const go = await risk.call('POST', `admin/cash/${r.body.transaction.id}/risk-decision`, { outcome: 'resume', reason: 'customer called, salary withdrawal' });
   assert.equal(go.body.state, 'funds_held');
-  const qr = await cust.call('POST', `cash/tx/${r.body.transaction.id}/challenge`, {});
+  const qr = await cust.call('POST', `agent-cash/tx/${r.body.transaction.id}/challenge`, {});
   assert.equal(qr.status, 200);
   const scan = await other.s.call('POST', 'agent/cash/scan', { qr: qr.body.qr });
   assert.equal(scan.status, 200, JSON.stringify(scan.body));
-  const r2 = await cust.call('POST', `cash/tx/${r.body.transaction.id}/cancel`, {});
+  const r2 = await cust.call('POST', `agent-cash/tx/${r.body.transaction.id}/cancel`, {});
   assert.equal(r2.status, 200);
   assert.equal(await wallet(cust.id), 5000, 'nothing lost');
   void cashOut;

@@ -51,7 +51,7 @@ test('every policy is well-formed: permission, resource relationship, valid role
 
 test('the cash-out class covers every path where value leaves the closed loop', () => {
   const cashOut = Object.entries(ROUTE_POLICY).filter(([, p]) => p.risk === 'cash_out').map(([k]) => k).sort();
-  assert.deepEqual(cashOut, ['POST cash/out', 'POST kori/convert', 'POST withdrawals/agent']);
+  assert.deepEqual(cashOut, ['POST agent-cash/out', 'POST cash/out', 'POST kori/convert', 'POST withdrawals/agent']);
   for (const k of cashOut) assert.equal(ROUTE_POLICY[k].stepUp, 'always');
 });
 
@@ -65,7 +65,8 @@ test('courier and agent working routes require the ACTIVE application role', () 
   for (const k of ['GET deliveries/nearby', 'POST deliveries/:id/accept', 'POST deliveries/:id/pickup', 'POST deliveries/:id/deliver']) {
     assert.equal(ROUTE_POLICY[k].role, 'driver', k);
   }
-  for (const k of Object.keys(ROUTE_POLICY).filter((x) => /^(GET|POST|PATCH) agent\/(?!apply|application)/.test(x))) {
+  // J6: an applicant (no role yet) reads its own lifecycle and proposes service points — no money, no operations.
+  for (const k of Object.keys(ROUTE_POLICY).filter((x) => /^(GET|POST|PATCH) agent\/(?!apply|application|lifecycle|service-points)/.test(x))) {
     assert.equal(ROUTE_POLICY[k].role, 'agent', k);
   }
 });

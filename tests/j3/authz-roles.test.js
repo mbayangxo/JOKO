@@ -12,7 +12,7 @@ import { startApiServer } from '../helpers/http-harness.js';
 import { assertInvariants } from '../../lib/money-kernel/invariants.js';
 import { account } from '../../lib/money-kernel/flows.js';
 import { ensureBusinessWallet } from '../../lib/business-wallet-service.js';
-import { applyForAgentProfile, approveAgentProfile } from '../../lib/agent-service.js';
+import { activeAgent } from '../j6/helpers.js';
 import { business, customer, operator, signedIn, stepUp } from './helpers.js';
 
 let api;
@@ -154,17 +154,16 @@ test('courier onboarding: compliance approves; risk suspends; a suspended courie
 });
 
 test('agent → unrelated customer / suspended agent: cut off at the policy layer', async () => {
-  const ag = await signedIn(api, await customer({ tier: 2 }));
-  const profile = await applyForAgentProfile({ userId: ag.id, displayName: 'Point Test' });
-  await approveAgentProfile(profile.id, 'test-compliance');
+  // J6: an agent is activated only through the full lifecycle (tests/j6/helpers.js activeAgent).
+  const a = await activeAgent(api, { floatXof: 0 });
+  const ag = a.s;
+  const profile = a.profile;
   assert.notEqual((await ag.call('GET', 'agent/me')).status, 403);
-  const stranger = await customer();
-  const scan = await ag.call('POST', 'agent/withdrawals/scan', { token: 'not-a-real-session-token' });
+  const scan = await ag.call('POST', 'agent/cash/scan', { qr: 'jokko://cash/not-a-real-session-token00' });
   assert.ok([400, 404].includes(scan.status), 'an agent reaches only sessions a customer opened for them');
-  void stranger;
   const risk = await operator(api, ['risk']);
   assert.equal((await risk.call('POST', `admin/agents/${profile.id}/suspend`, { reason: 'float mismatch' })).status, 200);
-  const r = await ag.call('POST', 'agent/deposits/scan', { token: 'xxxxxxxxxxxx' });
+  const r = await ag.call('POST', 'agent/cash/scan', { qr: 'jokko://cash/AAAAAAAAAAAAAAAAAAAAAAAA' });
   assert.equal(r.status, 403);
   assert.equal(r.body.code, 'agent_required');
   // Finance topping up a pending/suspended agent never (re)activates them.
@@ -310,7 +309,7 @@ test('direct HTTP bypass of UI restrictions: every admin route refuses a user to
   for (const p of ['admin/dashboard', 'admin/me', 'admin/approvals', 'admin/admins']) {
     assert.equal((await u.call('GET', p)).status, 401, p);
   }
-  for (const [m, p] of [['GET', 'agent/me'], ['POST', 'agent/deposits/scan'], ['GET', 'deliveries/nearby'], ['POST', 'deliveries/x/accept']]) {
+  for (const [m, p] of [['GET', 'agent/me'], ['POST', 'agent/cash/scan'], ['GET', 'deliveries/nearby'], ['POST', 'deliveries/x/accept']]) {
     assert.equal((await u.call(m, p, {})).status, 403, `${m} ${p}`);
   }
 });
