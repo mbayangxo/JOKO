@@ -351,7 +351,25 @@ The J5 suites pass. The only J5 expectation changed is the Kabu contract `perMer
 
 ## 25. Full fresh-DB gate
 
-GATE_RESULTS
+Fresh database `joko_j6_gate`, code commit **`9af5009`** (`scratchpad/gate6.sh`, same steps as J5):
+
+| Step | Result |
+|---|---|
+| `npm run test:db:setup` | ok |
+| `npm test` | **538 / 538 pass** (J5: 479; +59 J6 tests across 9 files) |
+| `money:check` before / after load + sweep | ok / ok (13 243 entries, 26 637 postings, 6 821 accounts) |
+| load | 3 / 3 |
+| sweeps | 3 / 3 — 141 GET routes; 118 mutating id-routes, 230 calls |
+| soak 5 × 1000 sends, no retry | 0 failures, invariants ok, p99 ≤ 315 ms |
+| migration dry-run (mbolo) | ok |
+| migrations == schema diff | exit 0 |
+| production-shaped rehearsal | **17 / 17** |
+| migrate-deploy without activation | exit 3 (inert) |
+| tsc | the same 5 pre-existing Deno cron-proxy errors as J5, nothing new |
+| web export | ok |
+| npm audit | 42 (13 moderate, 29 high) — unchanged from J5, no new dependency |
+
+An earlier gate run (`e292479`) failed only the sweeps. The cause was coverage, not a leak: no flow creates legacy agent sessions any more, so the sweeps had no foreign legacy row to attack. Both sweeps now seed one (`8083211`).
 
 ## 26. Migration vs schema
 
@@ -407,11 +425,22 @@ The economic-OS architecture document §3, §15 and §17 are updated (binding, D
 7. **Binding DoS.** Binding a victim's QR to a colluding agent blocks that transaction until the victim cancels. No money moves; the victim sees which point holds it.
 8. **Risk rules are a heuristic foundation,** not a fraud model. Thresholds need calibration on real data.
 9. **Assisted onboarding** verifies the merchant's personal identity (KYC). Business documents go through the separate J5 verification.
-10. **Cron.** The sweep runs in the daily job and the pending resolver, and lazily on every read. A dedicated frequent schedule is a deploy-time configuration item.
+10. **Cron.** The sweep runs in the daily job and the pending resolver, and lazily on every read. A dedicated frequent schedule (`cron/agent-cash-sweep`, mapped in the cron proxy) is a deploy-time configuration item.
+11. **Customer daily caps** are checked before the money transaction, so concurrent requests can exceed the *count* slightly. Amounts stay bounded by held funds and the tier cap.
 
 ## 32. Exact commits
 
-COMMITS
+| Commit | Content |
+|---|---|
+| `5cd0c91` | D21–D27 recorded |
+| `e9ed548` | J6.0 Kabu mapped-merchant settlement |
+| `15ff14a` | Lifecycle, service points, cash state machine, commissions, ops, onboarding |
+| `698afd5` | Cash-out, lifecycle, handoff/limits/risk, commissions/ops, roles/onboarding/discovery, adversarial suites |
+| `2949920` | `agent-cash/*` namespace (route-collision fix), app wiring, legacy tests ported |
+| `e292479` | Legacy agent adoption, rehearsal step, sweeps, permission matrix, architecture doc |
+| `07fcac6` | Report draft, proposed J6 decisions |
+| `8083211` | Sweeps seed legacy agent sessions |
+| **`9af5009`** | **Code gate**: risk_hold cancel by owner, cash sweep on existing crons |
 
 ## 33. J7 Commerce recommendation
 
