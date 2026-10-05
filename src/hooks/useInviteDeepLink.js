@@ -20,6 +20,11 @@ export function useInviteDeepLink(navigationRef, ready) {
         nav.navigate('SendMoney', { recipientHandle: parsed.handle });
         return;
       }
+      if (parsed.kind === 'pay_charge' && parsed.code) {
+        // J5 payment link: same opaque charge reference as the QR; amount from the server.
+        nav.navigate('PayMerchant', { chargeCode: parsed.code });
+        return;
+      }
       if (parsed.kind === 'pay_merchant' && parsed.businessId) {
         nav.navigate('PayMerchant', { merchantId: parsed.businessId });
       }

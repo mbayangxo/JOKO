@@ -26,6 +26,12 @@ The production-shaped rehearsal also caught a migration-ordering bug before any 
 
 The J4 decisions (fees 0, legacy requests preserved, follow-ups) are recorded as D18–D20 in [`JOKKO-DECISIONS.md`](JOKKO-DECISIONS.md). The J4 follow-up "request UI shows expired/limit states" is done (`b9c04c0`).
 
+**Scope correction (owner instruction, mid-J5).**
+- J5 is **Jokko Business Lite + shared business infrastructure + integration contracts**, not a second Kabu Shop.
+- Kabu ("Kebu"/"KEBU" in code) stays the full Shopify-class commerce OS and the system of record for its stores, ecommerce orders, merchandising and customers.
+- The permanent [`JOKKO-ECONOMIC-OS-ARCHITECTURE.md`](JOKKO-ECONOMIC-OS-ARCHITECTURE.md) records the economic chain, system boundaries, the Kabu ↔ Jokko contract and the system-of-record matrix. It also holds the classification of every existing merchant capability (nothing deleted, no destructive migration) and the DORMANT register.
+- J5 additionally delivers the contracts that keep later phases from rebuilding merchant infrastructure (§25).
+
 **Decision taken here, for review (§3):**
 - New businesses settle customer payments to the **business wallet**.
 - Existing businesses keep owner-personal settlement until their owner switches. The switch is one-way and owner-only.
@@ -421,6 +427,9 @@ Result: ⟨REH⟩
 5. **Fees** remain 0 (D18).
 6. **Pre-existing:** 5 `tsc` errors (Deno `cron-proxy`) and 42 `npm audit` advisories. ⟨AUDIT⟩
 7. **Production** is still unverified (BLOCKED workstream).
+8. **Partner (Kabu) collections settle to one configured wallet**, not to the selling merchant's business wallet. This is classified "migration needed" (architecture §3, §14). Fixing it is a J2 recipe change (provider cash-in → business account) plus a decision on existing partner settlement.
+9. **Catalog surfaces overlap:** the legacy merchant catalog screen and the Business Lite catalog both exist. They should converge on `lib/commerce/catalog.js`, without destructive migration (classified LEGACY/DUPLICATIVE).
+10. **Kabu adapters are contracts only:** order mirroring, payroll instructions, logistics and webhooks to Kabu need the Kabu-side build. None is faked.
 
 ## 23. Exact commits
 
@@ -442,4 +451,31 @@ Proceed to J6 only with production verification still a parallel workstream. Rec
 3. **Operational quality:**
    - Sentry/alerts on refund failures, `completed_response_lost` and reconciliation `ok: false`;
    - the morning admin checklist wired to `admin/businesses/lookup`.
-4. **Keep the boundary:** no rides, logistics network, gig marketplace, B2B wholesale network, social product or ERP. The Kebu → Jokko business link waits for a real contract.
+4. **Kabu ↔ Jokko activation:**
+   - use the business link that now exists;
+   - decide and build per-merchant settlement of partner collections (J2);
+   - deliver signed outbox webhooks to Kabu.
+5. **Keep the boundary:** no rides, logistics network, gig marketplace, B2B wholesale network, social product or ERP. The Kebu → Jokko business link waits for a real contract.
+
+## 25. Economic-OS contracts added to J5 (no restart, no premature J8)
+
+Additive migration `20261009000000_j5_economic_contracts`.
+
+| Requirement | What exists now | Status | Evidence |
+|---|---|---|---|
+| Omnichannel | `Order.sourceChannel / sourceSystem / externalOrderRef`; channel registry with adapters (`lib/commerce/channels.js`) | Jokko app, QR, Mbolo, POS, payment link ACTIVE; Kabu, Askaan, web, WhatsApp, restaurant DORMANT (refused) | outbox test |
+| Payment acceptance | One `PaymentRecord` per accepted payment, with `settlement` = `jokko_ledger` (J2 entry referenced) \| `off_ledger_cash` \| `external`. Written in the same transaction for QR charges, orders and direct merchant pay. | Cash/manual sales recorded, **never Jokko money** (not in wallet, not in ledger totals). SoftPOS / device tap / provider rail / online checkout DORMANT (refused; listed as such by `GET commerce/capabilities`). Payment link ACTIVE: same opaque charge reference, https `payUrl`, deep link. | `economic-contracts` "one payment model" |
+| Distribution business type | `Business.operatingMode` (owner-only, audited); `Territory`; `distribution_rep` role; B2B orders, trade accounts and invoices reused | Relationships ACTIVE; routes / collections / returns DORMANT (J7/J8) | |
+| Merchant acquisition | `MerchantRelationship`: introducer, organization, rep, territory, dates, status, assisted flag, explicit scopes. The merchant accepts with `business.relationships.manage`; assisted onboarding attaches only a business the person owns. | Invitation = **no ownership, no membership, no access**. Distributor owner / manager / rep get 403/404 on every merchant route before **and** after acceptance; reps see only their own introductions; rival distributors see nothing. | `economic-contracts` distribution + assisted onboarding |
+| Trade-credit-ready | Net 7 / 15 / 30 / 60 / 90 / monthly / COD as **supplier-granted** terms only; full concept map in architecture §7 | **Fix:** COD was self-selectable with a default limit; it now needs a supplier grant. Financing (IAWIC / partners) DORMANT; nothing simulated. | `economic-contracts` credit test (all terms refused without a grant) |
+| Address | `Address` with West-African structure, purposes, visibility, verification state | Homes never public; a customer's delivery address is visible only to that business's **fulfilment** roles while the order is active; others get the area only | `economic-contracts` address test + data-exposure sweep |
+| Fulfilment contract | `Order.fulfillmentOwner` (merchant \| jokko), `inventoryLocationId` | Jokko Fulfilment DORMANT (refused `fulfillment_not_activated`) | |
+| Logistics contract | `CommerceEvent` outbox written in the same transaction (order.paid / accepted / ready_for_fulfillment / out_for_delivery / delivered / completed / cancelled / refunded, payment.recorded, relationship.*); payloads are ids and amounts only | J8 consumer DORMANT; no logistics logic in payment handlers | outbox test |
+| Inventory locations | `InventoryLocation` (store / warehouse / distributor_depot / jokko_fulfillment_center / pickup_hub); primary created race-safely; every movement and order records it | Per-location stock positions DORMANT (additive later) | |
+| Demand intelligence | `demandAggregates()`: category × region, k ≥ 5 distinct businesses, small cells suppressed, no business identity | OpportunityOS consumer DORMANT; no route | k-anonymity test |
+| Kabu ↔ Jokko | `ExternalLink` + `BusinessLinkCode`: owner one-time code + partner key; single-use, unique, revocable; versioned contract (`KABU_CONTRACT`) | Payments / payouts ACTIVE (Partner API). Per-merchant settlement of partner collections is **classified "migration needed"**: today they settle to one configured wallet, and routing them to the linked business wallet is a J2 recipe change outside J5. | Kabu link test |
+| Business Lite scope | Settings explain Lite vs Kabu Shop; no Kabu-class features added | Guard in architecture §16 | |
+
+Other fixes made while integrating:
+- The customer's "order received" confirmation now uses the locked, evented transition (it used an unlocked legacy update).
+- Agent withdrawal confirmation maps a customer-funds refusal to 400 (it was a 500, found by the sweep).

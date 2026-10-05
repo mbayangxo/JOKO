@@ -320,6 +320,9 @@ model Business {
   /// J5: where customer payments settle. 'business' = the business wallet
   /// (default for every new payment); 'owner' = legacy owner-personal settlement.
   settlementMode             String    @default("business")
+  /// J5: retail | services | restaurant | distribution | wholesale | manufacturer | cooperative.
+  /// Distribution / wholesale unlock merchant relationships + territories.
+  operatingMode              String    @default("retail")
   phone                      String?
   createdAt                  DateTime  @default(now())
   updatedAt                  DateTime  @updatedAt
@@ -598,6 +601,15 @@ model Order {
   /// J5: where the payment settled ('business' wallet | 'owner' personal, legacy).
   settledTo             String?
   locationId            String?
+  /// J5 omnichannel: where the order entered (lib/commerce/channels.js) and,
+  /// for adapter channels, the source system's own reference.
+  sourceChannel         String    @default("jokko_app")
+  sourceSystem          String    @default("jokko")
+  externalOrderRef      String?
+  /// J5 fulfillment contract: 'merchant' (active) | 'jokko' (DORMANT, refused).
+  fulfillmentOwner      String    @default("merchant")
+  inventoryLocationId   String?
+  deliveryAddressId     String?
   cancelledAt           DateTime?
   cancelledBy           String?
   cancelReason          String?
@@ -3248,6 +3260,7 @@ model BusinessLocation {
   lng        Float?
   isPrimary  Boolean  @default(false)
   active     Boolean  @default(true)
+  addressId  String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -3256,22 +3269,196 @@ model BusinessLocation {
   @@index([businessId, active])
 }
 
+/// J5: where stock physically sits. A location of a business (store,
+/// warehouse, distributor depot) or — DORMANT — a Jokko fulfillment centre or
+/// pickup hub. Product.inventory is today the stock of the business's primary
+/// inventory location; StockMovement.inventoryLocationId records which one.
+model InventoryLocation {
+  id                 String   @id @default(cuid())
+  /// Business that owns this inventory location (the operator of the place).
+  operatorBusinessId String?
+  businessLocationId String?
+  /// store | warehouse | distributor_depot | jokko_fulfillment_center | pickup_hub
+  kind               String   @default("store")
+  /// active | dormant (not operable yet — never offered in production UI)
+  status             String   @default("active")
+  name               String
+  isPrimary          Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([operatorBusinessId, status])
+}
+
+/// J5: reusable, privacy-aware address for African commerce / logistics.
+/// `visibility`: private (owner only) | counterparty (shared for one order /
+/// relationship) | public (a shop front). A home address is never public.
+model Address {
+  id                String   @id @default(cuid())
+  ownerType         String
+  ownerId           String
+  /// home | business | store | warehouse | pickup_point | delivery_destination | farm | factory | fulfillment_center
+  purpose           String
+  visibility        String   @default("private")
+  country           String   @default("SN")
+  region            String?
+  department        String?
+  city              String?
+  commune           String?
+  neighborhood      String?
+  street            String?
+  building          String?
+  landmark          String?
+  instructions      String?
+  lat               Float?
+  lng               Float?
+  /// unverified | self_declared | agent_verified | courier_verified
+  verificationState String   @default("unverified")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([ownerType, ownerId])
+}
+
+/// J5 canonical payment record: every payment ACCEPTED by a business, whatever
+/// the method or channel, maps here. `settlement` says what it is:
+/// 'jokko_ledger' (electronic money, `ledgerReference` points to the J2 entry)
+/// | 'off_ledger_cash' (recorded cash/manual sale — never Jokko money)
+/// | 'external' (settled outside Jokko, e.g. a partner rail).
+model PaymentRecord {
+  id              String   @id @default(cuid())
+  businessId      String
+  /// wallet | static_qr | charge_qr | payment_link | online_checkout | provider_rail | cash | manual | device_tap (DORMANT) | softpos_card (DORMANT)
+  method          String
+  sourceChannel   String
+  sourceSystem    String   @default("jokko")
+  settlement      String
+  amountKori      Int
+  status          String   @default("completed")
+  ledgerReference String?  @unique
+  orderId         String?
+  chargeCode      String?
+  externalRef     String?
+  recordedBy      String?
+  note            String?
+  createdAt       DateTime @default(now())
+
+  @@index([businessId, createdAt])
+  @@index([orderId])
+}
+
+/// J5 transactional outbox: commerce events written in the same transaction
+/// as the change. Consumers (future Jokko Logistics, Kabu webhooks, demand
+/// aggregates) read from here — logistics logic never lives in payment
+/// handlers. Append-only.
+model CommerceEvent {
+  id            String    @id @default(cuid())
+  type          String
+  businessId    String?
+  aggregateType String
+  aggregateId   String
+  payloadJson   String
+  createdAt     DateTime  @default(now())
+  publishedAt   DateTime?
+
+  @@index([type, createdAt])
+  @@index([businessId, createdAt])
+  @@index([publishedAt])
+}
+
+/// J5 distribution: a distributor's territory.
+model Territory {
+  id                    String   @id @default(cuid())
+  distributorBusinessId String
+  name                  String
+  country               String   @default("SN")
+  region                String?
+  department            String?
+  communes              String?
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([distributorBusinessId, active])
+}
+
+/// J5: a commercial relationship between a distributor and a merchant.
+/// Invitation / assisted onboarding NEVER confers ownership or access to the
+/// merchant: the merchant accepts, the relationship carries explicit scopes
+/// (e.g. wholesale catalog + ordering), and either side can end it.
+model MerchantRelationship {
+  id                    String    @id @default(cuid())
+  distributorBusinessId String
+  merchantBusinessId    String?
+  invitedUserId         String?
+  introducedByUserId    String
+  territoryId           String?
+  /// invited | active | declined | ended
+  status                String    @default("invited")
+  scopesJson            String    @default("[\"wholesale_catalog\",\"wholesale_ordering\"]")
+  assistedOnboarding    Boolean   @default(false)
+  invitedAt             DateTime  @default(now())
+  respondedAt           DateTime?
+  respondedBy           String?
+  endedAt               DateTime?
+  endedBy               String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([distributorBusinessId, status])
+  @@index([merchantBusinessId, status])
+  @@index([invitedUserId, status])
+}
+
+/// J5 integration mapping: a Jokko object ↔ an external system's object
+/// (Kabu business / product / order / customer). Created only with consent
+/// (owner link code + partner key). No copy of the external object is kept.
+model ExternalLink {
+  id         String    @id @default(cuid())
+  system     String
+  objectType String
+  externalId String
+  jokkoType  String
+  jokkoId    String
+  businessId String?
+  status     String    @default("active")
+  linkedBy   String?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  @@unique([system, objectType, externalId])
+  @@index([jokkoType, jokkoId])
+}
+
+/// One-time code the Jokko business owner gives to a partner system to link.
+model BusinessLinkCode {
+  id         String    @id @default(cuid())
+  businessId String
+  system     String
+  codeHash   String    @unique
+  createdBy  String
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+}
+
 /// J5: append-only stock history. Every inventory change (sale, restore on
 /// cancellation/refund, manual adjustment) writes one row in the same
 /// transaction as the change, with the actor and a reason.
 model StockMovement {
-  id           String   @id @default(cuid())
-  productId    String
-  businessId   String
-  locationId   String?
-  delta        Int
-  balanceAfter Int
+  id                  String   @id @default(cuid())
+  productId           String
+  businessId          String
+  locationId          String?
+  delta               Int
+  balanceAfter        Int
   /// sale | cancel_restore | refund_restore | adjustment | initial
-  reason       String
-  note         String?
-  orderId      String?
-  actorUserId  String?
-  createdAt    DateTime @default(now())
+  reason              String
+  note                String?
+  orderId             String?
+  actorUserId         String?
+  inventoryLocationId String?
+  createdAt           DateTime @default(now())
 
   product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
 

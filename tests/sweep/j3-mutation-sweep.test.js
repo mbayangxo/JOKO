@@ -56,6 +56,7 @@ const PUBLIC_BY_DESIGN = new Set([
   // J4: paying a merchant's charge (QR) is paying that merchant — the attacker's own money, server amount.
   'POST money/charges/:id/pay',
 ]);
+// (J5) A relationship invitation id of someone else must never be answerable.
 
 /** Object id sources for each param route (rows that are NOT the attacker's). */
 function sourceFor(routeKey) {
@@ -96,6 +97,9 @@ function sourceFor(routeKey) {
     // J5 business OS sub-objects: another business's own rows.
     [/^businesses\/:id\/os\/orders\/:subId/, `SELECT "businessId" || '|' || "id" FROM "Order" WHERE "businessId" IS NOT NULL AND "businessId" NOT IN ($MYBIZ)`],
     [/^businesses\/:id\/os\/(catalog|stock)\/:subId/, `SELECT "businessId" || '|' || "id" FROM "Product" WHERE "businessId" IS NOT NULL AND "businessId" NOT IN ($MYBIZ)`],
+    [/^businesses\/:id\/os\/relationships\/:subId/, `SELECT "merchantBusinessId" || '|' || "id" FROM "MerchantRelationship" WHERE "merchantBusinessId" IS NOT NULL AND "merchantBusinessId" NOT IN ($MYBIZ)`],
+    [/^businesses\/:id\/os\/integrations\/:subId/, `SELECT "businessId" || '|' || "id" FROM "ExternalLink" WHERE "businessId" IS NOT NULL AND "businessId" NOT IN ($MYBIZ)`],
+    [/^me\/distribution-invitations\/:id/, `SELECT "id" FROM "MerchantRelationship" WHERE "invitedUserId" IS DISTINCT FROM $ME`],
     [/^businesses\/:id\/os\/locations\/:subId/, `SELECT "businessId" || '|' || "id" FROM "BusinessLocation" WHERE "businessId" NOT IN ($MYBIZ)`],
     [/^businesses\/:id\/members\/:subId/, `SELECT "businessId" || '|' || "id" FROM "BusinessMember" WHERE "businessId" NOT IN ($MYBIZ) AND "userId" <> $ME`],
     [/^businesses\/:id\/school\/periods\/:subId/, `SELECT "businessId" || '|' || "id" FROM "SchoolFeePeriod" WHERE "businessId" NOT IN ($MYBIZ)`],
@@ -110,6 +114,7 @@ function sourceFor(routeKey) {
 }
 
 const BODY = (attackerBizId) => ({
+  merchantBusinessId: attackerBizId,
   priceKori: 1,
   delta: 50,
   note: 'sweep: someone else’s stock',

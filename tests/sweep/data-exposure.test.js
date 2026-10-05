@@ -60,6 +60,8 @@ const PUBLIC_BY_DESIGN = new Set([
  * the exact dropoff or buyer id.
  */
 const ROLE_BY_DESIGN = {
+  // J5: someone else's address answers with the coarse area only — never the door, landmark or pin.
+  'addresses/:id': (b) => b && b.lat === undefined && b.lng === undefined && b.street === undefined && b.landmark === undefined && b.building === undefined && b.instructions === undefined,
   // J4: intent lookup is per caller — someone else's key reads as "not_found", nothing else.
   'money/intents/:id': (b) => b?.state === 'not_found' && Array.isArray(b?.references) && b.references.length === 0,
   'deliveries/:id': (b) => b?.status === 'open' && b?.dropoff?.exact == null && b?.dropoff?.lat == null && b?.buyerId === undefined,
@@ -98,6 +100,7 @@ async function candidatesFor(path, me, myBizIds) {
     'money/activity/:reference': `(SELECT e."reference" FROM "JournalEntry" e JOIN "Posting" p ON p."entryId" = e."id" JOIN "LedgerAccount" a ON a."id" = p."accountId" WHERE a."code" LIKE 'customer:%' AND a."code" NOT LIKE 'customer:${me}:%' ORDER BY random() LIMIT 2) UNION ALL (SELECT "reference" FROM "ExternalOperation" WHERE "userId" <> '${me}' ORDER BY random() LIMIT 1)`,
     'money/intents/:id': `SELECT regexp_replace("key", '^api:[^:]+:[^:]+:', '') FROM "ApiIdempotency" WHERE "provider" = 'api' AND "userId" <> '${me}' ORDER BY random() LIMIT 2`,
     'money/charges/:id': `SELECT "code" FROM "MerchantCharge" ORDER BY random() LIMIT 1`,
+    'addresses/:id': `SELECT "id" FROM "Address" WHERE NOT ("ownerType" = 'user' AND "ownerId" = '${me}') ORDER BY random() LIMIT 2`,
     'affiliate/resolve/:code': `SELECT "linkCode" FROM "AffiliateLink" ORDER BY random() LIMIT 1`,
   };
   const prefix = Object.keys(table).find((k) => path === k || path.startsWith(`${k}/`));

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ScreenBackground from '../components/ScreenBackground';
 import PressScale from '../components/PressScale';
@@ -29,6 +29,11 @@ import {
   requestBusinessVerification,
   switchBusinessSettlement,
   updateCatalogItem,
+  endMerchantRelationship,
+  getBusinessPayments,
+  getMerchantRelationships,
+  recordManualSale,
+  respondMerchantRelationship,
 } from '../lib/api-client';
 import { can, chargeState, moneyLine, orderButtons, reasonProblem, stockBadge, visibleSections } from '../lib/business-ux';
 import { newIntentKey } from '../lib/money-ux';
@@ -118,12 +123,14 @@ function Payments({ id, access, toast }) {
           {st.showQr ? <K21QrCode value={current.qrUrl} size={220} /> : null}
           <Text style={{ color: tone(st.tone) }}>{st.label}</Text>
           <Text style={styles.meta}>Le client scanne : le montant vient du serveur, il ne peut pas le changer. Valable 30 min, un seul paiement.</Text>
+          {st.showQr && current.payUrl ? <Btn label="Partager le lien de paiement" onPress={() => Share.share({ message: `${current.label ?? 'Paiement'} · ${current.amountKori} ₭ — ${current.payUrl}` }).catch(() => {})} /> : null}
           <View style={styles.row}>
             <Btn label="Actualiser" onPress={() => getBusinessCharges(id).then((l) => { setList(l); setCurrent((c) => l.find((x) => x.code === c.code) ?? c); }).catch((e) => toast(e.message))} />
             {st.showQr && can(access, 'business.charges.create') ? <Btn label="Annuler" onPress={() => cancelMerchantCharge(current.code).then(() => { setCurrent(null); load(); }).catch((e) => toast(e.message))} /> : null}
           </View>
         </Card>
       ) : null}
+      {can(access, 'business.charges.create') ? <CashSale id={id} toast={toast} /> : null}
       <Text style={styles.section}>Derniers QR</Text>
       {list.map((c) => {
         const s = chargeState(c);
@@ -135,6 +142,52 @@ function Payments({ id, access, toast }) {
         );
       })}
     </View>
+  );
+}
+
+/** Cash / other off-Jokko sale: recorded for the day's picture, never Jokko money. */
+function CashSale({ id, toast }) {
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [totals, setTotals] = useState(null);
+  const load = useCallback(() => getBusinessPayments(id).then((p) => setTotals(p.totals)).catch(() => {}), [id]);
+  useEffect(() => { load(); }, [load]);
+  const save = async () => {
+    const n = Number(amount);
+    if (!Number.isInteger(n) || n <= 0) return toast('Montant invalide');
+    try { await recordManualSale(id, { method: 'cash', amountKori: n, note: note || undefined }); setAmount(''); setNote(''); load(); toast('Vente en espèces enregistrée'); } catch (e) { toast(e.message); }
+  };
+  return (
+    <Card>
+      <Text style={styles.h}>Vente en espèces (hors Jokko)</Text>
+      <Field placeholder="Montant (₭)" keyboardType="number-pad" value={amount} onChangeText={setAmount} />
+      <Field placeholder="Note (facultatif)" value={note} onChangeText={setNote} maxLength={200} />
+      <Btn label="Enregistrer" onPress={save} />
+      {totals ? <Text style={styles.meta}>Argent Jokko reçu : {totals.jokkoMoneyKori} ₭ · Espèces enregistrées : {totals.recordedOffLedgerKori} ₭ (ce n'est pas de l'argent Jokko)</Text> : null}
+    </Card>
+  );
+}
+
+function Relationships({ id, toast }) {
+  const [rows, setRows] = useState(null);
+  const load = useCallback(() => getMerchantRelationships(id).then(setRows).catch(() => setRows([])), [id]);
+  useEffect(() => { load(); }, [load]);
+  if (!rows?.length) return null;
+  return (
+    <Card>
+      <Text style={styles.h}>Distributeurs</Text>
+      <Text style={styles.meta}>Une relation donne accès au catalogue et aux commandes en gros. Elle ne donne aucun accès à ton argent, tes ventes, tes clients ou ton équipe.</Text>
+      {rows.map((r) => (
+        <View key={r.id} style={{ gap: 6 }}>
+          <Text style={styles.lineTitle}>{r.distributor?.name ?? 'Distributeur'}{r.distributor?.verified ? ' ✓' : ''} · {({ invited: 'invitation', active: 'active', declined: 'refusée', ended: 'terminée' })[r.status]}</Text>
+          <View style={styles.row}>
+            {r.status === 'invited' ? <Btn primary label="Accepter" onPress={() => respondMerchantRelationship(id, r.id, true).then(load).catch((e) => toast(e.message))} /> : null}
+            {r.status === 'invited' ? <Btn label="Refuser" onPress={() => respondMerchantRelationship(id, r.id, false).then(load).catch((e) => toast(e.message))} /> : null}
+            {r.status === 'active' ? <Btn label="Mettre fin" onPress={() => endMerchantRelationship(id, r.id).then(load).catch((e) => toast(e.message))} /> : null}
+          </View>
+        </View>
+      ))}
+    </Card>
   );
 }
 
@@ -356,6 +409,11 @@ function Settings({ id, profile, reload, toast }) {
   const me = profile.me;
   return (
     <View style={{ gap: spacing.md }}>
+      <Card>
+        <Text style={styles.h}>Jokko Business Lite</Text>
+        <Text style={styles.meta}>L'essentiel pour encaisser, vendre et gérer au quotidien. Pour une boutique en ligne complète (site, variantes, collections, promotions), utilise Kabu Shop — il se relie à ce commerce pour les paiements Jokko.</Text>
+      </Card>
+      {me.capabilities.includes('business.relationships.manage') ? <Relationships id={id} toast={toast} /> : null}
       <Card>
         <Text style={styles.h}>Vérification : {({ unverified: 'non vérifié', pending: 'en cours', verified: 'vérifié ✓', rejected: 'refusée' })[profile.verification.status]}</Text>
         {me.isOwner && ['unverified', 'rejected'].includes(profile.verification.status) ? (

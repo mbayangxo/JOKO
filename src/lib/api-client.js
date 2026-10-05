@@ -1746,3 +1746,9 @@ export const changeBusinessMemberRole = (id, memberId, role) =>
   apiFetch(`/api/businesses/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}/role`, { method: 'POST', body: { role }, skipCache: true });
 export const removeBusinessMember = (id, memberId, reason) =>
   apiFetch(`/api/businesses/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}/remove`, { method: 'POST', body: { reason }, skipCache: true });
+export const getBusinessPayments = (id) => apiFetch(bos(id, '/payments'), { skipCache: true });
+export const recordManualSale = (id, body) => apiFetch(bos(id, '/sales/manual'), { method: 'POST', body, skipCache: true });
+export const getMerchantRelationships = (id) => apiFetch(bos(id, '/relationships'), { skipCache: true });
+export const respondMerchantRelationship = (id, relId, accept) =>
+  apiFetch(bos(id, `/relationships/${encodeURIComponent(relId)}/respond`), { method: 'POST', body: { accept }, skipCache: true });
+export const endMerchantRelationship = (id, relId) => apiFetch(bos(id, `/relationships/${encodeURIComponent(relId)}/end`), { method: 'POST', body: {}, skipCache: true });
