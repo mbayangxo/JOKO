@@ -1688,8 +1688,8 @@ export function getMoneyIntent(intentKey) {
   return apiFetch(`/api/money/intents/${encodeURIComponent(intentKey)}`, { skipCache: true });
 }
 
-export function createMerchantCharge({ businessId, amountKori, label }) {
-  return apiFetch('/api/money/charges', { method: 'POST', body: { businessId, amountKori, label }, skipCache: true });
+export function createMerchantCharge({ businessId, amountKori, label, externalRef, orderId }) {
+  return apiFetch('/api/money/charges', { method: 'POST', body: { businessId, amountKori, label, externalRef, orderId }, skipCache: true });
 }
 
 export function viewMerchantCharge(code) {
@@ -1714,3 +1714,35 @@ export function refundReceivedPayment(reference, { amountKori, reason, intentKey
     idempotencyKey: intentKey,
   });
 }
+
+// ── J5 Merchant + Business OS ────────────────────────────────────────────────
+const bos = (businessId, path = '') => `/api/businesses/${encodeURIComponent(businessId)}/os${path}`;
+export const getBusinessAccess = (id) => apiFetch(bos(id, '/access'), { skipCache: true });
+export const getBusinessProfile = (id) => apiFetch(bos(id, '/profile'), { skipCache: true });
+export const updateBusinessProfile = (id, body) => apiFetch(bos(id, '/profile'), { method: 'PATCH', body, skipCache: true });
+export const addBusinessLocation = (id, body) => apiFetch(bos(id, '/locations'), { method: 'POST', body, skipCache: true });
+export const switchBusinessSettlement = (id) => apiFetch(bos(id, '/settlement'), { method: 'POST', body: {}, skipCache: true });
+export const requestBusinessVerification = (id, note) => apiFetch(bos(id, '/verification'), { method: 'POST', body: { note }, skipCache: true });
+export const getBusinessToday = (id) => apiFetch(bos(id, '/today'), { skipCache: true });
+export const getBusinessCatalog = (id) => apiFetch(bos(id, '/catalog'), { skipCache: true });
+export const createCatalogItem = (id, body) => apiFetch(bos(id, '/catalog'), { method: 'POST', body, skipCache: true });
+export const updateCatalogItem = (id, productId, body) => apiFetch(bos(id, `/catalog/${encodeURIComponent(productId)}`), { method: 'PATCH', body, skipCache: true });
+export const adjustStock = (id, productId, body) => apiFetch(bos(id, `/stock/${encodeURIComponent(productId)}/adjust`), { method: 'POST', body, skipCache: true });
+export const getStockHistory = (id, productId) => apiFetch(bos(id, `/stock/${encodeURIComponent(productId)}/history`), { skipCache: true });
+export const getBusinessOrders = (id, status) => apiFetch(bos(id, `/orders${status ? `?status=${encodeURIComponent(status)}` : ''}`), { skipCache: true });
+export const moveBusinessOrder = (id, orderId, status) => apiFetch(bos(id, `/orders/${encodeURIComponent(orderId)}/status`), { method: 'POST', body: { status }, skipCache: true });
+export const cancelBusinessOrder = (id, orderId, reason, intentKey) =>
+  apiFetch(bos(id, `/orders/${encodeURIComponent(orderId)}/cancel`), { method: 'POST', body: { reason }, skipCache: true, idempotencyKey: intentKey });
+export const refundBusinessOrder = (id, orderId, { reason, restock }, intentKey) =>
+  apiFetch(bos(id, `/orders/${encodeURIComponent(orderId)}/refund`), { method: 'POST', body: { reason, restock }, skipCache: true, idempotencyKey: intentKey });
+export const cancelMyOrder = (orderId, reason, intentKey) =>
+  apiFetch(`/api/marketplace/orders/${encodeURIComponent(orderId)}/cancel`, { method: 'POST', body: { reason }, skipCache: true, idempotencyKey: intentKey });
+export const getBusinessMoney = (id) => apiFetch(bos(id, '/money'), { skipCache: true });
+export const getBusinessAnalytics = (id, period = '30d') => apiFetch(bos(id, `/analytics?period=${encodeURIComponent(period)}`), { skipCache: true });
+export const getBusinessCustomers = (id) => apiFetch(bos(id, '/customers'), { skipCache: true });
+export const getBusinessCharges = (id, status) => apiFetch(bos(id, `/charges${status ? `?status=${encodeURIComponent(status)}` : ''}`), { skipCache: true });
+export const cancelMerchantCharge = (code) => apiFetch(`/api/money/charges/${encodeURIComponent(code)}/cancel`, { method: 'POST', body: {}, skipCache: true });
+export const changeBusinessMemberRole = (id, memberId, role) =>
+  apiFetch(`/api/businesses/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}/role`, { method: 'POST', body: { role }, skipCache: true });
+export const removeBusinessMember = (id, memberId, reason) =>
+  apiFetch(`/api/businesses/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}/remove`, { method: 'POST', body: { reason }, skipCache: true });

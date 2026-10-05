@@ -615,9 +615,13 @@ export default function BusinessHubScreen({ navigation, route }) {
                   <Text style={{ fontSize: 20 }}>💳</Text>
                   <Text style={styles.actionLabel}>Recevoir</Text>
                 </PressScale>
-                <PressScale scaleTo={0.9} onPress={() => navigation.navigate('PayMerchant')} style={styles.actionBtn}>
+                <PressScale scaleTo={0.9} onPress={() => activeId && navigation.navigate('BusinessOS', { businessId: activeId, section: 'payments' })} style={styles.actionBtn}>
                   <Text style={{ fontSize: 20 }}>🏪</Text>
                   <Text style={styles.actionLabel}>Encaisser</Text>
+                </PressScale>
+                <PressScale scaleTo={0.9} onPress={() => activeId && navigation.navigate('BusinessOS', { businessId: activeId })} style={styles.actionBtn}>
+                  <Text style={{ fontSize: 20 }}>🧾</Text>
+                  <Text style={styles.actionLabel}>Mode commerce</Text>
                 </PressScale>
                 <PressScale scaleTo={0.9} onPress={() => setTab(type === 'school' ? 'school' : type === 'cooperative' ? 'coop' : 'payroll')} style={styles.actionBtn}>
                   <Text style={{ fontSize: 20 }}>⚙️</Text>

@@ -6,6 +6,7 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import WelcomeCelebrationScreen from '../screens/WelcomeCelebrationScreen';
 import BusinessHubScreen from '../screens/BusinessHubScreen';
+import BusinessOSScreen from '../screens/BusinessOSScreen';
 import AccessibilityScreen from '../screens/AccessibilityScreen';
 import MainTabs from './MainTabs';
 import SendMoneyScreen from '../screens/SendMoneyScreen';
@@ -193,6 +194,7 @@ export default function RootNavigator() {
       </Stack.Screen>
       <Stack.Screen name="Main" component={MainTabs} />
       <Stack.Screen name="BusinessMain" component={BusinessHubScreen} />
+      <Stack.Screen name="BusinessOS" component={BusinessOSScreen} />
       <Stack.Screen name="SendMoney" component={SendMoneyScreen} />
       <Stack.Screen name="ScheduledPayments" component={ScheduledPaymentsScreen} />
       <Stack.Screen name="PayMerchant" component={PayMerchantScreen} />
