@@ -10,8 +10,10 @@ import assert from 'node:assert/strict';
 
 import { fundUser, prisma } from '../helpers/db.js';
 import { freshIp, startApiServer } from '../helpers/http-harness.js';
-import { assertInvariants } from '../../lib/money-kernel/index.js';
+import { assertInvariants } from '../../lib/money-kernel/invariants.js';
 import { customer, newDevice, otpLogin, signedIn, stepUp } from './helpers.js';
+import { verifyOtp } from '../../lib/otp-service.js';
+import { otpKeysForPhone } from '../../lib/auth-otp.js';
 
 let api;
 before(async () => { api = await startApiServer(); });
@@ -84,21 +86,23 @@ test('logout-all ends every session of the account', async () => {
   assert.equal((await b.call('GET', 'wallet')).status, 401);
 });
 
-test('OTP brute force: codes burn after 5 guesses and a rolling cap survives re-issuing', async () => {
+test('OTP brute force: codes burn after 5 guesses and a rolling 24 h cap survives re-issuing codes', async () => {
   const c = await customer();
-  let throttled = false;
-  for (let round = 0; round < 4 && !throttled; round += 1) {
+  const keys = otpKeysForPhone(c.phone);
+  // In-process (no HTTP rate limiter in the way): 3 fresh codes × 5 wrong guesses.
+  for (let round = 0; round < 3; round += 1) {
     await prisma.otpCode.create({ data: { phone: c.phone, code: '999999', expiresAt: new Date(Date.now() + 600_000) } });
-    for (let i = 0; i < 5; i += 1) {
-      const r = await api.client('POST', 'auth/verify', { ip: freshIp(), body: { phone: c.phone, otp: String(100000 + i + round * 7), intent: 'login' } });
-      if (r.status === 429 && round >= 2) throttled = true;
-      assert.ok([401, 429].includes(r.status));
-    }
+    for (let i = 0; i < 5; i += 1) await verifyOtp(keys, String(100000 + i));
   }
-  // Even the CORRECT code is refused once the identity is throttled.
-  const ok = await otpLogin(api, c.phone, { device: c.device });
-  assert.equal(ok.status, 429, 'throttled identity cannot log in for 24 h');
-  assert.ok((await prisma.authThrottle.findFirst({ where: { key: { startsWith: 'otp:' }, blockedUntil: { gt: new Date() } } })));
+  // A brand-new code, guessed correctly, is still refused: the identity is throttled for 24 h.
+  await prisma.otpCode.create({ data: { phone: c.phone, code: '555555', expiresAt: new Date(Date.now() + 600_000) } });
+  const r = await verifyOtp(keys, '555555');
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'locked');
+  assert.ok(await prisma.authThrottle.findFirst({ where: { key: `otp:${keys[0]}`, blockedUntil: { gt: new Date() } } }));
+  // And over HTTP the correct code is refused too.
+  const http = await otpLogin(api, c.phone, { device: c.device });
+  assert.equal(http.status, 429);
 });
 
 test('recovery takeover (SIM swap): old sessions die, PIN is reset, cash-out and credential changes are held', async () => {
@@ -195,9 +199,12 @@ test('contact change opens a cool-off: phone changed → cash-out held 24 h', as
   const s = await signedIn(api, c);
   await stepUp(s);
   const newPhone = `+22178${String(Math.floor(Math.random() * 1e7)).padStart(7, '0')}`;
-  assert.equal((await s.call('POST', 'me/phone', { phone: newPhone })).status, 200);
-  const key = (await prisma.otpCode.findFirst({ where: { phone: { startsWith: `change:${c.id}:` } } }));
-  assert.equal((await s.call('POST', 'me/phone/confirm', { phone: newPhone, otp: key.code })).status, 200);
+  // Passes the sensitive-change guard; production cannot deliver SMS here (503, fail closed).
+  const asked = await s.call('POST', 'me/phone', { phone: newPhone });
+  assert.ok([200, 503].includes(asked.status), JSON.stringify(asked.body));
+  await prisma.otpCode.create({ data: { phone: `change:${c.id}:${newPhone}`, code: '737373', expiresAt: new Date(Date.now() + 600_000) } });
+  const done = await s.call('POST', 'me/phone/confirm', { phone: newPhone, otp: '737373' });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
   const r = await s.call('POST', 'cash/out', { amount: 10_000, operator: 'wave' });
   assert.equal(r.status, 423);
   assert.ok(r.body.reasonCodes.includes('recent_contact_change'));
@@ -211,8 +218,12 @@ test('email can never be attached by a profile update; the verified flow proves 
   assert.equal(direct.body.code, 'email_change_requires_verification');
   assert.equal((await prisma.user.findUnique({ where: { id: c.id } })).email, null);
   // Through the guarded flow (trusted session + step-up + code to the new inbox).
+  // With a PIN on the account, a fresh login alone is not enough: step-up is required.
+  const bcrypt = (await import('bcryptjs')).default;
+  await prisma.user.update({ where: { id: c.id }, data: { pinHash: await bcrypt.hash('482913', 4) } });
   const noStep = await s.call('POST', 'me/email', { email: 'me@example.com' });
   assert.equal(noStep.status, 403);
+  assert.equal(noStep.body.code, 'step_up_required');
   await stepUp(s);
   const req = await s.call('POST', 'me/email', { email: `me-${c.id}@example.com` });
   assert.ok([200, 503].includes(req.status), 'in production a code is only issued when it can be delivered');

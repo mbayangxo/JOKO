@@ -26,6 +26,7 @@ export async function otpLogin(api, phone, { device, intent = 'login', ip = fres
 /** A customer with a phone, wallet, tier and a device first seen long ago (their own phone). */
 export async function customer({ koriBalance = 0, tier = 2, deviceAgeHours = 72 } = {}) {
   const user = await createUserWithWallet({ koriBalance, tier });
+  await prisma.accountRole.create({ data: { userId: user.id, role: 'personal' } }); // as every real signup
   const device = await createVerifiedDevice(user.id);
   const past = new Date(Date.now() - deviceAgeHours * 3600_000);
   await prisma.userDevice.updateMany({ where: { userId: user.id, deviceId: device }, data: { firstSeenAt: past, verifiedAt: past } });
@@ -39,7 +40,7 @@ export async function signedIn(api, c, { device = c.device, intent = 'login' } =
   const ip = freshIp();
   const s = { ...c, device, ip, token: r.body.accessToken, refresh: r.body.refreshToken, session: r.body.session };
   s.call = (method, path, body, extra = {}) =>
-    api.client(method, path, { token: s.token, device, ip, headers: { ...H, ...(extra.headers ?? {}) }, body });
+    api.client(method, path, { token: s.token, device, ip, headers: { ...H, ...(extra.headers ?? {}) }, body: method === 'GET' ? undefined : body });
   return s;
 }
 
@@ -68,7 +69,7 @@ export async function operator(api, roles = []) {
   return {
     id: admin.id,
     token,
-    call: (method, path, body, headers = {}) => api.client(method, path, { token, ip, headers, body }),
+    call: (method, path, body, headers = {}) => api.client(method, path, { token, ip, headers, body: method === 'GET' ? undefined : body }),
   };
 }
 

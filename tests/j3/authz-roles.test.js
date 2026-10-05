@@ -9,7 +9,8 @@ import assert from 'node:assert/strict';
 
 import { fundBusiness, fundUser, prisma } from '../helpers/db.js';
 import { startApiServer } from '../helpers/http-harness.js';
-import { assertInvariants } from '../../lib/money-kernel/index.js';
+import { assertInvariants } from '../../lib/money-kernel/invariants.js';
+import { account } from '../../lib/money-kernel/flows.js';
 import { ensureBusinessWallet } from '../../lib/business-wallet-service.js';
 import { applyForAgentProfile, approveAgentProfile } from '../../lib/agent-service.js';
 import { business, customer, operator, signedIn, stepUp } from './helpers.js';
@@ -218,8 +219,9 @@ test('high-risk financial adjustment: finance_ops alone cannot post to a custome
   const approver = await operator(api, ['finance_approver']);
   const c = await customer();
   const key = `adj-${c.id}`;
+  await prisma.$transaction(async (tx) => { await account(tx, 'suspense'); await account(tx, 'refundsBudget'); });
   const req = await fin.call('POST', 'admin/money/adjustments', {
-    debitAccount: 'suspense:reconciliation', creditAccount: `customer:${c.id}:available`, amount: 50, reason: 'statement correction 2026-10',
+    debitAccount: 'suspense:reconciliation:KRI', creditAccount: `customer:${c.id}:available`, amount: 50, reason: 'statement correction 2026-10',
   }, { 'idempotency-key': key });
   assert.equal(req.status, 201, JSON.stringify(req.body));
   assert.equal(req.body.status, 'requested', 'customer-facing: dual authorization');
@@ -231,14 +233,20 @@ test('high-risk financial adjustment: finance_ops alone cannot post to a custome
 
 test('D10 low-risk path: a small platform-to-platform correction posts with one operator, audited', async () => {
   const fin = await operator(api, ['finance_ops']);
+  await prisma.$transaction(async (tx) => { await account(tx, 'suspense'); await account(tx, 'refundsBudget'); });
   const r = await fin.call('POST', 'admin/money/adjustments', {
-    debitAccount: 'suspense:reconciliation', creditAccount: 'platform:refunds', amount: 100, reason: 'reclassify a small difference',
+    debitAccount: 'suspense:reconciliation:KRI', creditAccount: 'platform:refunds', amount: 100, reason: 'reclassify a small difference',
   }, { 'idempotency-key': `low-${Date.now()}` });
-  if (r.status === 404) return; // platform account not opened yet on a fresh DB: nothing to correct
   assert.equal(r.status, 201, JSON.stringify(r.body));
+  // Above the single-operator cap → requested, not posted.
+  const big = await fin.call('POST', 'admin/money/adjustments', {
+    debitAccount: 'suspense:reconciliation:KRI', creditAccount: 'platform:refunds', amount: 999_999, reason: 'large reclassification',
+  }, { 'idempotency-key': `big-${Date.now()}` });
+  assert.equal(big.body.status, 'requested');
   assert.equal(r.body.status, 'posted');
   const e = await prisma.journalEntry.findUnique({ where: { reference: `adjustment:${r.body.id}` } });
-  assert.match(e.authorization ?? '', /admin_single_low_risk/);
+  assert.match(e.metadata?.authorization ?? '', /admin_single_low_risk/);
+  assert.equal(e.metadata?.policy, 'single_low_risk');
 });
 
 test('maker-checker: unfreeze needs a second operator; nobody approves their own request', async () => {
