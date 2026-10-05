@@ -293,27 +293,38 @@ model LedgerEntry {
 }
 
 model Business {
-  id                         String   @id @default(cuid())
+  id                         String    @id @default(cuid())
   ownerId                    String
   name                       String
-  type                       String   @default("merchant")
+  type                       String    @default("merchant")
   category                   String?
   arrondissement             String?
-  kebuId                     String?  @unique
+  kebuId                     String?   @unique
   description                String?
   statusText                 String?
   address                    String?
   lat                        Float?
   lng                        Float?
   imageUrl                   String?
-  verified                   Boolean  @default(false)
-  acceptOrdersWhenOutOfStock Boolean  @default(false)
-  pauseOrders                Boolean  @default(false)
-  lowStockAlertEnabled       Boolean  @default(true)
-  distributionEnabled        Boolean  @default(false)
-  createdAt                  DateTime @default(now())
-  updatedAt                  DateTime @updatedAt
+  verified                   Boolean   @default(false)
+  acceptOrdersWhenOutOfStock Boolean   @default(false)
+  pauseOrders                Boolean   @default(false)
+  lowStockAlertEnabled       Boolean   @default(true)
+  distributionEnabled        Boolean   @default(false)
+  /// J5: merchant verification lifecycle (unverified → pending → verified | rejected).
+  /// `verified` stays the public badge and is kept equal to (status == verified).
+  verificationStatus         String    @default("unverified")
+  verificationNote           String?
+  verifiedAt                 DateTime?
+  verifiedBy                 String?
+  /// J5: where customer payments settle. 'business' = the business wallet
+  /// (default for every new payment); 'owner' = legacy owner-personal settlement.
+  settlementMode             String    @default("business")
+  phone                      String?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
+  locations             BusinessLocation[]
   owner                 User                      @relation("BusinessOwner", fields: [ownerId], references: [id])
   members               BusinessMember[]
   products              Product[]
@@ -540,9 +551,14 @@ model Product {
   b2bPrice          Int?
   b2bMinQty         Int       @default(1)
   saleChannel       String    @default("both")
+  /// J5: 'product' (may track stock) | 'service' (never tracks stock).
+  kind              String    @default("product")
+  /// J5: merchant reference, unique per business when set.
+  sku               String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  stockMovements StockMovement[]
   seller         SellerProfile?  @relation(fields: [sellerId], references: [id])
   business       Business?       @relation(fields: [businessId], references: [id])
   orderItems     OrderItem[]
@@ -553,6 +569,7 @@ model Product {
   legacyPromosAsFree    MerchantPromo[] @relation("LegacyPromoFreeProduct")
   legacyPromosAsTrigger MerchantPromo[] @relation("LegacyPromoTriggerProduct")
 
+  @@unique([businessId, sku])
   @@index([sellerId])
   @@index([businessId])
   @@index([category])
@@ -578,6 +595,15 @@ model Order {
   notes                 String?
   affiliateLinkCode     String?
   mboloThreadId         String?
+  /// J5: where the payment settled ('business' wallet | 'owner' personal, legacy).
+  settledTo             String?
+  locationId            String?
+  cancelledAt           DateTime?
+  cancelledBy           String?
+  cancelReason          String?
+  refundedAt            DateTime?
+  refundedBy            String?
+  refundReference       String?   @unique
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -3186,21 +3212,70 @@ model WebhookReceipt {
 /// the opaque id; the merchant, amount and expiry are SERVER state. It can be
 /// paid once, before it expires, by the payer who confirms it.
 model MerchantCharge {
-  id           String    @id @default(cuid())
+  id          String    @id @default(cuid())
   /// Opaque public code printed in the QR (unguessable).
-  code         String    @unique
-  businessId   String
-  createdBy    String
-  amountKori   Int
-  label        String?
+  code        String    @unique
+  businessId  String
+  createdBy   String
+  amountKori  Int
+  label       String?
   /// open → paid | cancelled | expired
-  status       String    @default("open")
-  expiresAt    DateTime
-  paidBy       String?
-  paidAt       DateTime?
-  paymentRef   String?   @unique
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  status      String    @default("open")
+  expiresAt   DateTime
+  paidBy      String?
+  paidAt      DateTime?
+  paymentRef  String?   @unique
+  /// J5: optional merchant reference / order the charge is for.
+  externalRef String?
+  orderId     String?
+  locationId  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([businessId, status])
+  @@index([businessId, createdAt])
+}
+
+/// J5: a place a business operates from. Every business has a primary
+/// location; inventory is single-location today (Product.inventory) and the
+/// model is ready for per-location stock and location-scoped staff.
+model BusinessLocation {
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  address    String?
+  lat        Float?
+  lng        Float?
+  isPrimary  Boolean  @default(false)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, active])
+}
+
+/// J5: append-only stock history. Every inventory change (sale, restore on
+/// cancellation/refund, manual adjustment) writes one row in the same
+/// transaction as the change, with the actor and a reason.
+model StockMovement {
+  id           String   @id @default(cuid())
+  productId    String
+  businessId   String
+  locationId   String?
+  delta        Int
+  balanceAfter Int
+  /// sale | cancel_restore | refund_restore | adjustment | initial
+  reason       String
+  note         String?
+  orderId      String?
+  actorUserId  String?
+  createdAt    DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([productId, createdAt])
+  @@index([businessId, createdAt])
+  @@index([orderId])
 }

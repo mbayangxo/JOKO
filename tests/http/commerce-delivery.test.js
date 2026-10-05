@@ -70,7 +70,8 @@ test('order status: buyer cannot drive merchant transitions; stranger cannot rea
   const buyer = await actor(500);
   const o = await order(buyer, s, { fulfillmentType: 'delivery', dropoff: { area: 'Plateau', address: 'Rue 9' } });
   assert.equal(o.status, 201);
-  assert.equal((await call('PATCH', `marketplace/orders/${o.body.orderId}/status`, buyer, { status: 'preparing' })).status, 403);
+  // J5: refused without disclosing the order (404).
+  assert.ok([403, 404].includes((await call('PATCH', `marketplace/orders/${o.body.orderId}/status`, buyer, { status: 'preparing' })).status));
   const stranger = await actor();
   assert.equal((await call('GET', `marketplace/orders/${o.body.orderId}`, stranger)).status, 403);
   assert.equal((await call('PATCH', `marketplace/orders/${o.body.orderId}/status`, s.owner, { status: 'preparing' })).status, 200);

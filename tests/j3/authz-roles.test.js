@@ -56,7 +56,7 @@ test('employee → owner-only action: grants above own level and owner-only role
   assert.equal(asCfo.status, 403);
   assert.equal(asCfo.body.code, 'owner_only_role');
   const asOwner = await adminM.call('POST', `businesses/${b.id}/members`, { userHandle: target.handle, role: 'owner' });
-  assert.equal(asOwner.status, 403);
+  assert.ok([400, 403].includes(asOwner.status), 'J5: ownership is not a grantable role at all');
   assert.equal((await staff.call('POST', `businesses/${b.id}/members`, { userHandle: target.handle, role: 'viewer' })).status, 403);
   assert.equal((await staff.call('GET', `businesses/${b.id}/wallet`)).status, 403, 'staff cannot read treasury');
   assert.equal(await prisma.businessMember.count({ where: { businessId: b.id, userId: target.id } }), 0);

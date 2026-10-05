@@ -41,9 +41,10 @@ test('merchant pay: debit/credit, both histories, forged merchant, malformed amo
   // Only rewards paid from the funded incentive budget may top this up.
   const reward = await fundedRewardsFor(payer.id);
   assert.equal(await bal(payer), 750 + reward);
-  assert.equal(await bal(owner), 250);
+  // J5: settles to the BUSINESS wallet (personal and business money stay distinct).
+  assert.equal(await bal(owner), 0);
+  assert.equal(Number((await prisma.ledgerAccount.findUnique({ where: { code: `business:${id}:wallet` } })).balance), 250);
   assert.ok((await call('GET', 'transactions', payer)).body.some((t) => t.reference === p.body.reference));
-  assert.ok((await call('GET', 'transactions', owner)).body.some((t) => t.amount === 250));
   assert.equal((await call('POST', 'merchants/nope/pay', payer, { body: { amount: 10 } })).status, 404);
   for (const amount of [0, -1, 1.5, '10']) assert.equal((await call('POST', `merchants/${id}/pay`, payer, { body: { amount } })).status, 400);
   assert.equal(await bal(payer), 750 + reward);

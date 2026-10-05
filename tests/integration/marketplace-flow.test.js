@@ -133,14 +133,18 @@ test('marketplace E2E: publish → search → order pickup → order delivery �
     },
   });
   assert.equal(pickupRes.statusCode, 201, JSON.stringify(pickupRes.body));
-  assert.equal(pickupRes.body.status, 'ready_for_pickup');
+  // J5: a paid order waits for the merchant (confirmed → preparing → ready).
+  assert.equal(pickupRes.body.status, 'confirmed');
   assert.equal(pickupRes.body.totalKori, 1000);
 
   const buyerWalletAfterPickup = await prisma.wallet.findUnique({ where: { userId: buyer.id } });
   assert.equal(buyerWalletAfterPickup.koriBalance, 4000);
 
+  // J5: new businesses settle to the business wallet, not the owner's personal wallet.
   const merchantWalletAfterPickup = await prisma.wallet.findUnique({ where: { userId: merchant.id } });
-  assert.equal(merchantWalletAfterPickup.koriBalance, 1000);
+  assert.equal(merchantWalletAfterPickup.koriBalance, 0);
+  const bizAccount = await prisma.ledgerAccount.findUnique({ where: { code: `business:${business.id}:wallet` } });
+  assert.equal(Number(bizAccount.balance), 1000);
 
   const stockAfterPickup = await prisma.product.findUnique({ where: { id: product.id } });
   assert.equal(stockAfterPickup.inventory, 18);
