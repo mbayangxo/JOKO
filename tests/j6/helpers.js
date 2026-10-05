@@ -9,10 +9,10 @@ import { topUpAgentFloat } from '../../lib/agent-service.js';
  * apply → identity verified (op A) → approved (op B) → service point approved
  * → activation requested (op C) and executed (op D) → float topped up by finance.
  */
-export async function activeAgent(api, { floatXof = 200_000, tier = 'standard', hours, cashIn = true, cashOut = true, signed = true } = {}) {
+export async function activeAgent(api, { floatXof = 200_000, tier = 'standard', hours, cashIn = true, cashOut = true, signed = true, lat = 14.6789, lng = -17.4467 } = {}) {
   const c = await customer({ tier: 2 });
   const n = crypto.randomBytes(3).toString('hex');
-  const profile = await applyAsAgent(c.id, { displayName: `Point ${n}`, servicePoint: { name: `Boutique ${n}`, publicAddress: `Marché Tilène, allée ${n}, Médina`, area: 'Médina', lat: 14.6789, lng: -17.4467, hours, cashIn, cashOut } });
+  const profile = await applyAsAgent(c.id, { displayName: `Point ${n}`, servicePoint: { name: `Boutique ${n}`, publicAddress: `Marché Tilène, allée ${n}, Médina`, area: 'Médina', lat, lng, hours, cashIn, cashOut } });
   await verifyAgentIdentity('op-verify', profile.id);
   await approveAgent('op-approve', profile.id, { reason: 'documents and premises checked' });
   await decideServicePoint('op-approve', profile.servicePointId, { status: 'active', reason: 'premises visited' });
