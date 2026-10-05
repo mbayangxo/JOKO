@@ -14,6 +14,7 @@ const JOBS: Record<string, string> = {
   'daily-financial-report': '/api/cron/daily-financial-report',
   'delivery-auto-release': '/api/cron/delivery-auto-release',
   'agent-monthly-payout': '/api/cron/agent-monthly-payout',
+  'agent-cash-sweep': '/api/cron/agent-cash-sweep',
 };
 
 serve(async (req) => {

@@ -195,7 +195,7 @@ export default function AgentCashScreen({ navigation, route, kind: kindProp }) {
 
           <Text style={styles.next}>{tx.nextStep}</Text>
 
-          {(unbound || bound) && tx.state !== 'risk_hold' ? (
+          {unbound || bound || tx.state === 'risk_hold' ? (
             <GlowButton label="Annuler" tone="ink" onPress={cancel} disabled={busy} style={styles.btn} />
           ) : null}
           {tx.status === 'completed' || tx.status === 'failed_cancelled' ? (

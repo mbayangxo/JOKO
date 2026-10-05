@@ -236,5 +236,11 @@ test('risk: rapid cash-in → cash-out goes to risk_hold (funds held, no QR); ri
   const r2 = await cust.call('POST', `agent-cash/tx/${r.body.transaction.id}/cancel`, {});
   assert.equal(r2.status, 200);
   assert.equal(await wallet(cust.id), 5000, 'nothing lost');
+  // The owner can also take back ₭ that are still in risk_hold.
+  const r3 = await request(cust, 45_000);
+  assert.equal(r3.body.transaction.state, 'risk_hold');
+  assert.equal((await cust.call('POST', `agent-cash/tx/${r3.body.transaction.id}/cancel`, {})).status, 200);
+  assert.equal(await wallet(cust.id), 5000);
+  assert.equal(await customerHeld(cust.id), 0);
   void cashOut;
 });
