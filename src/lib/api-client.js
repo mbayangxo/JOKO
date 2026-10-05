@@ -168,6 +168,8 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
         const error = new Error(msg);
         error.status = response.status;
         error.code = data.code;
+        error.category = data.category ?? null;
+        error.idempotencyKey = writeKey;
         error.data = data;
         if (response.status >= 500) {
           captureApiError(error, { path, status: response.status, code: data.code });
@@ -190,13 +192,23 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
     }
   }
 
+  const raw = lastError?.message ?? '';
+  const lost = lastError?.name === 'AbortError' || raw === 'Load failed' || raw.includes('Failed to fetch') || raw.includes('Network request failed');
+  if (lost && writeKey) {
+    // J4: a WRITE whose response was lost may have executed. Never tell the
+    // user to "retry" (a new tap = a new payment): report an unknown outcome
+    // with the intent key so the screen can ask GET /api/money/intents/:key.
+    const unknown = new Error('Vérification du paiement en cours… Ne le renouvelle pas.');
+    unknown.code = 'outcome_unknown';
+    unknown.idempotencyKey = writeKey;
+    throw unknown;
+  }
   if (lastError?.name === 'AbortError') {
     const slow = new Error('Connexion lente — réessaie dans un instant');
     slow.code = 'timeout';
     throw slow;
   }
-  const raw = lastError?.message ?? '';
-  if (raw === 'Load failed' || raw.includes('Failed to fetch') || raw.includes('Network request failed')) {
+  if (lost) {
     const network = new Error('Connexion impossible — vérifie ta connexion et réessaie');
     network.code = 'network';
     throw network;
@@ -359,6 +371,7 @@ export function transferSend({
   giftCardTheme,
   threadId,
   stepUpToken,
+  intentKey,
 }) {
   const handle = String(recipientHandle).replace(/^@/, '');
   return apiFetch('/api/transfers/send', {
@@ -366,6 +379,7 @@ export function transferSend({
     body: { recipientHandle: handle, amount, currency, note, voiceNoteUrl, photoUrl, videoUrl, gifUrl, giftCardTheme, threadId },
     stepUpToken,
     skipCache: true,
+    idempotencyKey: intentKey,
   });
 }
 
@@ -373,11 +387,12 @@ export function getMerchantPublic(idOrKebuId) {
   return apiFetch(`/api/merchants/${encodeURIComponent(idOrKebuId)}/public`, { skipCache: true });
 }
 
-export function merchantPay(businessId, { amount, currency = 'kori', stepUpToken, useVoucher, threadId }) {
+export function merchantPay(businessId, { amount, currency = 'kori', stepUpToken, useVoucher, threadId, intentKey }) {
   return apiFetch(`/api/merchants/${encodeURIComponent(businessId)}/pay`, {
     method: 'POST',
     body: { amount, currency, stepUpToken, useVoucher: useVoucher === true ? true : undefined, threadId },
     skipCache: true,
+    idempotencyKey: intentKey,
   });
 }
 
@@ -385,20 +400,22 @@ export function getMerchantVouchers() {
   return apiFetch('/api/merchant-vouchers/mine', { skipCache: true });
 }
 
-export function cashIn({ amount, operator = 'orange_money', phone }) {
+export function cashIn({ amount, operator = 'orange_money', phone, intentKey }) {
   return apiFetch('/api/cash/in', {
     method: 'POST',
     body: { amount, operator, phone },
     skipCache: true,
+    idempotencyKey: intentKey,
   });
 }
 
-export function cashOut({ amount, operator = 'orange_money', phone, stepUpToken }) {
+export function cashOut({ amount, operator = 'orange_money', phone, stepUpToken, intentKey }) {
   return apiFetch('/api/cash/out', {
     method: 'POST',
     body: { amount, operator, phone },
     stepUpToken,
     skipCache: true,
+    idempotencyKey: intentKey,
   });
 }
 
@@ -1644,5 +1661,55 @@ export function followChannel(channelId, follow = true) {
     method: 'POST',
     body: { follow },
     skipCache: true,
+  });
+}
+
+// ── J4 Money read model & primitives ────────────────────────────────────────
+export function getMoneyHome() {
+  return apiFetch('/api/money/home', { skipCache: true });
+}
+
+export function getMoneyActivity({ limit = 30, before } = {}) {
+  const q = new URLSearchParams({ limit: String(limit), ...(before ? { before } : {}) });
+  return apiFetch(`/api/money/activity?${q}`, { skipCache: true });
+}
+
+export function getMoneyReceipt(reference) {
+  return apiFetch(`/api/money/activity/${encodeURIComponent(reference)}`, { skipCache: true });
+}
+
+export function previewMoney(flow, amountKori) {
+  return apiFetch('/api/money/preview', { method: 'POST', body: { flow, amountKori }, skipCache: true });
+}
+
+/** "Did my payment go through?" — never guess, never re-send blindly. */
+export function getMoneyIntent(intentKey) {
+  return apiFetch(`/api/money/intents/${encodeURIComponent(intentKey)}`, { skipCache: true });
+}
+
+export function createMerchantCharge({ businessId, amountKori, label }) {
+  return apiFetch('/api/money/charges', { method: 'POST', body: { businessId, amountKori, label }, skipCache: true });
+}
+
+export function viewMerchantCharge(code) {
+  return apiFetch(`/api/money/charges/${encodeURIComponent(code)}`, { skipCache: true });
+}
+
+export function payMerchantCharge(code, { expectedAmountKori, stepUpToken, intentKey }) {
+  return apiFetch(`/api/money/charges/${encodeURIComponent(code)}/pay`, {
+    method: 'POST',
+    body: { expectedAmountKori },
+    stepUpToken,
+    skipCache: true,
+    idempotencyKey: intentKey,
+  });
+}
+
+export function refundReceivedPayment(reference, { amountKori, reason, intentKey }) {
+  return apiFetch(`/api/money/payments/${encodeURIComponent(reference)}/refund`, {
+    method: 'POST',
+    body: { amountKori, reason },
+    skipCache: true,
+    idempotencyKey: intentKey,
   });
 }

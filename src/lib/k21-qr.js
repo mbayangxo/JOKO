@@ -104,6 +104,16 @@ export function buildWebGroupJoinUrl(code) {
   return origin ? `${origin}/group-join/${c}` : `https://k21.app/group-join/${c}`;
 }
 
+/**
+ * J4: a merchant charge QR carries only an opaque code. Merchant and amount are
+ * read from the server; the client never trusts an amount encoded in a QR.
+ */
+export function buildChargeUrl(code) {
+  const c = String(code ?? '').trim();
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(c)) throw new Error('Charge code required');
+  return `k21://charge/${c}`;
+}
+
 export function parseK21Qr(raw) {
   const text = String(raw ?? '').trim();
   if (!text) return null;
@@ -121,6 +131,7 @@ export function parseK21Qr(raw) {
     if ((path === 'u' || path === 'user') && rest) return { kind: 'add_user', handle: rest.toLowerCase() };
     if (path === 'pass' && rest) return { kind: 'student_pass', handle: rest.toLowerCase() };
     if (path === 'merchant' && rest) return { kind: 'pay_merchant', businessId: rest };
+    if (path === 'charge' && rest) return { kind: 'pay_charge', code: rest.split(/[?#/]/)[0] };
     if (path === 'agent-deposit' && rest) return { kind: 'agent_deposit', token: rest };
     if (path === 'agent-withdraw' && rest) return { kind: 'agent_withdraw', token: rest };
     if (path === 'aff' && rest) return { kind: 'affiliate_link', linkCode: rest.toUpperCase().split('?')[0] };
@@ -151,6 +162,9 @@ export function parseK21Qr(raw) {
     }
     if (parts[0] === 'group-join' && parts[1]) {
       return { kind: 'join_group', inviteCode: normalizeHandle(parts[1]).toUpperCase() };
+    }
+    if (parts[0] === 'charge' && parts[1]) {
+      return { kind: 'pay_charge', code: parts[1] };
     }
     if (parts[0] === 'merchant' && parts[1]) {
       return { kind: 'pay_merchant', businessId: parts[1] };

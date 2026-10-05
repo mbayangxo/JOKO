@@ -14,6 +14,12 @@ export async function routeQrScan({ raw, mode, navigation, route, api, showToast
     return { ok: false };
   }
 
+  if (parsed?.kind === 'pay_charge') {
+    // Opaque reference: merchant + amount come from the server, never from the QR.
+    navigation.replace('PayMerchant', { chargeCode: parsed.code });
+    return { ok: true };
+  }
+
   if (parsed?.kind === 'pay_merchant' || mode === 'merchant') {
     const businessId = parsed?.businessId ?? parsed?.handle ?? text;
     const merchant = await api.getMerchantPublic(businessId);

@@ -19,7 +19,8 @@ import { useScreenshotBlock } from '../hooks/useScreenshotBlock';
 import { useToast } from '../components/Toast';
 import StepUpOverlay from '../components/StepUpOverlay';
 import { useSecurity } from '../context/SecurityContext';
-import { merchantPay, getBusinesses, getMerchantPublic } from '../lib/api-client';
+import { merchantPay, getBusinesses, getMerchantPublic, viewMerchantCharge, payMerchantCharge } from '../lib/api-client';
+import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import { formatKori, KORI_SYMBOL } from '../lib/kori.js';
 import KoriAmount from '../components/KoriAmount';
 
@@ -289,6 +290,9 @@ export default function PayMerchantScreen({ navigation, route }) {
   const [stepUpVisible, setStepUpVisible] = useState(false);
   const [merchants, setMerchants] = useState([]);
   const [merchant, setMerchant] = useState(DEFAULT_MERCHANT);
+  // J4: an amount-bearing QR is an opaque charge code; amount comes from the server.
+  const [charge, setCharge] = useState(null);
+  const moneySubmit = useMoneySubmit();
   const { balance, refreshWallet, setPendingMboloShare } = useAppState();
 
   const applyMerchant = (m, params = route.params) => {
@@ -300,6 +304,23 @@ export default function PayMerchantScreen({ navigation, route }) {
       verified: params?.merchantVerified ?? m.verified ?? false,
     });
   };
+
+  useEffect(() => {
+    const code = route.params?.chargeCode;
+    if (!code) return;
+    viewMerchantCharge(code)
+      .then((c) => {
+        if (c.status !== 'open') {
+          showToast(c.status === 'paid' ? 'Cette demande de paiement est déjà réglée' : 'Cette demande de paiement n’est plus valable');
+          return;
+        }
+        setCharge(c);
+        setAmount(c.amountKori);
+        // The charge pays by code; businessId only marks the merchant as chosen.
+        setMerchant({ name: c.merchant?.name ?? 'Marchand', arr: c.label ?? 'K21', emoji: '🏪', businessId: `charge:${c.code}`, verified: false });
+      })
+      .catch((err) => showToast(err.message ?? 'Demande de paiement introuvable'));
+  }, [route.params?.chargeCode]);
 
   useEffect(() => {
     const presetId = route.params?.merchantId;
@@ -319,6 +340,7 @@ export default function PayMerchantScreen({ navigation, route }) {
   }, [route.params?.merchantId, route.params?.merchantName, route.params?.merchantVerified, route.params?.merchantArr]);
 
   const selectMerchant = (m) => {
+    setCharge(null);
     setMerchant({
       name: m.name,
       arr: m.arrondissement ?? m.category ?? 'K21',
@@ -333,24 +355,30 @@ export default function PayMerchantScreen({ navigation, route }) {
       showToast('Aucun marchand K21 — scanne un QR ou choisis dans la liste');
       return;
     }
+    if (moneySubmit.busy) return;
     setSubmitting(true);
     setOldBalance(balance);
     try {
-      const result = await merchantPay(merchant.businessId, {
-        amount,
-        stepUpToken: stepUpToken ?? security.stepUpToken,
-      });
-      setReference(result.reference);
-      setUndone(false);
-      const wallet = await refreshWallet();
-      setNewBalance(wallet.balance ?? wallet.koriBalance ?? balance - amount);
-      setStep('success');
-    } catch (err) {
-      if (err.code === 'step_up_required') {
+      const token = stepUpToken ?? security.stepUpToken;
+      const out = await moneySubmit.submit((intentKey) =>
+        charge
+          ? payMerchantCharge(charge.code, { expectedAmountKori: charge.amountKori, stepUpToken: token, intentKey })
+          : merchantPay(merchant.businessId, { amount, stepUpToken: token, intentKey }),
+      );
+      if (out.state === 'needs_pin') {
         setStepUpVisible(true);
         return;
       }
-      showToast(err.message ?? 'Paiement impossible');
+      if (out.state === 'done' || out.state === 'accepted_pending') {
+        setReference(out.response?.reference ?? out.response?.receiptReference ?? out.references?.[0] ?? '');
+        setUndone(false);
+        const wallet = await refreshWallet();
+        setNewBalance(wallet.balance ?? wallet.koriBalance ?? balance - amount);
+        setStep('success');
+        if (out.state === 'accepted_pending') showToast(out.message);
+        return;
+      }
+      showToast(out.nextStep ? `${out.message} ${out.nextStep}` : out.message ?? 'Paiement impossible');
     } finally {
       setSubmitting(false);
     }
@@ -375,6 +403,8 @@ export default function PayMerchantScreen({ navigation, route }) {
   };
 
   const finish = () => {
+    moneySubmit.reset();
+    setCharge(null);
     setStep('scan');
     setAmount(2500);
     navigation.goBack();
@@ -391,7 +421,8 @@ export default function PayMerchantScreen({ navigation, route }) {
               merchants={merchants}
               onSelectMerchant={selectMerchant}
               amount={amount}
-              setAmount={setAmount}
+              // A charge's amount is fixed by the server: the keypad cannot change it.
+              setAmount={charge ? () => {} : setAmount}
               onBack={() => navigation.goBack()}
               onContinue={() => {
                 if (!merchant.businessId) {

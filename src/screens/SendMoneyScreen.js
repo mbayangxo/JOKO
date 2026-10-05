@@ -22,6 +22,7 @@ import { useScreenshotBlock } from '../hooks/useScreenshotBlock';
 import { useToast } from '../components/Toast';
 import ProfileAvatar from '../components/ProfileAvatar';
 import StepUpOverlay from '../components/StepUpOverlay';
+import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import { useSecurity } from '../context/SecurityContext';
 import { useLocale } from '../context/LocaleContext';
 import { transferSend, lookupUser, getMboloVideoUploadConfig } from '../lib/api-client';
@@ -464,6 +465,7 @@ export default function SendMoneyScreen({ navigation, route }) {
   const [undone, setUndone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [stepUpVisible, setStepUpVisible] = useState(false);
+  const moneySubmit = useMoneySubmit();
   const [attachmentType, setAttachmentType] = useState(null);
   const [attachmentUrl, setAttachmentUrl] = useState(null);
   const [attaching, setAttaching] = useState(false);
@@ -614,6 +616,7 @@ export default function SendMoneyScreen({ navigation, route }) {
 
   const executeSend = async (stepUpToken) => {
     if (!recipientProfile?.handle) return;
+    if (moneySubmit.busy) return; // a payment is in flight or being checked: never fire a second one
     setSubmitting(true);
     try {
       const attachmentParams =
@@ -626,24 +629,32 @@ export default function SendMoneyScreen({ navigation, route }) {
               : attachmentType === 'gif'
                 ? { gifUrl: attachmentUrl }
                 : {};
-      const result = await transferSend({
-        recipientHandle: recipientProfile.handle,
-        amount,
-        note: reason,
-        ...attachmentParams,
-        stepUpToken: stepUpToken ?? security.stepUpToken,
-      });
-      setReference(result.reference);
-      setUndone(false);
-      removeAttachment();
-      await refreshWallet();
-      setStep('success');
-    } catch (err) {
-      if (err.code === 'step_up_required') {
+      // J4: one intent key for this payment attempt, reused across step-up
+      // and retries; an unknown outcome is checked with the server, never re-sent.
+      const out = await moneySubmit.submit((intentKey) =>
+        transferSend({
+          recipientHandle: recipientProfile.handle,
+          amount,
+          note: reason,
+          ...attachmentParams,
+          stepUpToken: stepUpToken ?? security.stepUpToken,
+          intentKey,
+        }),
+      );
+      if (out.state === 'needs_pin') {
         setStepUpVisible(true);
         return;
       }
-      showToast(err.message ?? 'Envoi impossible');
+      if (out.state === 'done' || out.state === 'accepted_pending') {
+        setReference(out.response?.reference ?? out.references?.[0] ?? out.error?.data?.references?.[0] ?? null);
+        setUndone(false);
+        removeAttachment();
+        await refreshWallet();
+        setStep('success');
+        if (out.state === 'accepted_pending') showToast(out.message);
+        return;
+      }
+      showToast(out.message ?? 'Envoi impossible');
     } finally {
       setSubmitting(false);
     }

@@ -8,7 +8,8 @@ import ScreenBackground from '../components/ScreenBackground';
 import PressScale from '../components/PressScale';
 import KoriAmount from '../components/KoriAmount';
 import ConfettiBurst from '../components/ConfettiBurst';
-import { getTontineGroups, getTransactions } from '../lib/api-client';
+import { getMoneyActivity, getMoneyHome, getMoneyReceipt, getTontineGroups, getTransactions } from '../lib/api-client';
+import { actionButton, activityRow, balanceView } from '../lib/money-ux';
 import { getLastCelebratedReceiveId, setLastCelebratedReceiveId } from '../lib/celebration-storage';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
 
@@ -139,22 +140,74 @@ function NattaCard({ group, onPress }) {
   );
 }
 
-function TransactionRow({ icon, iconBg, title, subtitle, value, positive, amountColor }) {
+const ACTION_LABELS = { send: 'Envoyer', merchantPay: 'Payer un marchand', cashIn: 'Recharger', cashOut: 'Retirer' };
+
+/** J4: server balance split — only "disponible" is spendable. */
+function MoneyBalance({ home }) {
+  if (!home) return null;
+  const view = balanceView(home);
+  const blocked = Object.entries(ACTION_LABELS)
+    .map(([k, label]) => ({ label, ...actionButton(home.actions?.[k]) }))
+    .filter((a) => !a.enabled && a.reason);
   return (
-    <View style={styles.txRow}>
-      <View style={[styles.txIcon, { backgroundColor: iconBg }]}>
-        <Text style={{ fontSize: 16 }}>{icon}</Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.txTitle}>{title}</Text>
-        <Text style={styles.txSub}>{subtitle}</Text>
-      </View>
-      <KoriAmount value={value} prefix={positive ? '+' : ''} textStyle={[styles.txAmount, { color: amountColor }]} color={amountColor} gap={2} />
+    <View style={styles.balanceCard}>
+      <Text style={styles.sectionLabel}>Disponible</Text>
+      <KoriAmount value={view.spendableKori} textStyle={styles.balanceAmount} color={colors.ink} gap={3} />
+      {view.lines.map((l) => (
+        <Text key={l.label} style={styles.balanceLine}>
+          {l.label} : {l.kori} ₭ — pas encore utilisable
+        </Text>
+      ))}
+      {blocked.map((a) => (
+        <Text key={a.label} style={styles.restriction}>
+          {a.label} : {a.reason}
+          {a.nextStep ? ` ${a.nextStep}` : ''}
+        </Text>
+      ))}
     </View>
   );
 }
 
+function ActivityItem({ item, open, receipt, onPress }) {
+  const row = activityRow(item);
+  const color = row.tone === 'muted' ? 'rgba(5,8,5,0.45)' : item.direction === 'in' ? colors.greenDark : colors.terracottaDark;
+  return (
+    <PressScale scaleTo={0.98} onPress={onPress} style={styles.txRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.txTitle}>{row.title}</Text>
+        <Text style={styles.txSub}>
+          {row.statusLabel}
+          {row.pendingNote ? ` · ${row.pendingNote}` : ''}
+          {row.linkedNote ? ` · ${row.linkedNote}` : ''}
+        </Text>
+        {open && receipt ? (
+          <Text style={styles.txSub}>
+            Réf. {receipt.reference}
+            {receipt.explanation ? `\n${receipt.explanation}` : ''}
+          </Text>
+        ) : null}
+      </View>
+      <Text style={[styles.txAmount, { color }]}>{row.amountLabel}</Text>
+    </PressScale>
+  );
+}
+
 export default function WalletScreen({ navigation }) {
+  const [home, setHome] = useState(null);
+  const [activity, setActivity] = useState([]);
+  const [openRef, setOpenRef] = useState(null);
+  const [receipt, setReceipt] = useState(null);
+
+  const openReceipt = (reference) => {
+    if (openRef === reference) {
+      setOpenRef(null);
+      return;
+    }
+    setOpenRef(reference);
+    setReceipt(null);
+    getMoneyReceipt(reference).then(setReceipt).catch(() => setReceipt(null));
+  };
+
   const [loading, setLoading] = useState(true);
   const [txs, setTxs] = useState([]);
   const [nattaGroups, setNattaGroups] = useState([]);
@@ -164,6 +217,14 @@ export default function WalletScreen({ navigation }) {
     useCallback(() => {
       let cancelled = false;
       setLoading(true);
+      // Server-authoritative balance + one coherent history (survives reinstall).
+      Promise.all([getMoneyHome(), getMoneyActivity()])
+        .then(([h, a]) => {
+          if (cancelled) return;
+          setHome(h);
+          setActivity(Array.isArray(a?.items) ? a.items : []);
+        })
+        .catch(() => {});
       Promise.all([getTransactions(100), getTontineGroups()])
         .then(async ([txList, groups]) => {
           if (cancelled) return;
@@ -213,6 +274,7 @@ export default function WalletScreen({ navigation }) {
           <ActivityIndicator color={colors.greenDark} style={{ marginTop: spacing.giant }} />
         ) : (
           <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+            <MoneyBalance home={home} />
             <SpendingRing spending={spending} />
 
             {nattaGroups.length > 0 ? (
@@ -225,21 +287,18 @@ export default function WalletScreen({ navigation }) {
             ) : null}
 
             <View>
-              <Text style={styles.sectionLabel}>Transactions</Text>
-              {txs.length === 0 ? (
-                <Text style={styles.emptyText}>Aucune transaction pour l'instant.</Text>
+              <Text style={styles.sectionLabel}>Historique</Text>
+              {activity.length === 0 ? (
+                <Text style={styles.emptyText}>Aucune opération pour l'instant.</Text>
               ) : (
                 <View style={{ gap: spacing.sm }}>
-                  {txs.map((tx) => (
-                    <TransactionRow
-                      key={tx.key}
-                      icon={tx.icon}
-                      iconBg={tx.iconBg}
-                      title={tx.title}
-                      subtitle={tx.subtitle}
-                      value={Math.abs(tx.amount)}
-                      positive={tx.amount > 0}
-                      amountColor={tx.amount > 0 ? colors.greenDark : colors.terracottaDark}
+                  {activity.map((item) => (
+                    <ActivityItem
+                      key={item.reference}
+                      item={item}
+                      open={openRef === item.reference}
+                      receipt={openRef === item.reference ? receipt : null}
+                      onPress={() => openReceipt(item.reference)}
                     />
                   ))}
                 </View>
@@ -295,6 +354,10 @@ const styles = StyleSheet.create({
   goalAmount: { flexDirection: 'row', alignItems: 'baseline', gap: 2 },
   goalAmountText: { fontFamily: fontFamily.displayBlack, fontSize: 17, letterSpacing: -0.5, color: colors.ink },
 
+  balanceCard: { gap: 4, backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: 1, borderColor: 'rgba(5,8,5,0.07)', borderRadius: radius.xxl, padding: spacing.xxl },
+  balanceAmount: { fontFamily: fontFamily.displayBlack, fontSize: 26, letterSpacing: -0.8, color: colors.ink },
+  balanceLine: { ...type.caption, color: 'rgba(5,8,5,0.6)' },
+  restriction: { ...type.caption, color: colors.terracottaDark },
   txRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg, paddingHorizontal: spacing.xl, paddingVertical: 9, backgroundColor: 'rgba(255,255,255,0.65)', borderWidth: 1, borderColor: 'rgba(5,8,5,0.07)', borderRadius: radius.lg },
   txIcon: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   txTitle: { fontFamily: fontFamily.bodyBold, fontSize: 12, color: colors.ink },
