@@ -754,6 +754,9 @@ model TradeAccount {
   lastKnownBuyerScore Int?
   lastKnownBuyerTier  String?
   lastScoreCheckAt    DateTime?
+  /// J7.8: revocation is explicit and attributed (active=false alone is legacy)
+  revokedAt           DateTime?
+  revokedBy           String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -788,6 +791,10 @@ model TradeInvoice {
   disputeReason         String?
   disputedAt            DateTime?
   disputeResolutionNote String?
+  /// J7.10: principal (amountKori) is immutable once issued; corrections are CreditMemo rows,
+  /// payments are TradeInvoicePayment rows. amountPaid / creditedKori are their locked sums.
+  creditedKori          Int       @default(0)
+  purchaseOrderId       String?   @unique
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -3429,6 +3436,9 @@ model MerchantRelationship {
   status                String    @default("invited")
   scopesJson            String    @default("[\"wholesale_catalog\",\"wholesale_ordering\"]")
   assistedOnboarding    Boolean   @default(false)
+  /// J7: optional relationship price list and assigned rep (operational, never a data grant)
+  priceListId           String?
+  assignedRepUserId     String?
   invitedAt             DateTime  @default(now())
   respondedAt           DateTime?
   respondedBy           String?
@@ -3679,4 +3689,259 @@ model MerchantOnboardingAssist {
 
   @@index([introducerType, introducerId])
   @@index([repUserId])
+}
+
+// ─── J7: Commerce & distribution network ─────────────────────────────────────
+
+/// Operational wholesale catalog line of a seller (distributor / supplier / manufacturer). Not a storefront.
+model WholesaleListing {
+  id               String    @id @default(cuid())
+  sellerBusinessId String
+  productId        String?
+  sku              String
+  title            String
+  category         String?
+  /// unit | pack | case — what one ordered quantity means
+  unit             String    @default("pack")
+  unitsPerPack     Int       @default(1)
+  /// base price per ordered quantity (₭)
+  priceKori        Int
+  moqPacks         Int       @default(1)
+  stepPacks        Int       @default(1)
+  availability     String    @default("available")
+  /// relationships (connected merchants only) — the only J7 visibility
+  visibility       String    @default("relationships")
+  /// JSON array of territory ids; null = every territory of the seller
+  territoryIdsJson String?
+  depotLocationId  String?
+  effectiveFrom    DateTime  @default(now())
+  effectiveTo      DateTime?
+  status           String    @default("active")
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([sellerBusinessId, sku])
+  @@index([sellerBusinessId, status])
+}
+
+/// Volume tier: price per ordered quantity at or above minPacks.
+model WholesalePriceTier {
+  id        String @id @default(cuid())
+  listingId String
+  minPacks  Int
+  priceKori Int
+
+  @@unique([listingId, minPacks])
+}
+
+/// Seller price list assigned to some relationships (overrides base / tiers for its entries).
+model PriceList {
+  id               String   @id @default(cuid())
+  sellerBusinessId String
+  name             String
+  status           String   @default("active")
+  createdBy        String
+  createdAt        DateTime @default(now())
+
+  @@index([sellerBusinessId, status])
+}
+
+model PriceListEntry {
+  id          String @id @default(cuid())
+  priceListId String
+  listingId   String
+  priceKori   Int
+
+  @@unique([priceListId, listingId])
+}
+
+/// J7.13: a rep serves a territory of its distributor (operational; never grants merchant data).
+model TerritoryRep {
+  id          String   @id @default(cuid())
+  territoryId String
+  repUserId   String
+  status      String   @default("active")
+  assignedBy  String
+  createdAt   DateTime @default(now())
+
+  @@unique([territoryId, repUserId])
+  @@index([repUserId, status])
+}
+
+/// J7.7 B2B purchase order (buyer business → seller business).
+model PurchaseOrder {
+  id                    String    @id @default(cuid())
+  reference             String    @unique
+  buyerBusinessId       String
+  sellerBusinessId      String
+  relationshipId        String?
+  tradeAccountId        String?
+  territoryId           String?
+  status                String
+  /// due_now | net7 | net15 | net30 | net60 | net90
+  paymentTerm           String
+  /// unpaid | reserved (credit) | paid | invoiced | refunded
+  paymentStatus         String    @default("unpaid")
+  subtotalKori          Int
+  totalKori             Int
+  creditReservedKori    Int       @default(0)
+  idempotencyKey        String?
+  submittedBy           String
+  submittedAt           DateTime  @default(now())
+  acceptedBy            String?
+  acceptedAt            DateTime?
+  rejectedReason        String?
+  confirmedAt           DateTime?
+  paymentReference      String?   @unique
+  invoiceId             String?
+  fulfilmentMode        String?
+  fulfilmentRequestedAt DateTime?
+  deliveredAt           DateTime?
+  deliveryRecordedBy    String?
+  receivedAt            DateTime?
+  receivedBy            String?
+  completedAt           DateTime?
+  cancelledAt           DateTime?
+  cancelledBy           String?
+  cancelReason          String?
+  refundReference       String?   @unique
+  disputedAt            DateTime?
+  disputeReason         String?
+  depotLocationId       String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([buyerBusinessId, idempotencyKey])
+  @@index([sellerBusinessId, status, createdAt])
+  @@index([buyerBusinessId, createdAt])
+  @@index([tradeAccountId, status])
+}
+
+/// A line snapshot: what was agreed, at the server-computed price.
+model PurchaseOrderLine {
+  id              String  @id @default(cuid())
+  purchaseOrderId String
+  listingId       String
+  productId       String?
+  sku             String
+  title           String
+  unit            String
+  unitsPerPack    Int
+  packs           Int
+  unitPriceKori   Int
+  lineTotalKori   Int
+  /// base | tier | price_list
+  priceSource     String
+
+  @@index([purchaseOrderId])
+  @@index([listingId])
+}
+
+/// Append-only history of a purchase order.
+model PurchaseOrderEvent {
+  id              String   @id @default(cuid())
+  purchaseOrderId String
+  fromStatus      String?
+  toStatus        String
+  actorUserId     String?
+  actorBusinessId String?
+  note            String?
+  createdAt       DateTime @default(now())
+
+  @@index([purchaseOrderId, createdAt])
+}
+
+/// J7.10 one row per payment applied to an invoice (append-only).
+model TradeInvoicePayment {
+  id              String   @id @default(cuid())
+  invoiceId       String
+  amountKori      Int
+  ledgerReference String   @unique
+  paidByUserId    String
+  paymentSource   String
+  createdAt       DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+/// J7.10 explicit correction of an invoice (append-only). Never deletes history.
+model CreditMemo {
+  id              String   @id @default(cuid())
+  invoiceId       String
+  reference       String   @unique
+  amountKori      Int
+  /// dispute_waive | dispute_adjust | return_credit | correction
+  kind            String
+  reason          String
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+/// J7.14 stock position of a product at a depot / inventory location.
+model DepotStock {
+  id         String   @id @default(cuid())
+  locationId String
+  productId  String
+  onHand     Int      @default(0)
+  reserved   Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@unique([locationId, productId])
+}
+
+/// Append-only depot stock history.
+model DepotStockMovement {
+  id              String   @id @default(cuid())
+  depotStockId    String
+  locationId      String
+  productId       String
+  deltaOnHand     Int
+  deltaReserved   Int
+  onHandAfter     Int
+  reservedAfter   Int
+  /// receive | adjust | reserve | release | dispatch | return_restock
+  reason          String
+  purchaseOrderId String?
+  returnId        String?
+  actorUserId     String?
+  note            String?
+  createdAt       DateTime @default(now())
+
+  @@index([locationId, productId, createdAt])
+  @@index([purchaseOrderId])
+}
+
+/// J7.16 commercial return (goods), distinct from a refund (money).
+model CommercialReturn {
+  id               String    @id @default(cuid())
+  reference        String    @unique
+  purchaseOrderId  String
+  buyerBusinessId  String
+  sellerBusinessId String
+  /// requested → approved | rejected → goods_returned → received → resolved
+  status           String    @default("requested")
+  reason           String
+  linesJson        String
+  amountKori       Int
+  requestedBy      String
+  decidedBy        String?
+  decidedAt        DateTime?
+  decisionNote     String?
+  shippedAt        DateTime?
+  receivedAt       DateTime?
+  receivedBy       String?
+  restocked        Boolean   @default(false)
+  /// credit_memo | refund | none
+  resolution       String?
+  creditMemoId     String?
+  refundReference  String?   @unique
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([purchaseOrderId])
+  @@index([sellerBusinessId, status])
+  @@index([buyerBusinessId, status])
 }

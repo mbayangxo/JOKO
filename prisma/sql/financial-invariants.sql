@@ -78,3 +78,64 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS "AgentCashTransaction_no_delete" ON "AgentCashTransaction";
 CREATE TRIGGER "AgentCashTransaction_no_delete" BEFORE DELETE ON "AgentCashTransaction"
   FOR EACH ROW EXECUTE FUNCTION joko_agent_cash_no_delete();
+
+-- J7: commercial history is append-only; stock can never go negative or over-reserved;
+-- an issued invoice's principal and parties never change and invoices are never deleted;
+-- a purchase order's parties and agreed totals never change and orders are never deleted.
+DROP TRIGGER IF EXISTS "PurchaseOrderEvent_append_only" ON "PurchaseOrderEvent";
+CREATE TRIGGER "PurchaseOrderEvent_append_only" BEFORE UPDATE OR DELETE ON "PurchaseOrderEvent"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+DROP TRIGGER IF EXISTS "PurchaseOrderLine_append_only" ON "PurchaseOrderLine";
+CREATE TRIGGER "PurchaseOrderLine_append_only" BEFORE UPDATE OR DELETE ON "PurchaseOrderLine"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+DROP TRIGGER IF EXISTS "TradeInvoicePayment_append_only" ON "TradeInvoicePayment";
+CREATE TRIGGER "TradeInvoicePayment_append_only" BEFORE UPDATE OR DELETE ON "TradeInvoicePayment"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+DROP TRIGGER IF EXISTS "CreditMemo_append_only" ON "CreditMemo";
+CREATE TRIGGER "CreditMemo_append_only" BEFORE UPDATE OR DELETE ON "CreditMemo"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+DROP TRIGGER IF EXISTS "DepotStockMovement_append_only" ON "DepotStockMovement";
+CREATE TRIGGER "DepotStockMovement_append_only" BEFORE UPDATE OR DELETE ON "DepotStockMovement"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+
+ALTER TABLE "DepotStock" DROP CONSTRAINT IF EXISTS "DepotStock_quantities_check";
+ALTER TABLE "DepotStock" ADD CONSTRAINT "DepotStock_quantities_check" CHECK ("onHand" >= 0 AND "reserved" >= 0 AND "reserved" <= "onHand");
+
+CREATE OR REPLACE FUNCTION joko_trade_invoice_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'TradeInvoice rows are never deleted (use a credit memo)' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW."amountKori" <> OLD."amountKori" OR NEW."supplierBusinessId" <> OLD."supplierBusinessId"
+     OR NEW."buyerUserId" <> OLD."buyerUserId" OR NEW."reference" <> OLD."reference" THEN
+    RAISE EXCEPTION 'TradeInvoice % : principal and parties are immutable (use a credit memo)', OLD.id USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW."amountPaid" < 0 OR NEW."creditedKori" < 0 OR NEW."amountPaid" + NEW."creditedKori" > NEW."amountKori" THEN
+    RAISE EXCEPTION 'TradeInvoice % : paid + credited exceeds principal', OLD.id USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "TradeInvoice_guard" ON "TradeInvoice";
+CREATE TRIGGER "TradeInvoice_guard" BEFORE UPDATE OR DELETE ON "TradeInvoice"
+  FOR EACH ROW EXECUTE FUNCTION joko_trade_invoice_guard();
+
+CREATE OR REPLACE FUNCTION joko_purchase_order_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'PurchaseOrder rows are never deleted' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW."buyerBusinessId" <> OLD."buyerBusinessId" OR NEW."sellerBusinessId" <> OLD."sellerBusinessId"
+     OR NEW."totalKori" <> OLD."totalKori" OR NEW."subtotalKori" <> OLD."subtotalKori"
+     OR NEW."paymentTerm" <> OLD."paymentTerm" OR NEW."reference" <> OLD."reference" THEN
+    RAISE EXCEPTION 'PurchaseOrder % : parties, totals and terms are immutable', OLD.id USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW."creditReservedKori" < 0 OR NEW."creditReservedKori" > NEW."totalKori" THEN
+    RAISE EXCEPTION 'PurchaseOrder % : invalid credit reservation', OLD.id USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "PurchaseOrder_guard" ON "PurchaseOrder";
+CREATE TRIGGER "PurchaseOrder_guard" BEFORE UPDATE OR DELETE ON "PurchaseOrder"
+  FOR EACH ROW EXECUTE FUNCTION joko_purchase_order_guard();
