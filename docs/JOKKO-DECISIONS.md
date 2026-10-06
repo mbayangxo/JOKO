@@ -74,3 +74,13 @@ These are the choices J6 was built on. They are **not accepted decisions** until
 | P-J6-5 | Physical cash is **self-reported only** and never shown as authoritative. | `AgentCashReport`, liquidity view. |
 | P-J6-6 | Default cash-network limits (`lib/agents/limits.js`): challenge 15 min; completion window 30 min, then review; customer cash-out 1 000 000 XOF/day and 6/day; standard point 500 000 per operation; business agent required above 500 000. | Configurable, validated `AGENT_CASH_LIMITS_JSON`. |
 | P-J6-7 | Unmapped Kabu payments keep the **legacy platform settlement by default**, with a switch (`PARTNER_LEGACY_PLATFORM_SETTLEMENT=false`). Recommended to switch off once Kabu sends `merchant.external_business_id` for every mapped merchant, **after** deciding how Kabu payouts are funded (risk 4). | J6.0. |
+
+## D-J6: Agents & cash network (recorded at J6 acceptance)
+
+The J6 gate was accepted **locally**. The code gate is `9af5009` and the report commit is `2d36dac`. Nothing is deployed: production is untouched, no PR was opened, and the Kebu Supabase project is not touched. The proposals P-J6-1 to P-J6-7 above are superseded by these accepted decisions where they overlap. The rest (P-J6-1, P-J6-3, P-J6-5, P-J6-6) remain as implemented.
+
+| # | Decision | How it applies |
+|---|---|---|
+| D28 | **Agent commission rates stay inactive at 0.** No economics are invented before real cash-handling and provider economics are known. The funded commission architecture is preserved so finance can later configure and fund legitimate rates. | No active `AgentCommissionRule`; the budget is 0. The rule, funding and clawback machinery stays (J6.7). |
+| D29 | **A merchant's funds fund that merchant's ordinary payouts.** Mapped Kabu collections settle to the mapped Jokko business wallet. Mapped merchant-initiated disbursements should ultimately debit that merchant's available business funds through an explicit J2 recipe. The platform wallet funds only genuine platform obligations. **The existing generic Kabu payout path is not migrated yet.** Current payout uses are first classified by economic meaning (merchant disbursement, refund, supplier payment, payroll, affiliate/commission, platform incentive, other) and are not treated as one generic recipe where their accounting differs. Legacy unmapped behaviour stays isolated until inspection and migration. | J7.25 classification (code/schema only, read-only). |
+| D30 | **Legacy production agents are adopted only after read-only production inspection.** No service points are invented and no legacy agent is automatically activated. | `POST admin/agents/:id/adopt` stays operator-driven; no bulk adoption. |
