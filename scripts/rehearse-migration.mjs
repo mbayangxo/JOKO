@@ -95,6 +95,10 @@ const legacyProduct = await insert('Product', { id: randomUUID(), businessId: bi
 await db.query(`UPDATE "Business" SET "verified" = true WHERE id = $1`, [biz.id]);
 // J4: a legacy pending money request (pre-expiry) must survive unchanged.
 const legacyRequest = await insert('MoneyRequest', { id: randomUUID(), requesterId: users[0].id, payerId: users[1].id, amount: 700, status: 'pending', reference: 'LEG-REQ-1' });
+// J7: a legacy trade account + partially paid invoice, and one pre-J7 "waived" invoice (amountKori overwritten to 0 after a payment).
+const legacyAccount = await insert('TradeAccount', { id: randomUUID(), supplierBusinessId: biz.id, buyerUserId: users[1].id, paymentTerm: 'net30', creditLimitKori: 20_000, active: true });
+const legacyInvoice = await insert('TradeInvoice', { id: randomUUID(), supplierBusinessId: biz.id, buyerUserId: users[1].id, tradeAccountId: legacyAccount.id, reference: 'LEG-INV-T1', amountKori: 5_000, amountPaid: 1_000, status: 'partial', dueAt: new Date(Date.now() + 10 * 86_400_000) });
+await insert('TradeInvoice', { id: randomUUID(), supplierBusinessId: biz.id, buyerUserId: users[1].id, tradeAccountId: legacyAccount.id, reference: 'LEG-INV-T2', amountKori: 0, amountPaid: 300, status: 'paid', dueAt: new Date() });
 
 const legacy = (await db.query(`SELECT
   (SELECT SUM("koriBalance") FROM "Wallet")::int AS wallets,
@@ -276,6 +280,39 @@ step('J6 migrations additive on production shape (legacy agent kept + fail-close
   j6,
   flow: flow6,
   invariantsAfter: check5.status === 0 ? 'ok' : JSON.parse(check5.stdout || '{}').violations,
+});
+
+// J7 (additive): legacy invoices keep principal and payments; guards present; a
+// dispute adjustment on a migrated invoice becomes a credit memo (principal
+// untouched); deletion refused; pre-J7 overwritten invoices are counted for review.
+const j7 = (await db2.query(`SELECT
+  (SELECT COUNT(*) FROM "_prisma_migrations" WHERE migration_name LIKE '%_j7_commerce' AND finished_at IS NOT NULL)::int AS j7_applied,
+  (SELECT "amountKori" FROM "TradeInvoice" WHERE id = $1)::int AS principal,
+  (SELECT "amountPaid" FROM "TradeInvoice" WHERE id = $1)::int AS paid,
+  (SELECT "creditedKori" FROM "TradeInvoice" WHERE id = $1)::int AS credited,
+  (SELECT COUNT(*) FROM "TradeInvoice" WHERE "amountPaid" > "amountKori")::int AS overwritten_legacy,
+  (SELECT COUNT(*) FROM pg_trigger WHERE tgname IN ('TradeInvoice_guard','PurchaseOrder_guard','PurchaseOrderEvent_append_only','PurchaseOrderLine_append_only','TradeInvoicePayment_append_only','CreditMemo_append_only','DepotStockMovement_append_only'))::int AS j7_guards`, [legacyInvoice.id])).rows[0];
+const j7flow = node(['--input-type=module', '-e', `
+  const { prisma } = await import('./lib/prisma.js');
+  const T = await import('./lib/trade-service.js');
+  await T.disputeTradeInvoice(prisma, { invoiceId: '${legacyInvoice.id}', buyerUserId: '${users[1].id}', reason: 'quantité livrée inférieure (répétition)' });
+  const adj = await T.resolveTradeInvoiceDispute(prisma, { invoiceId: '${legacyInvoice.id}', supplierOwnerId: '${users[0].id}', action: 'adjust', newAmountKori: 4000, note: 'répétition J7' });
+  const row = await prisma.tradeInvoice.findUnique({ where: { id: '${legacyInvoice.id}' } });
+  const memos = await prisma.creditMemo.count({ where: { invoiceId: '${legacyInvoice.id}' } });
+  let del = 'ACCEPTED';
+  try { await prisma.tradeInvoice.delete({ where: { id: '${legacyInvoice.id}' } }); } catch (e) { del = 'refused'; }
+  console.log(JSON.stringify({ shownNet: adj.amountKori, principal: row.amountKori, credited: row.creditedKori, memos, del }));
+  await prisma.$disconnect();
+`]);
+const check6 = node(['scripts/money-check.mjs', '--json']);
+let flow7 = null;
+try { flow7 = JSON.parse(j7flow.stdout.trim().split('\n').pop()); } catch { flow7 = { error: j7flow.stderr.slice(0, 600) }; }
+step('J7 migration additive on production shape (legacy invoice principal/payments kept, guards present, dispute adjust = credit memo, no delete; overwritten legacy invoices counted)', {
+  ok: j7.j7_applied === 1 && j7.principal === 5000 && j7.paid === 1000 && j7.credited === 0 && j7.j7_guards === 7 && j7.overwritten_legacy === 1
+    && flow7?.shownNet === 4000 && flow7?.principal === 5000 && flow7?.credited === 1000 && flow7?.memos === 1 && flow7?.del === 'refused' && check6.status === 0,
+  j7,
+  flow: flow7,
+  invariantsAfter: check6.status === 0 ? 'ok' : JSON.parse(check6.stdout || '{}').violations,
 });
 
 const directWrite = await prisma2.$executeRawUnsafe(`UPDATE "Wallet" SET "koriBalance" = "koriBalance" + 1 WHERE id = (SELECT id FROM "Wallet" LIMIT 1)`).then(() => 'ACCEPTED', (e) => e.message);

@@ -330,6 +330,20 @@ WHERE u."verificationTier" >= 3
   AND NOT EXISTS (SELECT 1 FROM "CniVerificationJob" j WHERE j."userId" = u.id AND j.status = 'approved'
                   AND j."externalJobId" NOT LIKE '%-sandbox-%');
 
+\echo '== 20. J7 pre-migration trade checks (read-only; pre-J7 columns only) =='
+\echo '-- invoices where paid exceeds principal (pre-J7 waive overwrote amountKori): J7 guard would refuse any later update of these rows'
+SELECT COUNT(*) AS invoices_paid_above_principal, COALESCE(SUM("amountPaid" - "amountKori"), 0)::int AS excess_kori
+FROM "TradeInvoice" WHERE "amountPaid" > "amountKori";
+\echo '-- trade accounts whose outstanding invoices already exceed the credit limit (legacy unlocked credit race)'
+SELECT COUNT(*) AS accounts_over_limit
+FROM "TradeAccount" a
+WHERE a."creditLimitKori" > 0 AND (
+  SELECT COALESCE(SUM(i."amountKori" - i."amountPaid"), 0) FROM "TradeInvoice" i
+  WHERE i."supplierBusinessId" = a."supplierBusinessId" AND i."buyerUserId" = a."buyerUserId" AND i.status IN ('open','partial','overdue','disputed')
+) > a."creditLimitKori";
+\echo '-- invoice status mix (counts only)'
+SELECT status, COUNT(*) AS invoices FROM "TradeInvoice" GROUP BY 1 ORDER BY 1;
+
 \echo '== 14. Negative or impossible balances (should be zero rows) =='
 SELECT 'wallet' AS kind, id FROM "Wallet" WHERE "koriBalance" < 0 OR balance < 0
 UNION ALL SELECT 'business', id FROM "BusinessWallet" WHERE balance < 0

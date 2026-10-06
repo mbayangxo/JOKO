@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**492 routes.** Column legend:
+**528 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -310,6 +310,41 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST businesses/:id/distribution/territories` | user | distribution.territories.create | business:business.distribution.manage (distribution mode) |  |  |  |  |  |  |
 | `GET businesses/:id/distribution/relationships` | user | distribution.relationships.read | business:business.distribution.invite (reps: own introductions only) |  |  |  |  |  |  |
 | `POST businesses/:id/distribution/relationships` | user | distribution.relationships.invite | business:business.distribution.invite — invitation grants NO access to the merchant |  |  |  |  |  |  |
+| `GET businesses/:id/b2b/listings` | user | b2b.listings.read | business:business.catalog.manage (seller) |  |  |  |  |  |  |
+| `POST businesses/:id/b2b/listings` | user | b2b.listings.manage | business:business.catalog.manage (seller, distribution mode) |  |  |  |  |  |  |
+| `POST businesses/:id/b2b/price-lists` | user | b2b.price_lists.manage | business:business.distribution.manage (seller) |  |  |  |  |  |  |
+| `GET businesses/:id/b2b/relationships` | user | b2b.relationships.read | business:business.distribution.invite (reps: introduced or assigned only) |  |  |  |  |  |  |
+| `POST businesses/:id/b2b/relationships/:subId/configure` | user | b2b.relationships.configure | business:business.distribution.manage — price list / rep are operational, never a data grant |  |  |  |  |  |  |
+| `POST businesses/:id/b2b/territories/:subId/reps` | user | b2b.territories.reps | business:business.distribution.manage — territory is operational, never security authority |  |  |  |  |  |  |
+| `GET businesses/:id/b2b/depots/:subId/stock` | user | b2b.depot.read | business:business.orders.read (seller depot) |  |  |  |  |  |  |
+| `POST businesses/:id/b2b/depots/:subId/stock` | user | b2b.depot.adjust | business:business.inventory.adjust (seller depot; adjust needs a reason) |  |  |  |  | stock_movement |  |
+| `GET businesses/:id/b2b/depots/:subId/movements` | user | b2b.depot.read | business:business.orders.read (seller depot) |  |  |  |  |  |  |
+| `GET businesses/:id/b2b/analytics` | user | b2b.analytics.read | business:business.distribution.manage \| business.analytics.read (own trade only) |  |  |  |  |  |  |
+| `GET businesses/:id/b2b/rep-summary` | user | b2b.rep.summary | business:business.distribution.invite (own book, counts only) |  |  |  |  |  |  |
+| `GET businesses/:id/b2b/suppliers` | user | b2b.restock.read | business:business.purchasing (buyer) |  |  |  |  |  |  |
+| `GET businesses/:id/b2b/suppliers/:subId/catalog` | user | b2b.catalog.read | business:business.purchasing + active relationship (wholesale_catalog) |  |  |  |  |  |  |
+| `GET businesses/:id/b2b/suppliers/:subId/reorder` | user | b2b.reorder.read | business:business.purchasing + active relationship; suggestions only, never an order |  |  |  |  |  |  |
+| `POST businesses/:id/b2b/quote` | user | b2b.quote | business:business.purchasing + active relationship; server price |  |  |  |  |  |  |
+| `GET businesses/:id/b2b/purchase-orders` | user | b2b.po.read | business:business.purchasing (buyer side) \| business.orders.read (seller side) |  |  |  |  |  |  |
+| `POST businesses/:id/b2b/purchase-orders` | user | b2b.po.submit | business:business.purchasing (+ business.pay for a Net term) + active relationship; server price, expected total |  |  |  |  | ledger+risk |  |
+| `GET businesses/:id/b2b/purchase-orders/:subId` | user | b2b.po.read | party (buyer business: purchasing; seller business: orders.read) |  |  |  |  |  |  |
+| `POST businesses/:id/b2b/purchase-orders/:subId/accept` | user | b2b.po.accept | party:seller business.orders.fulfill \| distribution.manage |  |  |  |  | po_event |  |
+| `POST businesses/:id/b2b/purchase-orders/:subId/reject` | user | b2b.po.reject | party:seller business.orders.fulfill \| distribution.manage |  |  |  |  | po_event |  |
+| `POST businesses/:id/b2b/purchase-orders/:subId/pay` | user | b2b.po.pay | party:buyer business.pay (business wallet → seller) |  |  | always |  | ledger+risk |  |
+| `POST businesses/:id/b2b/purchase-orders/:subId/advance` | user | b2b.po.advance | party:seller business.orders.fulfill \| distribution.manage; delivery recorded by seller |  |  |  |  | po_event |  |
+| `POST businesses/:id/b2b/purchase-orders/:subId/buyer` | user | b2b.po.receive | party:buyer business.purchasing (receive / complete / dispute) |  |  |  |  | po_event |  |
+| `POST businesses/:id/b2b/purchase-orders/:subId/resolve` | user | b2b.po.resolve | party:seller business.orders.fulfill \| distribution.manage |  |  |  |  | po_event |  |
+| `POST businesses/:id/b2b/purchase-orders/:subId/cancel` | user | b2b.po.cancel | party: buyer business.purchasing (before acceptance) \| seller business.orders.cancel (refund needs business.refund) |  |  |  |  | ledger+risk |  |
+| `POST businesses/:id/b2b/purchase-orders/:subId/returns` | user | b2b.returns.request | party:buyer business.purchasing; quantities ≤ ordered |  |  |  |  | return |  |
+| `GET businesses/:id/b2b/invoices` | user | b2b.invoices.read | business:business.purchasing (buyer) \| business.orders.read (seller) |  |  |  |  |  |  |
+| `GET businesses/:id/b2b/invoices/:subId` | user | b2b.invoices.read | party (buyer / supplier business) |  |  |  |  |  |  |
+| `POST businesses/:id/b2b/invoices/:subId/pay` | user | b2b.invoices.pay | party:buyer business.pay (business wallet → supplier) |  |  | always |  | ledger+risk |  |
+| `POST businesses/:id/b2b/invoices/:subId/credit-memos` | user | b2b.invoices.credit_memo | party:supplier business.refund — correction is a record, principal never rewritten |  |  |  |  | ledger |  |
+| `GET businesses/:id/b2b/returns` | user | b2b.returns.read | business:business.purchasing (buyer) \| business.orders.read (seller) |  |  |  |  |  |  |
+| `POST businesses/:id/b2b/returns/:subId/decide` | user | b2b.returns.decide | party:seller business.orders.fulfill \| distribution.manage |  |  |  |  | return |  |
+| `POST businesses/:id/b2b/returns/:subId/ship` | user | b2b.returns.ship | party:buyer business.purchasing |  |  |  |  | return |  |
+| `POST businesses/:id/b2b/returns/:subId/receive` | user | b2b.returns.receive | party:seller business.orders.fulfill \| distribution.manage; restock only on goods received |  |  |  |  | stock_movement |  |
+| `POST businesses/:id/b2b/returns/:subId/resolve` | user | b2b.returns.resolve | party:seller business.refund (credit memo / refund ≤ paid) |  |  |  |  | ledger+risk |  |
 | `GET businesses/:id/os/relationships` | user | merchant.relationships.read | business:business.relationships.manage |  |  |  |  |  |  |
 | `POST businesses/:id/os/relationships/:subId/respond` | user | merchant.relationships.respond | business:business.relationships.manage (merchant side accepts) |  |  |  |  |  |  |
 | `POST businesses/:id/os/relationships/:subId/end` | user | relationships.end | either side: business.relationships.manage \| business.distribution.manage |  |  |  |  |  |  |
@@ -540,6 +575,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST mbolo/threads` | user | messages.threads.create | self |  |  |  |  |  | strangers land in message requests; blocks respected |
 | `GET mbolo/threads/:id/messages` | user | messages.read | member of thread |  |  |  |  |  |  |
 | `POST mbolo/threads/:id/messages` | user | messages.send | member of thread (accepted, not blocked) |  |  |  |  |  |  |
+| `POST mbolo/threads/:id/charge-card` | user | messages.charge_card | member of thread + business:business.charges.create of the charge; card carries the code only, amount from server |  |  |  |  |  |  |
 | `POST mbolo/threads/:id/members` | user | messages.members.add | admin-of thread |  |  |  |  |  |  |
 | `GET mbolo/requests` | user | messages.requests.read | self |  |  |  |  |  |  |
 | `POST mbolo/threads/:id/accept` | user | messages.requests.accept | recipient of request |  |  |  |  |  |  |
@@ -881,5 +917,6 @@ The owner (`Business.ownerId`) holds every capability. Members hold a capability
 | `business.relationships.manage` | manager, admin, ceo, owner |
 | `business.distribution.manage` | manager, owner |
 | `business.distribution.invite` | manager, distribution_rep, owner |
+| `business.purchasing` | manager, inventory, owner |
 
 Only the owner may grant `owner`, `admin`, `cfo` or `ceo`. Nobody may grant a role above their own level.

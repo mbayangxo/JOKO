@@ -116,6 +116,19 @@ async function candidatesFor(path, me, myBizIds) {
     );
     return rows.map((r) => path.replace(':id', r.businessId).replace(':subId', r.id));
   }
+  if (path.includes(':subId') && path.includes('/b2b/')) {
+    // J7: a foreign business's own purchase order / invoice (as buyer AND as seller), supplier relationship, depot.
+    const not = `NOT IN (${myBizIds.map((i) => `'${i}'`).join(',') || "''"})`;
+    const sql = path.includes('/purchase-orders/')
+      ? `(SELECT "buyerBusinessId" AS a, "id" AS b FROM "PurchaseOrder" WHERE "buyerBusinessId" ${not} ORDER BY random() LIMIT 1) UNION ALL (SELECT "sellerBusinessId", "id" FROM "PurchaseOrder" WHERE "sellerBusinessId" ${not} ORDER BY random() LIMIT 1)`
+      : path.includes('/invoices/')
+        ? `(SELECT "buyerBusinessId" AS a, "id" AS b FROM "TradeInvoice" WHERE "buyerBusinessId" IS NOT NULL AND "buyerBusinessId" ${not} ORDER BY random() LIMIT 1) UNION ALL (SELECT "supplierBusinessId", "id" FROM "TradeInvoice" WHERE "supplierBusinessId" ${not} ORDER BY random() LIMIT 1)`
+        : path.includes('/suppliers/')
+          ? `SELECT "merchantBusinessId" AS a, "distributorBusinessId" AS b FROM "MerchantRelationship" WHERE status = 'active' AND "merchantBusinessId" ${not} ORDER BY random() LIMIT 2`
+          : `SELECT "operatorBusinessId" AS a, "id" AS b FROM "InventoryLocation" WHERE "operatorBusinessId" IS NOT NULL AND "operatorBusinessId" ${not} ORDER BY random() LIMIT 2`;
+    const rows = await prisma.$queryRawUnsafe(sql);
+    return rows.map((r) => path.replace(':id', r.a).replace(':subId', r.b));
+  }
   if (path.includes(':subId')) {
     const rows = await prisma.$queryRawUnsafe(
       `SELECT "businessId", "id" FROM "SchoolFeePeriod" WHERE "businessId" NOT IN (${myBizIds.map((i) => `'${i}'`).join(',') || "''"}) ORDER BY random() LIMIT 2`,

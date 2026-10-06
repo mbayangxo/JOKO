@@ -108,6 +108,13 @@ function sourceFor(routeKey) {
     [/^businesses\/:id\/members\/:subId/, `SELECT "businessId" || '|' || "id" FROM "BusinessMember" WHERE "businessId" NOT IN ($MYBIZ) AND "userId" <> $ME`],
     [/^businesses\/:id\/school\/periods\/:subId/, `SELECT "businessId" || '|' || "id" FROM "SchoolFeePeriod" WHERE "businessId" NOT IN ($MYBIZ)`],
     [/^businesses\/:id\/cooperative\/deliveries\/:subId/, `SELECT "businessId" || '|' || "id" FROM "FarmerDeliveryLog" WHERE "businessId" NOT IN ($MYBIZ)`],
+    // J7 B2B sub-objects: another business's purchase orders / invoices / returns (both sides), relationships, territories, depots.
+    [/^businesses\/:id\/b2b\/purchase-orders\/:subId/, `SELECT "buyerBusinessId" || '|' || "id" FROM "PurchaseOrder" WHERE "buyerBusinessId" NOT IN ($MYBIZ) UNION ALL SELECT "sellerBusinessId" || '|' || "id" FROM "PurchaseOrder" WHERE "sellerBusinessId" NOT IN ($MYBIZ)`],
+    [/^businesses\/:id\/b2b\/invoices\/:subId/, `SELECT "buyerBusinessId" || '|' || "id" FROM "TradeInvoice" WHERE "buyerBusinessId" IS NOT NULL AND "buyerBusinessId" NOT IN ($MYBIZ) UNION ALL SELECT "supplierBusinessId" || '|' || "id" FROM "TradeInvoice" WHERE "supplierBusinessId" NOT IN ($MYBIZ)`],
+    [/^businesses\/:id\/b2b\/returns\/:subId/, `SELECT "buyerBusinessId" || '|' || "id" FROM "CommercialReturn" WHERE "buyerBusinessId" NOT IN ($MYBIZ) UNION ALL SELECT "sellerBusinessId" || '|' || "id" FROM "CommercialReturn" WHERE "sellerBusinessId" NOT IN ($MYBIZ)`],
+    [/^businesses\/:id\/b2b\/relationships\/:subId/, `SELECT "distributorBusinessId" || '|' || "id" FROM "MerchantRelationship" WHERE "distributorBusinessId" NOT IN ($MYBIZ)`],
+    [/^businesses\/:id\/b2b\/territories\/:subId/, `SELECT "distributorBusinessId" || '|' || "id" FROM "Territory" WHERE "distributorBusinessId" NOT IN ($MYBIZ)`],
+    [/^businesses\/:id\/b2b\/depots\/:subId/, `SELECT "operatorBusinessId" || '|' || "id" FROM "InventoryLocation" WHERE "operatorBusinessId" IS NOT NULL AND "operatorBusinessId" NOT IN ($MYBIZ)`],
     [/^businesses\/:id/, `SELECT "id" FROM "Business" WHERE "id" NOT IN ($MYBIZ)`],
     [/^money\/charges\/:id/, `SELECT "code" FROM "MerchantCharge" WHERE "businessId" NOT IN ($MYBIZ)`],
     [/^money\/payments\/:reference/, `SELECT e."reference" FROM "JournalEntry" e WHERE e."kind" IN ('pay_merchant','merchant_payment','charge_payment','business_payment') AND NOT EXISTS (SELECT 1 FROM "Posting" p JOIN "LedgerAccount" a ON a."id" = p."accountId" WHERE p."entryId" = e."id" AND (a."code" LIKE 'customer:' || $ME || ':%' OR a."ownerId" IN ($ME, $MYBIZ)))`],
@@ -142,6 +149,15 @@ const BODY = (attackerBizId) => ({
   name: 'sweep',
   label: 'T1',
   dueDate: new Date().toISOString(),
+  // J7: shapes that pass validation, so authorization (not zod) is what refuses.
+  approve: true,
+  action: 'receive',
+  to: 'preparing',
+  expectedAmountKori: 100,
+  amountKori: 100,
+  resolution: 'none',
+  restock: true,
+  repUserId: 'nobody',
 });
 
 test('every mutating id-route, called by an unrelated multi-role attacker on other people’s objects, is refused', { timeout: 900_000 }, async () => {
