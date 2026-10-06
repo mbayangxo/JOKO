@@ -59,7 +59,7 @@ test('enumeration / cross-agent access: other agents and customers see 404; agen
   assert.equal((await b.s.call('GET', `agent-cash/tx/${id}`)).status, 404);
   assert.equal((await b.s.call('POST', `agent/cash/${id}/decline`, { reason: 'x' })).status, 404);
   assert.ok(!(await b.s.call('GET', 'agent/cash')).body.transactions.some((t) => t.id === id));
-  for (const guess of [crypto.randomUUID(), 'cmuv0000000000000000000', `${id.slice(0, -1)}x`]) assert.equal((await cust.call('GET', `agent-cash/tx/${guess}`)).status, 404);
+  for (const guess of [crypto.randomUUID(), 'cmuv0000000000000000000', `${id.slice(0, -1)}${id.endsWith('x') ? 'y' : 'x'}`]) assert.equal((await cust.call('GET', `agent-cash/tx/${guess}`)).status, 404);
   const view = await a.s.call('GET', `agent-cash/tx/${id}`);
   const text = JSON.stringify(view.body);
   for (const leak of ['koriBalance', 'balance"', cust.phone, cust.handle, cust.id]) assert.ok(!text.includes(leak), `agent view leaks ${leak}`);
