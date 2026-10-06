@@ -7,7 +7,10 @@ Branch `claude/jokko-forensic-audit-rprqia`, on the accepted J6 head (`9af5009` 
 - Production is untouched: no production row was read or changed. The Kebu Supabase project was not touched.
 - The database deployment step stays inert (`db-migrate-deploy.mjs` exits 3).
 
-**Verdict:** GATE_VERDICT
+**Verdict: the J7 gate is met locally.** The fresh-database gate at `eb7d7cb` passed (§34–38).
+- No new P0 is open.
+- No tested path creates, destroys or duplicates money.
+- No cross-business financial access succeeded in the lab or the sweeps.
 
 Design and inventory: `docs/JOKKO-J7-COMMERCE.md` (binding; extends `JOKKO-ECONOMIC-OS-ARCHITECTURE.md`).
 
@@ -461,7 +464,32 @@ The full suite (§34) includes every earlier phase. The J4 idempotency middlewar
 
 ## 34–38. Fresh-database gate (items 34–38)
 
-GATE_TABLE
+Fresh database `joko_j7_gate`, gate script run at commit **`eb7d7cb`**.
+
+| Check | Result |
+|---|---|
+| `test:db:setup` (schema + guards) | exit 0 |
+| `npm test` (unit → J7) | **574 / 574** (36 new J7 tests) |
+| `money:check` after suite / after load + sweeps | exit 0 / exit 0 |
+| `test:load` | 3 / 3 |
+| `test:sweep` (data exposure, admin refusal, mutation) | 3 / 3 |
+| Soak (5 × 1,000 concurrent sends, no retry) | 5,000 sends, 0 failures, money ok every round |
+| Message-request migration dry-run | exit 0 |
+| Migrations vs schema (`migrate diff --exit-code`) | exit 0 (identical) |
+| Production-shaped rehearsal | **18 / 18** (new J7 step) |
+| Deploy inert without activation | exit 3 (as required) |
+| `tsc --noEmit` | the same 5 pre-existing errors, all in `supabase/functions/cron-proxy/index.ts` (Deno) |
+| Web export (`expo export --platform web`) | ok |
+| `npm audit --omit=dev` | 44 (13 moderate, 31 high, 0 critical) |
+
+**Audit, 44 vs 42 at J6:**
+- **No dependency changed**; `package.json` differs only in test scripts.
+- The two extra entries are advisories published upstream since J6: `compression` (DoS on premature close) and `source-map-js` (DoS via section offsets).
+- Both are transitive build / dev-server dependencies.
+
+**An earlier gate run (`94b9cbb`) failed twice; both are now fixed:**
+1. **J6 test flake** (test 335): its near-miss id guess `${id.slice(0,-1)}x` equals the real id whenever the cuid ends in `x`, about 1 in 36 runs. The test was fixed, not weakened (`424c51e`).
+2. **My new mutation-sweep queries** used `ORDER BY random()` on a bare UNION, which Postgres refuses. Fixed in `eb7d7cb`.
 
 ## 39. Dormant capability register (item 39)
 
@@ -493,7 +521,18 @@ GATE_TABLE
 
 ## 41. Exact commits (item 41)
 
-COMMITS_TABLE
+| Commit | Content |
+|---|---|
+| `f326760` | Decisions D28–D30 (J6 acceptance) |
+| `87e1774` | J7.0 business eligibility policy |
+| `f0327cc` | J7.1 inventory, schema + migration, credit memos, locked legacy credit |
+| `b5d5a75` | J7.2–J7.16 catalog, pricing, POs, credit, invoices, depots, returns, network |
+| `e299dbd` | J7.17–J7.23 Mbolo charge card, restock screen, dormant contracts |
+| `94b9cbb` | Adversarial lab, sweep coverage, rehearsal J7 step, exposure checks, matrix |
+| `0edb7f7` | Report draft, architecture doc statuses |
+| `424c51e` | J6 enumeration test flake fix |
+| `eb7d7cb` | Mutation-sweep query fix (**gate commit**) |
+| (this commit) | Final J7 report |
 
 ## 42. Recommendation for J8 Movement & Logistics (item 42)
 
