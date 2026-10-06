@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**528 routes.** Column legend:
+**529 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -123,6 +123,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST admin/partner-payments/:id/release/approve` | admin | finance.adjust.approve | operator_scope |  |  |  |  | admin+ledger | dual authorization; constrained adjustment |
 | `POST admin/couriers/:id/approve` | admin | couriers.onboard | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/couriers/:id/suspend` | admin | couriers.suspend | operator_scope |  |  |  |  | admin+identity |  |
+| `POST admin/deliveries/:id/dispute/resolve` | admin | deliveries.disputes.resolve | operator_scope |  |  |  |  | admin+identity+ledger |  |
 | `POST admin/couriers/:id/revoke` | admin | couriers.suspend | operator_scope |  |  |  |  | admin+identity |  |
 | `GET admin/admins` | admin | admin.roles.read | operator_scope |  |  |  |  |  |  |
 | `POST admin/admins/:id/roles` | admin | admin.roles.manage | operator_scope |  |  |  |  | identity | maker-checker (admin_role_grant) |
@@ -436,7 +437,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST deliveries/:id/confirm` | user | delivery.confirm | buyer |  |  |  |  | ledger+risk |  |
 | `POST deliveries/:id/dispute` | user | delivery.dispute | party |  |  |  |  |  |  |
 | `POST deliveries/:id/dispute/evidence` | user | delivery.dispute.evidence | party |  |  |  |  |  |  |
-| `POST deliveries/:id/dispute/resolve` | user | delivery.dispute.resolve | buyer (rider never rules on own dispute) |  |  |  |  | ledger+risk |  |
+| `POST deliveries/:id/dispute/resolve` | user | delivery.dispute.resolve | nobody (retired user route: always 403 operator_required — J8.0 P0 fix) |  |  |  |  |  |  |
 
 ## User — deposits
 
@@ -842,7 +843,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | Role | Permissions |
 |---|---|
 | `support` | `ops.dashboard.read`, `support.tickets.read`, `support.tickets.write`, `support.calls`, `users.search`, `users.read`, `users.freeze`, `money.transactions.read`, `agents.read`, `distributors.read`, `businesses.read` |
-| `risk` | `ops.dashboard.read`, `risk.held.read`, `risk.held.decide`, `risk.alerts.read`, `risk.alerts.ack`, `users.search`, `users.read`, `users.read.sensitive`, `users.freeze`, `users.unfreeze.request`, `users.unfreeze.approve`, `users.credentials.invalidate`, `money.transactions.read`, `audit.read`, `agents.read`, `agents.suspend`, `couriers.suspend`, `approvals.read`, `businesses.read`, `businesses.suspend` |
+| `risk` | `ops.dashboard.read`, `risk.held.read`, `risk.held.decide`, `risk.alerts.read`, `risk.alerts.ack`, `users.search`, `users.read`, `users.read.sensitive`, `users.freeze`, `users.unfreeze.request`, `users.unfreeze.approve`, `users.credentials.invalidate`, `money.transactions.read`, `audit.read`, `agents.read`, `agents.suspend`, `couriers.suspend`, `deliveries.disputes.resolve`, `approvals.read`, `businesses.read`, `businesses.suspend` |
 | `compliance` | `ops.dashboard.read`, `kyc.review`, `users.search`, `users.read`, `users.read.sensitive`, `users.unfreeze.approve`, `agents.read`, `agents.onboard`, `agents.activate`, `agents.manage`, `agents.suspend`, `couriers.onboard`, `couriers.suspend`, `distributors.read`, `distributors.manage`, `audit.read`, `approvals.read`, `businesses.read`, `businesses.suspend`, `merchants.verify` |
 | `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `finance.commission.propose`, `risk.held.read`, `agents.read`, `approvals.read` |
 | `finance_approver` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.reports.read`, `finance.adjust.approve`, `finance.agent_float.approve`, `finance.commission.approve`, `finance.refund.approve`, `approvals.read` |

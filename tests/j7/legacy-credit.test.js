@@ -5,6 +5,9 @@
  * grant nothing; credit memos (not overwrites) correct invoices.
  */
 import '../helpers/setup.js';
+
+// D31: legacy B2B channel orders are off by default; this file tests that legacy path, so it opts in.
+process.env.LEGACY_B2B_ORDERS_ENABLED = 'true';
 import { test, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';

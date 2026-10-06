@@ -13,7 +13,8 @@ import { freshIp, startApiServer } from '../helpers/http-harness.js';
 
 const ACCESS_SECRET = 'http-test-access-secret-0123456789';
 let api;
-before(async () => { api = await startApiServer(); });
+// D31: this file exercises the legacy B2B channel's safety rules, so it opts in explicitly.
+before(async () => { api = await startApiServer({ LEGACY_B2B_ORDERS_ENABLED: 'true' }); });
 after(async () => { await api?.stop(); await prisma.$disconnect(); });
 
 async function actor(koriBalance = 0) {

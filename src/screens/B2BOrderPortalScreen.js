@@ -250,6 +250,12 @@ export default function B2BOrderPortalScreen({ navigation }) {
         setStepUpVisible(true);
         return;
       }
+      if (err.code === 'b2b_use_purchase_orders') {
+        // D31: new wholesale orders are purchase orders (supplier acceptance, terms, receiving).
+        setCheckoutOpen(false);
+        navigation.navigate('Restock');
+        return;
+      }
       showToast(err.message ?? 'Commande impossible');
     } finally {
       setSubmitting(false);

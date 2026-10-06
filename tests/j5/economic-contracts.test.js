@@ -18,7 +18,7 @@ import { business, customer, signedIn } from '../j3/helpers.js';
 
 const PARTNER_KEY = 'j5-test-partner-key-0123456789';
 let api;
-before(async () => { api = await startApiServer({ JOKO_API_KEY: PARTNER_KEY, JOKO_DEFAULT_PARTNER_ID: 'kebu', JOKO_WEBHOOK_SECRET: 'j5-webhook-secret' }); });
+before(async () => { api = await startApiServer({ LEGACY_B2B_ORDERS_ENABLED: 'true', JOKO_API_KEY: PARTNER_KEY, JOKO_DEFAULT_PARTNER_ID: 'kebu', JOKO_WEBHOOK_SECRET: 'j5-webhook-secret' }); });
 after(async () => { await api?.stop(); await prisma.$disconnect(); });
 afterEach(async () => { await assertInvariants(prisma); });
 
