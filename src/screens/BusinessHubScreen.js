@@ -675,6 +675,7 @@ export default function BusinessHubScreen({ navigation, route }) {
                 </Text>
                 <GlowButton label="Hub distribution" onPress={openDistributionHub} />
                 <GlowButton label="Portail commandes B2B" onPress={openB2BOrderPortal} />
+                <GlowButton label="Réapprovisionner (fournisseurs connectés)" onPress={() => navigation.navigate('Main', { screen: 'MarketplaceTab', params: { screen: 'Restock' } })} />
                 <PressScale scaleTo={0.98} onPress={() => navigation.navigate('AgentHub')} style={styles.linkRow}>
                   <Text style={styles.linkText}>Retrait / dépôt chez un agent K21 →</Text>
                 </PressScale>

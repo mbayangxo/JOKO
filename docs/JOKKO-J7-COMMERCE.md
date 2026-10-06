@@ -88,7 +88,11 @@ Contract:
 2. The buyer opens the code. Amount and seller come from the server (`GET money/charges/:code`).
 3. Payment is `payCharge` with `expectedAmountKori` (J4).
 
-Message text is never authority. Users cannot post `commerce`/`payment` cards. Status: **ACTIVE** (charge card). Order-from-conversation remains ARCHITECTED.
+Message text is never authority. Users cannot post `commerce`/`payment` cards.
+- **Route:** `POST mbolo/threads/:id/charge-card {code}` (`lib/b2b/mbolo-charge-card.js`).
+- **Payload:** `{type: 'charge_card', code, version}` — no amount.
+- **Refused when:** the charge is not open, the business is not active, or the sender is not an active thread member with `business.charges.create` on the charge's business.
+- **Status:** **ACTIVE** (charge card). Order-from-conversation remains ARCHITECTED.
 
 ## 6. Askaan / Askoo marketplace contract (J7.20)
 
@@ -141,3 +145,50 @@ OpportunityOS / Foundry / IAWIC consume only:
 - **aggregates:** `demandAggregates`, `wholesaleDemandAggregates`.
 
 They never read raw rows. None of them is built in J7.
+
+## 9. Group purchasing (J7.17) — DORMANT
+
+No code. Contract for a future build:
+- **Pool:** a time-boxed, supplier-approved pool on one `WholesaleListing` with a target quantity and a tier price.
+- **Pledges:** each merchant pledges a quantity. **No money is collected at pledge time.**
+- **Pool fills:** each member gets its **own** `PurchaseOrder` at the pool price. Each PO uses the member's own terms and credit, and is invoiced to that member only.
+- **Pool fails:** nothing moves.
+
+Why it is not built:
+- There is no pooled escrow and no shared liability.
+- One member's default is never another member's debt.
+- A pool with money held in common would be a new financial product (a decision for the founder and BCEAO strategy).
+
+## 10. Demand intelligence privacy (J7.21)
+
+The J5 consumer `demandAggregates` uses k = 5 businesses. J7 wholesale aggregates are stricter.
+
+- **Rule:** a category × region cell is published only with **≥ 10 distinct buyer businesses AND ≥ 3 distinct sellers**.
+- **Why stricter:**
+  - B2B volumes are commercially sensitive.
+  - With one or two sellers in a cell, the aggregate would reveal that supplier's sales to its competitors.
+  - Ten buyers keep a single shop's purchasing out of reach.
+- **Never in the output:** business, merchant, rep or listing ids, prices, or terms.
+- **Access:** internal function only, no route. A future route would be operator-only, `finance_ops`/`risk`, with the same thresholds.
+
+## 11. Neutral infrastructure (J7.23)
+
+No supplier, distributor or Jokko-affiliated distribution company has special access.
+- Every supplier uses the same capability checks, relationship gate, pricing function, credit lock and analytics scope.
+- No code path is keyed to a specific business id.
+- Scale is tested at 2,000 relationships per distributor: cursor pages of 200, index scan.
+  - Larger volumes have not been load-tested and are not claimed.
+
+## 12. J7 API map (all under `businesses/:id/b2b/`; `:id` is the acting business)
+
+| Area | Routes |
+|---|---|
+| Seller catalog | `GET/POST listings`, `POST price-lists`, `POST relationships/:rid/configure` |
+| Network | `GET relationships` (cursor), `POST territories/:tid/reps`, `GET rep-summary`, `GET analytics` |
+| Depot | `GET/POST depots/:locId/stock`, `GET depots/:locId/movements` |
+| Restock (buyer) | `GET suppliers`, `GET suppliers/:sid/catalog`, `GET suppliers/:sid/reorder`, `POST quote` |
+| Purchase orders | `GET/POST purchase-orders`, `GET purchase-orders/:po`, `POST purchase-orders/:po/{accept,reject,pay,advance,buyer,resolve,cancel,returns}` |
+| Invoices | `GET invoices`, `GET invoices/:inv`, `POST invoices/:inv/pay`, `POST invoices/:inv/credit-memos` |
+| Returns | `GET returns`, `POST returns/:ret/{decide,ship,receive,resolve}` |
+
+App: `src/screens/RestockScreen.js` (Business hub → "Réapprovisionner").

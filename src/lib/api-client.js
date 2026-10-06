@@ -1762,3 +1762,16 @@ export const getMerchantRelationships = (id) => apiFetch(bos(id, '/relationships
 export const respondMerchantRelationship = (id, relId, accept) =>
   apiFetch(bos(id, `/relationships/${encodeURIComponent(relId)}/respond`), { method: 'POST', body: { accept }, skipCache: true });
 export const endMerchantRelationship = (id, relId) => apiFetch(bos(id, `/relationships/${encodeURIComponent(relId)}/end`), { method: 'POST', body: {}, skipCache: true });
+
+// ── J7 restock (B2B purchase orders). Prices always come from the server quote. ──
+const b2b = (businessId, path) => `/api/businesses/${encodeURIComponent(businessId)}/b2b/${path}`;
+export const getRestockSuppliers = (businessId) => apiFetch(b2b(businessId, 'suppliers'), { skipCache: true });
+export const getSupplierCatalog = (businessId, supplierId) => apiFetch(b2b(businessId, `suppliers/${encodeURIComponent(supplierId)}/catalog`), { skipCache: true });
+export const getReorderSuggestions = (businessId, supplierId) => apiFetch(b2b(businessId, `suppliers/${encodeURIComponent(supplierId)}/reorder`), { skipCache: true });
+export const quoteRestock = (businessId, body) => apiFetch(b2b(businessId, 'quote'), { method: 'POST', body, skipCache: true });
+export const submitRestockOrder = (businessId, body, { idempotencyKey } = {}) => apiFetch(b2b(businessId, 'purchase-orders'), { method: 'POST', body, idempotencyKey, skipCache: true });
+export const listRestockOrders = (businessId) => apiFetch(b2b(businessId, 'purchase-orders?side=buyer'), { skipCache: true });
+export const payRestockOrder = (businessId, poId, expectedAmountKori, { stepUpToken, idempotencyKey } = {}) =>
+  apiFetch(b2b(businessId, `purchase-orders/${encodeURIComponent(poId)}/pay`), { method: 'POST', body: { expectedAmountKori }, stepUpToken, idempotencyKey, skipCache: true });
+export const receiveRestockOrder = (businessId, poId, action = 'receive') =>
+  apiFetch(b2b(businessId, `purchase-orders/${encodeURIComponent(poId)}/buyer`), { method: 'POST', body: { action }, skipCache: true });
