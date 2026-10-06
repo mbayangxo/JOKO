@@ -24,7 +24,7 @@ Individual → Worker → Business → Merchant → Supplier → Distributor →
 | Individual | Identity (J3), wallet (J2/J4), P2P, requests, cash-in/out | ACTIVE |
 | Worker | Payroll receipt, worker identity, couriers/agents trust | ACTIVE (payroll, couriers, agents) |
 | Business / Merchant | Business identity, staff roles, business wallet, Business Lite operations | ACTIVE (J5) |
-| Supplier / Distributor | Distribution mode, territories, reps, merchant relationships, B2B ordering, trade accounts, invoices | Relationships ACTIVE (J5); routes / collections / returns DORMANT (J7/J8) |
+| Supplier / Distributor | Distribution mode, territories, reps, merchant relationships, wholesale catalog, purchase orders, trade accounts, invoices, returns, depots | ACTIVE (J7, `docs/JOKKO-J7-COMMERCE.md`); routes / physical delivery DORMANT (J8) |
 | Manufacturer | Same business identity in manufacturer mode; product identity mapping | ARCHITECTED |
 | Cooperative | Cooperative business type, member deliveries, payouts | ACTIVE (legacy feature, J2 money) |
 | Tontine / Collective capital | Tontines with consent + escrow (J1/J2) | ACTIVE |
@@ -129,9 +129,12 @@ Only the owner changes it (audited).
 
 | Piece | Status |
 |---|---|
-| Territories, reps, relationships | ACTIVE (J5) |
-| B2B orders, trade accounts, invoices, receivables, disputes | ACTIVE (pre-J5, hardened) |
-| Routes, collections rounds, returns | DORMANT (J7/J8) |
+| Territories, reps, relationships | ACTIVE (J5; J7 adds rep assignment, territory reps, cursor pagination) |
+| Wholesale catalog (listings, tiers, price lists, territory availability), server pricing | ACTIVE (J7) |
+| B2B purchase orders, supplier-granted terms with locked credit, invoices + payments + credit memos, returns, depot stock | ACTIVE (J7) |
+| Legacy B2B-as-marketplace-channel orders | LEGACY, kept working (credit check locked since J7) |
+| Routes, collection rounds, physical delivery | DORMANT (J8) |
+| Group purchasing | DORMANT (contract: J7 doc §9) |
 
 **Merchant acquisition (binding rule).** Invite / assisted onboarding → merchant verifies and accepts → commercial relationship established.
 
@@ -317,7 +320,11 @@ Each item is DORMANT / ARCHITECTED / NOT ACTIVATED until it can be operated safe
 | Cross-border agents | None (XOF peg only) | Licensed corridors, FX, regulator approval |
 | Franchise / multi-level agent hierarchies | `AgentOrganization` (one level: organization → service points → agents) | Hierarchy model + commission split rules + J3 authority |
 | Marketplace / WhatsApp / restaurant channels | Channel registry (refused) | Adapters |
-| OpportunityOS feed | `demandAggregates` | Governance approval + consumer |
+| OpportunityOS feed | `demandAggregates`, `wholesaleDemandAggregates` (k = 10 buyers, ≥ 3 sellers) | Governance approval + consumer |
+| Group purchasing | Contract only (J7 doc §9) | Per-member POs at a pool price; no pooled money; product decision |
+| Reorder from shelf stock | Reorder suggestions use purchase history only | A mapping from wholesale listing to the merchant's own shelf product + sales history |
+| Mbolo order-from-conversation | Seller charge card ACTIVE (code only) | Conversation → `Order` / `PurchaseOrder` adapter |
+| Kabu payouts by purpose | Classification + recipes (J7 doc §7) | `purpose` on `/v1/payouts`, `business:<id>:held` account, read-only production inspection |
 
 ## 16. Jokko Business Lite: scope guard
 
@@ -349,6 +356,6 @@ A feature request that falls in "Out" goes to Kabu, or to a contract between the
 |---|---|
 | J5 | Business Lite + shared business infrastructure + contracts (this document) |
 | J6 | Agents & cash network (lifecycle, organizations, service points, secure cash-in/out, funded commissions, liquidity, reconciliation) + Kabu per-merchant settlement (J6.0) |
-| J7 | Distribution network operations (wholesale catalog UI, restocking, collections) |
+| J7 | Distribution network operations: suspension hard gate, wholesale catalog, server pricing, purchase orders, supplier-granted credit, invoices/credit memos, depots, returns, reps/territories, restock, reorder suggestions, demand aggregates, Mbolo charge card (`docs/JOKKO-J7-REPORT.md`) |
 | J8 | Jokko Logistics (consumes the outbox), then fulfilment |
 | Later | Licensed card acceptance, receivables financing (IAWIC / partners), OpportunityOS feed |
