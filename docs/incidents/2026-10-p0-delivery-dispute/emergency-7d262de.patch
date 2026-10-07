@@ -1,0 +1,42 @@
+diff --git a/lib/handlers.js b/lib/handlers.js
+index 149dbdf..105e548 100644
+--- a/lib/handlers.js
++++ b/lib/handlers.js
+@@ -2594,31 +2594,12 @@ export async function deliveriesDisputeEvidence(req, res) {
+   }
+ }
+ 
+-export async function deliveriesDisputeResolve(req, res) {
+-  const adminKey = process.env.ADMIN_API_KEY;
+-  if (adminKey && req.headers['x-admin-key'] !== adminKey) {
+-    res.status(401).json({ error: 'Admin authorization required' });
+-    return;
+-  }
+-
+-  const schema = z.object({
+-    outcome: z.enum(['rider', 'customer']),
+-    resolutionNote: z.string().optional(),
+-  });
+-  const parsed = schema.safeParse(req.body);
+-  if (!parsed.success) return validationError(res, parsed.error);
+-
+-  try {
+-    const result = await resolveDispute(prisma, {
+-      taskId: req.query.id,
+-      outcome: parsed.data.outcome,
+-      resolutionNote: parsed.data.resolutionNote,
+-    });
+-    res.json(result);
+-  } catch (error) {
+-    if (await handleDeliveryError(res, error)) return;
+-    throw error;
+-  }
++export async function deliveriesDisputeResolve(_req, res) {
++  // EMERGENCY P0 FIX: this user route moved escrowed delivery fees for any
++  // signed-in caller whenever ADMIN_API_KEY was unset (and for any holder of
++  // the shared key otherwise). Dispute rulings are operator-only; until the
++  // operator route ships, disputes stay held (no money moves).
++  res.status(403).json({ error: 'Décision réservée à un opérateur K21', code: 'operator_required' });
+ }
+ 
+ export async function deliveriesAutoReleaseCron(req, res) {
