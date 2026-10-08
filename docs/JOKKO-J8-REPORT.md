@@ -10,7 +10,7 @@ This report covers branch `claude/jokko-forensic-audit-rprqia`, built on the acc
 > **The P0 incident stays OPEN. Production is NOT protected.** The emergency patch for the legacy delivery-dispute ruling is authorized but **not deployed**: Vercel access for the team scope still returns 403 (§0). Nothing in this report changes that.
 
 **Verdict: the J8 gate is met locally**, with the honest limits in §48.
-- **Fresh-database gate** (§42): see the results table there.
+- **Fresh-database gate** (§42, `c6da928`): 608 / 608 tests, load 3 / 3, sweeps 5 / 5, money and logistics invariants clean.
 - **No new P0 was found in J8.**
 - **Money:** no tested path creates, destroys or duplicates money or goods.
 - **Isolation:** no cross-party shipment, address or earning access succeeded in the lab or the sweeps.
@@ -278,14 +278,16 @@ See §42.
 
 ### 42. Fresh-database gate
 
+Fresh database `joko_regj8`, gate script at **`c6da928`**. The two later test-only commits (`c3f41d0`, `9160ec2`) were then run on the same database at HEAD: `tests/j8` **34 / 34**, logistics invariants ok, `money:check` exit 0.
+
 | Check | Result |
 |---|---|
-| `test:db:setup` | ⟨setup⟩ |
-| `npm test` (unit → J8) | ⟨test⟩ |
-| `money:check` after the suite / after load + sweeps | ⟨money⟩ |
-| `test:load` | ⟨load⟩ |
-| `test:sweep` (boundary, operator permission, data exposure, admin refusal, mutation) | ⟨sweep⟩ |
-| logistics invariants L1–L8 after everything | ⟨logistics⟩ |
+| `test:db:setup` | exit 0 |
+| `npm test` (unit → J8) | **608 / 608** |
+| `money:check` after the suite / after load + sweeps | exit 0 / exit 0 |
+| `test:load` | 3 / 3 |
+| `test:sweep` (boundary: 41 critical user routes, 58 operator routes; data exposure; admin refusal; mutation) | **5 / 5** |
+| logistics invariants L1–L8 after everything | ok (no violations) |
 | Migrations vs schema (`migrate diff --exit-code`) | **exit 0** (no difference) |
 | Production-shaped rehearsal | **19 / 19** (new J8 step: legacy courier task untouched, 4 guards + 2 indexes, custody rules and idempotent intake on migrated data) |
 | Deploy inert without activation | **exit 3** (as required) |
