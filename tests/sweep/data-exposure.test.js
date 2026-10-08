@@ -49,6 +49,7 @@ const PUBLIC_BY_DESIGN = new Set([
   'channels/:id',
   'affiliate/resolve/:code',
   'trending/alerts/:id',
+  'work/opportunities/:id', // J9: an open posting of a verified business (no PII; blocked businesses hidden)
   // J4: a charge code is a bearer payment reference shown on a QR — whoever
   // holds it may see merchant name + amount (never payer identity or balances).
   'money/charges/:id',
@@ -106,6 +107,10 @@ async function candidatesFor(path, me, myBizIds) {
     // J8: shipments / disputes the attacker is no party to.
     'logistics/shipments/:id': `SELECT "id" FROM "Shipment" ORDER BY random() LIMIT 2`,
     'logistics/disputes/:id': `SELECT "id" FROM "ShipmentDispute" ORDER BY random() LIMIT 2`,
+    // J9: work objects the attacker is no party to (an open posting is public by design: minimal DTO, no PII).
+    'work/opportunities/:id': `SELECT "id" FROM "WorkOpportunity" WHERE status = 'open' ORDER BY random() LIMIT 2`,
+    'work/assignments/:id': `SELECT "id" FROM "WorkAssignment" WHERE "workerUserId" <> '${me}' ORDER BY random() LIMIT 2`,
+    'work/disputes/:id': `SELECT "id" FROM "WorkDispute" ORDER BY random() LIMIT 2`,
     'affiliate/resolve/:code': `SELECT "linkCode" FROM "AffiliateLink" ORDER BY random() LIMIT 1`,
   };
   const prefix = Object.keys(table).find((k) => path === k || path.startsWith(`${k}/`));

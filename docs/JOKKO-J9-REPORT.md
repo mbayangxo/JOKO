@@ -71,7 +71,30 @@ Design: `docs/JOKKO-J9-WORK.md`.
 
 ## 4. Gate at the latest HEAD (fresh database)
 
-GATE_TABLE
+Commit **`5fb2d02`** was run on a **fresh database** (`joko_gatej9`, schema plus guards from scratch).
+
+| Check | Result |
+|---|---|
+| Full regression (`npm test`, J1–J9) | **660 / 660** |
+| J2 money invariants after the suite / after load and sweeps | **OK / OK** |
+| J8 logistics invariants (L1–L9) after the suite / after all | **OK / OK** |
+| J9 work invariants (W1–W7) after the suite / after all | **OK / OK** |
+| Load (`npm run test:load`, incl. J9: 6 employers × 10 workers, storms) | **4 / 4**; J9 240 requests, p95 1.18 s (local) |
+| Authorization-boundary gate + mutation sweep + data-exposure sweep + admin sweep | **5 / 5**; the data-exposure sweep was re-run after adding J9 probe objects (see below) |
+| Migration rehearsal on production shape (incl. D44 + J9 step) | **20 / 20** (`dd5f568`; no migration change since) |
+| Migrations ⇄ `schema.prisma` diff | **empty** |
+| Web build (`expo export`) | **OK** |
+| Browser E2E J8 (distributor → driver → merchant) | **12 / 12** |
+| Browser E2E J9 (employer → worker → ops → finance) | **11 / 11** |
+| `npm audit --omit=dev --audit-level=critical` | **0 critical** (31 high / 13 moderate; no J9 dependency added) |
+| Deploy-inert | `JOKKO_WORK_MONEY_ENABLED` is set nowhere; no `cron/work` schedule; the J9 migration is additive |
+
+**What the gate caught, and was fixed:**
+1. The first full run at `ca4b7ee` failed 25 tests. 24 of them were a **test-harness** fault: every test process reused the same synthetic IPs, so J9's extra logins exhausted the shared per-IP OTP buckets. The 25th was a flood test made outdated by D42's read budget.
+2. The authorization-boundary sweep found a **real ordering defect**: `POST businesses/:id/work/rules/:id/fund` answered "money not activated" before checking authority, revealing activation state to an outsider. It now authorizes first.
+3. The data-exposure sweep had no J9 probe objects. They were added, and the sweep was re-run on the gate database: **4 / 4**, nothing leaks.
+
+All fixes are in `5fb2d02` (and the sweep table in the report commit).
 
 ## 5. Commits
 - **D42:** `f172eb5`
@@ -84,7 +107,8 @@ GATE_TABLE
 - **UI and E2E:** `b149aec`
 - **Rehearsal:** `dd5f568`
 - **Docs and load:** `ca4b7ee`
-- **This report:** see `git log`
+- **Gate fixes:** `5fb2d02`
+- **This report and the sweep probe table:** see `git log`
 
 ## 6. Unresolved risks (honest)
 1. **The production P0 is open.** The F1 cooperative double-payout and the F4 affiliate behaviour are live in production until authorized deploys and decisions happen.
@@ -96,7 +120,7 @@ GATE_TABLE
 7. **Worker payouts land in the Jokko wallet only.** Off-platform withdrawal uses the existing J4 cash-out rails. No J9-specific mobile-money payout.
 8. **The ops console uses browser prompts** for rulings. It works and is escaped, but it is not a polished case tool.
 9. **Discovery is newest-first with no ranking.** A fairness review is needed at scale. OpportunityOS stays dormant.
-10. **Measured locally only:** 60 concurrent lifecycles, p95 ≈ 1.7 s on one local node. No production capacity claim.
+10. **Measured locally only:** 60 concurrent lifecycles, p95 ≈ 1.2–1.7 s on one local node. No production capacity claim.
 
 ## 7. Proposed decisions
 P-J9-1 … P-J9-10 are in `docs/JOKKO-DECISIONS.md`:
