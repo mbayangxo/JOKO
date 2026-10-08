@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { prisma } from '../helpers/db.js';
 import { startApiServer } from '../helpers/http-harness.js';
 import { assertInvariants } from '../../lib/money-kernel/invariants.js';
+import { assertLogisticsInvariants } from '../../lib/logistics/invariants.js';
 import { ensurePrimaryInventoryLocation } from '../../lib/business/identity.js';
 import { customer, signedIn } from '../j3/helpers.js';
 import { fleetDriver, member, readyPo, shipmentFor, stockAt } from './fixture.js';
@@ -17,7 +18,10 @@ import { fleetDriver, member, readyPo, shipmentFor, stockAt } from './fixture.js
 let api;
 before(async () => { api = await startApiServer(); });
 after(async () => { await api?.stop(); await prisma.$disconnect(); });
-afterEach(async () => { await assertInvariants(prisma); });
+afterEach(async () => {
+  await assertInvariants(prisma);
+  await assertLogisticsInvariants(prisma);
+});
 
 const ok = (r, what = '') => {
   assert.ok(r.status >= 200 && r.status < 300, `${what} ${r.status} ${JSON.stringify(r.body)}`);
