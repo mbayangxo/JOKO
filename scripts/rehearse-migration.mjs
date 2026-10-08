@@ -351,6 +351,46 @@ step('J8 migration additive on production shape (legacy courier task untouched, 
   invariantsAfter: check7.status === 0 ? 'ok' : JSON.parse(check7.stdout || '{}').violations,
 });
 
+// D44 + J9 (additive): return-stock holds and the work tables exist with their guards; on migrated
+// data the work lifecycle runs (employment: no money) and J9 money stays INERT without activation.
+const j9 = (await db2.query(`SELECT
+  (SELECT COUNT(*) FROM "_prisma_migrations" WHERE migration_name LIKE '%_j8_return_stock' AND finished_at IS NOT NULL)::int AS d44_applied,
+  (SELECT COUNT(*) FROM "_prisma_migrations" WHERE migration_name LIKE '%_j9_work' AND finished_at IS NOT NULL)::int AS j9_applied,
+  (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'CommercialReturn' AND column_name IN ('shipAttempts','shipTracked'))::int AS return_columns,
+  (SELECT COUNT(*) FROM pg_trigger WHERE tgname IN ('ReturnStockHold_guard','WorkOffer_guard','WorkMilestone_guard','WorkEarning_guard','WorkEvidence_append_only','WorkOutcome_append_only','WorkDispute_no_delete'))::int AS guards`)).rows[0];
+await db2.query(`UPDATE "Business" SET "verificationStatus" = 'verified', verified = true WHERE id = (SELECT id FROM "Business" ORDER BY "createdAt" LIMIT 1)`);
+const j9flow = node(['--input-type=module', '-e', `
+  const { prisma } = await import('./lib/prisma.js');
+  const W = await import('./lib/work/service.js');
+  const { checkWorkInvariants } = await import('./lib/work/invariants.js');
+  const biz = await prisma.business.findFirst({ orderBy: { createdAt: 'asc' } });
+  const workerId = '${users[2].id}';
+  const job = await W.createOpportunity(biz.ownerId, biz.id, { type: 'staffing', arrangement: 'employment', payKind: 'wage', title: 'Vendeur rehearsal', description: 'Tenir la boutique du lundi au vendredi.', rateKori: 50000, hoursPerWeek: 40, durationWeeks: 52 });
+  const app = await W.applyToOpportunity(workerId, job.id, {});
+  const offer = await W.createOffer(biz.ownerId, biz.id, { applicationId: app.id, startDate: '2026-11-02', duties: 'Accueil des clients et tenue de caisse.', rateKori: 50000 });
+  const a = await W.acceptOffer(workerId, offer.id, { termsHash: offer.termsHash, ageAttested: true });
+  const gig = await W.createOpportunity(biz.ownerId, biz.id, { type: 'gig', arrangement: 'contract', payKind: 'fixed', title: 'Mission rehearsal', description: 'Compter le stock du magasin ce samedi.', rateKori: 1000 });
+  const w2 = await prisma.user.findFirst({ where: { id: { notIn: [workerId, biz.ownerId] } } });
+  const app2 = await W.applyToOpportunity(w2.id, gig.id, {});
+  const inert = await W.createOffer(biz.ownerId, biz.id, { applicationId: app2.id, startDate: '2026-11-02', duties: 'Compter le stock du rayon.' }).then(() => 'ACCEPTED', (e) => e.code);
+  const inv = await checkWorkInvariants(prisma);
+  console.log(JSON.stringify({ assignment: a.status, funding: a.funding, escrow: a.escrowKori, prepaidOffer: inert, workOk: inv.ok }));
+  await prisma.$disconnect();
+`]);
+const legacyInventory = spawnSync('psql', [dbUrl, '-v', 'ON_ERROR_STOP=1', '-f', join(root, 'scripts/forensics/legacy-delivery-inventory.sql')], { encoding: 'utf8' });
+const check8 = node(['scripts/money-check.mjs', '--json']);
+let flow9 = null;
+try { flow9 = JSON.parse(j9flow.stdout.trim().split('\n').pop()); } catch { flow9 = { error: j9flow.stderr.slice(0, 600) }; }
+step('D44 + J9 migrations additive on production shape (guards present; employment lifecycle on migrated data; J9 money inert without activation; D43 read-only inventory runs)', {
+  ok: j9.d44_applied === 1 && j9.j9_applied === 1 && j9.return_columns === 2 && j9.guards === 7
+    && flow9?.assignment === 'active' && flow9?.funding === 'payroll' && flow9?.escrow === 0 && flow9?.prepaidOffer === 'work_money_not_activated' && flow9?.workOk === true
+    && legacyInventory.status === 0 && check8.status === 0,
+  j9,
+  flow: flow9,
+  legacyInventoryExit: legacyInventory.status,
+  invariantsAfter: check8.status === 0 ? 'ok' : JSON.parse(check8.stdout || '{}').violations,
+});
+
 const directWrite = await prisma2.$executeRawUnsafe(`UPDATE "Wallet" SET "koriBalance" = "koriBalance" + 1 WHERE id = (SELECT id FROM "Wallet" LIMIT 1)`).then(() => 'ACCEPTED', (e) => e.message);
 step('direct balance write after migration is refused', { ok: directWrite !== 'ACCEPTED', result: directWrite.slice(0, 120) });
 await db2.end();
