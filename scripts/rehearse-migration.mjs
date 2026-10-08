@@ -315,6 +315,39 @@ step('J7 migration additive on production shape (legacy invoice principal/paymen
   invariantsAfter: check6.status === 0 ? 'ok' : JSON.parse(check6.stdout || '{}').violations,
 });
 
+// J8 (additive): legacy courier task untouched; custody guards present; a shipment on
+// migrated data obeys status ⇒ custody, final states and no-delete; invariants hold.
+const j8 = (await db2.query(`SELECT
+  (SELECT COUNT(*) FROM "_prisma_migrations" WHERE migration_name LIKE '%_j8_logistics' AND finished_at IS NOT NULL)::int AS j8_applied,
+  (SELECT status FROM "DeliveryTask" WHERE id = $1) AS legacy_task_status,
+  (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'HubParcel' AND column_name = 'pickupAttempts')::int AS hub_attempts_column,
+  (SELECT COUNT(*) FROM pg_trigger WHERE tgname IN ('Shipment_guard','ShipmentEvent_append_only','ReceivingRecord_append_only','ShipmentDisputeEvidence_append_only'))::int AS j8_guards,
+  (SELECT COUNT(*) FROM pg_indexes WHERE indexname IN ('ShipmentEvent_one_delivery','CourierAssignment_one_active'))::int AS j8_indexes`, [task.id])).rows[0];
+const j8flow = node(['--input-type=module', '-e', `
+  const { prisma } = await import('./lib/prisma.js');
+  const { runMoneyTransaction } = await import('./lib/wallet-atomic.js');
+  const { createRequestInTx } = await import('./lib/logistics/intake.js');
+  const { checkLogisticsInvariants } = await import('./lib/logistics/invariants.js');
+  const biz = await prisma.business.findFirst();
+  const r = await runMoneyTransaction(prisma, (tx) => createRequestInTx(tx, { sourceSystem: 'jokko_order', sourceId: 'rehearsal-j8', fulfilmentOwner: 'MERCHANT_FULFILLED', fulfillerBusinessId: biz.id, originBusinessId: biz.id, destinationUserId: '${users[2].id}', lines: [], createdBy: biz.ownerId }));
+  const again = await runMoneyTransaction(prisma, (tx) => createRequestInTx(tx, { sourceSystem: 'jokko_order', sourceId: 'rehearsal-j8', fulfilmentOwner: 'MERCHANT_FULFILLED', fulfillerBusinessId: biz.id, originBusinessId: biz.id, destinationUserId: '${users[2].id}', lines: [], createdBy: biz.ownerId }));
+  const bad = await prisma.shipment.update({ where: { id: r.shipment.id }, data: { status: 'delivered' } }).then(() => 'ACCEPTED', () => 'refused');
+  const del = await prisma.shipment.delete({ where: { id: r.shipment.id } }).then(() => 'ACCEPTED', () => 'refused');
+  const inv = await checkLogisticsInvariants(prisma);
+  console.log(JSON.stringify({ status: r.shipment.status, replayed: again.replayed, sameRequest: again.request.id === r.request.id, deliveredWithoutCustody: bad, del, logisticsOk: inv.ok }));
+  await prisma.$disconnect();
+`]);
+const check7 = node(['scripts/money-check.mjs', '--json']);
+let flow8 = null;
+try { flow8 = JSON.parse(j8flow.stdout.trim().split('\n').pop()); } catch { flow8 = { error: j8flow.stderr.slice(0, 600) }; }
+step('J8 migration additive on production shape (legacy courier task untouched, custody guards present, shipment custody rules + idempotent intake on migrated data)', {
+  ok: j8.j8_applied === 1 && j8.legacy_task_status === 'assigned' && j8.hub_attempts_column === 1 && j8.j8_guards === 4 && j8.j8_indexes === 2
+    && flow8?.status === 'ready_for_pickup' && flow8?.replayed === true && flow8?.sameRequest === true && flow8?.deliveredWithoutCustody === 'refused' && flow8?.del === 'refused' && flow8?.logisticsOk === true && check7.status === 0,
+  j8,
+  flow: flow8,
+  invariantsAfter: check7.status === 0 ? 'ok' : JSON.parse(check7.stdout || '{}').violations,
+});
+
 const directWrite = await prisma2.$executeRawUnsafe(`UPDATE "Wallet" SET "koriBalance" = "koriBalance" + 1 WHERE id = (SELECT id FROM "Wallet" LIMIT 1)`).then(() => 'ACCEPTED', (e) => e.message);
 step('direct balance write after migration is refused', { ok: directWrite !== 'ACCEPTED', result: directWrite.slice(0, 120) });
 await db2.end();
