@@ -73,7 +73,9 @@ export async function startApiServer(overrides = {}) {
   };
 }
 
-let ipCounter = 0;
+// Random start per process: test files run in separate processes within the same 10-minute
+// auth-limit window, and a fixed start made every file reuse 10.0.0.1… (shared per-IP OTP buckets).
+let ipCounter = Math.floor(Math.random() * 0xfff000);
 /** A distinct synthetic client IP per caller so per-IP limits don't bleed across tests. */
 export function freshIp() {
   ipCounter += 1;

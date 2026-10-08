@@ -351,7 +351,8 @@ test('OTP send endpoint is rate limited per IP', async () => {
 test('authenticated API is rate limited (global per-user budget)', async () => {
   const a = await actor();
   let limited = false;
-  for (let i = 0; i < 110 && !limited; i++) {
+  // D42: reads have their own per-user class budget (RL_READ_PER_MIN, default 300) — flooding past it is cut off.
+  for (let i = 0; i < 400 && !limited; i++) {
     const r = await live.client('GET', 'wallet', as(a));
     if (r.status === 429 || r.status === 403) limited = true;
   }
