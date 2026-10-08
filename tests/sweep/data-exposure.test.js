@@ -103,6 +103,9 @@ async function candidatesFor(path, me, myBizIds) {
     'money/intents/:id': `SELECT regexp_replace("key", '^api:[^:]+:[^:]+:', '') FROM "ApiIdempotency" WHERE "provider" = 'api' AND "userId" <> '${me}' ORDER BY random() LIMIT 2`,
     'money/charges/:id': `SELECT "code" FROM "MerchantCharge" ORDER BY random() LIMIT 1`,
     'addresses/:id': `SELECT "id" FROM "Address" WHERE NOT ("ownerType" = 'user' AND "ownerId" = '${me}') ORDER BY random() LIMIT 2`,
+    // J8: shipments / disputes the attacker is no party to.
+    'logistics/shipments/:id': `SELECT "id" FROM "Shipment" ORDER BY random() LIMIT 2`,
+    'logistics/disputes/:id': `SELECT "id" FROM "ShipmentDispute" ORDER BY random() LIMIT 2`,
     'affiliate/resolve/:code': `SELECT "linkCode" FROM "AffiliateLink" ORDER BY random() LIMIT 1`,
   };
   const prefix = Object.keys(table).find((k) => path === k || path.startsWith(`${k}/`));
