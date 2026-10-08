@@ -210,3 +210,25 @@ CREATE TRIGGER "UnmatchedReceipt_guard" BEFORE UPDATE OR DELETE ON "UnmatchedRec
   FOR EACH ROW EXECUTE FUNCTION joko_unmatched_receipt_guard();
 ALTER TABLE "UnmatchedReceipt" DROP CONSTRAINT IF EXISTS "UnmatchedReceipt_units_check";
 ALTER TABLE "UnmatchedReceipt" ADD CONSTRAINT "UnmatchedReceipt_units_check" CHECK ("units" > 0);
+
+-- D44: a return stock hold's quantities never change; state only moves forward; never deleted.
+CREATE OR REPLACE FUNCTION joko_return_hold_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'ReturnStockHold rows are never deleted' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW."sellableUnits" <> OLD."sellableUnits" OR NEW."damagedUnits" <> OLD."damagedUnits" OR NEW."returnId" <> OLD."returnId"
+     OR NEW."sellerProductId" <> OLD."sellerProductId" OR NEW."buyerProductId" IS DISTINCT FROM OLD."buyerProductId" THEN
+    RAISE EXCEPTION 'ReturnStockHold %: quantities are immutable', OLD.id USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NOT ((OLD.state = NEW.state) OR (OLD.state = 'quarantined' AND NEW.state IN ('handed_over', 'released')) OR (OLD.state = 'handed_over' AND NEW.state = 'released')) THEN
+    RAISE EXCEPTION 'ReturnStockHold %: % → % not allowed', OLD.id, OLD.state, NEW.state USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "ReturnStockHold_guard" ON "ReturnStockHold";
+CREATE TRIGGER "ReturnStockHold_guard" BEFORE UPDATE OR DELETE ON "ReturnStockHold"
+  FOR EACH ROW EXECUTE FUNCTION joko_return_hold_guard();
+ALTER TABLE "ReturnStockHold" DROP CONSTRAINT IF EXISTS "ReturnStockHold_units_check";
+ALTER TABLE "ReturnStockHold" ADD CONSTRAINT "ReturnStockHold_units_check" CHECK ("sellableUnits" >= 0 AND "damagedUnits" >= 0 AND "sellableUnits" + "damagedUnits" > 0);

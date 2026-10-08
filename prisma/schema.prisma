@@ -3933,6 +3933,10 @@ model CommercialReturn {
   decidedAt        DateTime?
   decisionNote     String?
   shippedAt        DateTime?
+  /// D44: how many times the buyer has shipped it (a cancelled / failed collection returns it to `approved`)
+  shipAttempts     Int       @default(0)
+  /// D44: the latest attempt goes through a tracked J8 collection
+  shipTracked      Boolean   @default(false)
   receivedAt       DateTime?
   receivedBy       String?
   restocked        Boolean   @default(false)
@@ -4253,4 +4257,29 @@ model UnmatchedReceipt {
 
   @@unique([shipmentId, sellerProductId])
   @@index([buyerBusinessId, status])
+}
+
+/// D44: buyer-side stock set aside for a commercial return. Created when the buyer ships the
+/// return (never on request): sellable units move into quarantine (out of sellable stock, still
+/// on the premises); handed_over on verified custody handoff (courier code) or self-reported
+/// (untracked return); released back to sellable if the return shipment is cancelled or comes back.
+model ReturnStockHold {
+  id               String   @id @default(cuid())
+  returnId         String
+  attempt          Int
+  buyerBusinessId  String
+  sellerProductId  String
+  /// the buyer's OWN product (D40 mapping); null = untracked goods (no buyer stock effect)
+  buyerProductId   String?
+  sellableUnits    Int
+  damagedUnits     Int
+  /// quarantined → handed_over | released
+  state            String   @default("quarantined")
+  /// courier_code | self_reported
+  handoverEvidence String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([returnId, sellerProductId, attempt])
+  @@index([buyerBusinessId, state])
 }
