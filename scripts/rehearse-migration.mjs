@@ -322,7 +322,10 @@ const j8 = (await db2.query(`SELECT
   (SELECT status FROM "DeliveryTask" WHERE id = $1) AS legacy_task_status,
   (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'HubParcel' AND column_name = 'pickupAttempts')::int AS hub_attempts_column,
   (SELECT COUNT(*) FROM pg_trigger WHERE tgname IN ('Shipment_guard','ShipmentEvent_append_only','ReceivingRecord_append_only','ShipmentDisputeEvidence_append_only'))::int AS j8_guards,
-  (SELECT COUNT(*) FROM pg_indexes WHERE indexname IN ('ShipmentEvent_one_delivery','CourierAssignment_one_active'))::int AS j8_indexes`, [task.id])).rows[0];
+  (SELECT COUNT(*) FROM pg_indexes WHERE indexname IN ('ShipmentEvent_one_delivery','CourierAssignment_one_active'))::int AS j8_indexes,
+  (SELECT COUNT(*) FROM "_prisma_migrations" WHERE migration_name LIKE '%_j8_pilot' AND finished_at IS NOT NULL)::int AS j8_pilot_applied,
+  (SELECT COUNT(*) FROM pg_trigger WHERE tgname = 'UnmatchedReceipt_guard')::int AS unmatched_guard,
+  (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'CourierAssignment' AND column_name = 'acceptedAt')::int AS accepted_column`, [task.id])).rows[0];
 const j8flow = node(['--input-type=module', '-e', `
   const { prisma } = await import('./lib/prisma.js');
   const { runMoneyTransaction } = await import('./lib/wallet-atomic.js');
@@ -341,7 +344,7 @@ const check7 = node(['scripts/money-check.mjs', '--json']);
 let flow8 = null;
 try { flow8 = JSON.parse(j8flow.stdout.trim().split('\n').pop()); } catch { flow8 = { error: j8flow.stderr.slice(0, 600) }; }
 step('J8 migration additive on production shape (legacy courier task untouched, custody guards present, shipment custody rules + idempotent intake on migrated data)', {
-  ok: j8.j8_applied === 1 && j8.legacy_task_status === 'assigned' && j8.hub_attempts_column === 1 && j8.j8_guards === 4 && j8.j8_indexes === 2
+  ok: j8.j8_applied === 1 && j8.j8_pilot_applied === 1 && j8.unmatched_guard === 1 && j8.accepted_column === 1 && j8.legacy_task_status === 'assigned' && j8.hub_attempts_column === 1 && j8.j8_guards === 4 && j8.j8_indexes === 2
     && flow8?.status === 'ready_for_pickup' && flow8?.replayed === true && flow8?.sameRequest === true && flow8?.deliveredWithoutCustody === 'refused' && flow8?.del === 'refused' && flow8?.logisticsOk === true && check7.status === 0,
   j8,
   flow: flow8,
