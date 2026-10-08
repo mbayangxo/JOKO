@@ -52,12 +52,12 @@ Commercial amounts, customer fields and order lines are **not** copied. Packages
 | `MERCHANT_FULFILLED` | ACTIVE | the merchant's own fleet | none |
 | `DISTRIBUTOR_FULFILLED` | ACTIVE | the distributor's own fleet (seller in distribution mode) | none |
 | `CUSTOMER_PICKUP` | ACTIVE | the receiver collects at the source, or at an approved pickup point | none |
-| `JOKKO_LOGISTICS` | **GATED**: code-complete, **operationally not activated** unless `JOKKO_LOGISTICS_ENABLED=true` | approved Jokko couriers, dispatched by `logistics_ops` | server fee, J2 escrow |
+| `JOKKO_LOGISTICS` | **GATED**: code-complete, **operationally not activated** unless `JOKKO_LOGISTICS_ENABLED=true`; the fee rule is TEST CONFIGURATION ONLY (D35) | approved Jokko couriers, dispatched by `logistics_ops` | server fee, J2 escrow |
 | `JOKKO_FULFILLMENT_CENTER` | DORMANT | — (no such centre exists) | — |
 
 **J7 hand-off** (`fulfillment.requested` outbox event → `processLogisticsOutbox`):
 - `jokko_logistics` → always a tracked shipment, and only when enabled.
-- `seller_delivery` / `buyer_pickup` → a tracked shipment **only when the seller opts in** (`tracked: true`). Otherwise J7's seller-recorded delivery remains, honestly labelled `deliveryRecordedBy: 'seller'` (proposed decision P-J8-1).
+- `seller_delivery` / `buyer_pickup` → a tracked shipment **only when the seller opts in** (`tracked: true`). Otherwise J7's seller-recorded delivery remains, labelled **unverified**: `deliveryRecordedBy: 'seller_self_reported'`, `deliveryVerified: false` (D34).
 - `third_party` → never a shipment (outside Jokko).
 
 There is one shipment per hand-off attempt (`sourceKey = jokko_po:<po>:outbound:<eventId>`). The outbox consumer is idempotent: it is run inline after the advance, by `cron/logistics`, or both.
@@ -328,3 +328,76 @@ Own fleets may move goods anywhere they choose, and Jokko claims no coverage for
   - `compliance`: pickup point decisions.
   - `finance_ops`: approve earning reversals.
   - Conflicts: `sysadmin`/`logistics_ops` and `logistics_ops`/`finance_ops`.
+
+
+---
+
+## 17. Internal-pilot additions (D34–D41)
+
+### 17.1 Failed deliveries are claims (D37)
+The courier's failure reason is a **claim** with a side:
+- `receiver`: absent, address, refused, closed;
+- `source`: goods not ready or wrong;
+- `courier`;
+- `safety`;
+- `platform`.
+
+**Evidence:**
+- The party on the claimed side answers in the app (`failure/respond`, agree / contest).
+- Or an operator rules (`admin/.../failure/rule`, `logistics.exceptions.resolve`, audited).
+
+**Settlement** happens when the goods are back (`settleFailedAttemptInTx`):
+- the courier receives `failedAttemptBps[side]` of the held fee **only for a confirmed receiver / source side**;
+- the default is **0**;
+- the rest is refunded to the sender, once;
+- a courier fault never pays;
+- a platform cancellation would need platform funding, which is not built.
+
+### 17.2 Courier acceptance and emergency reassignment (D39)
+- An assignment is **offered** until the courier accepts (`respond`). A decline returns it to dispatch. Pickup implies acceptance.
+- **Emergency reassignment** (dispatcher for own fleet, `logistics.dispatch` for Jokko; reason; audited):
+  - the old assignment ends;
+  - the new courier **holds nothing** until they enter a handoff code bound to them, issued by the previous custodian, the dispatcher or ops;
+  - every custody act after pickup requires `custodianUserId === me` (`handoff_pending` otherwise).
+- There is one active assignment and one earning per shipment.
+
+### 17.3 Refusals at the door
+- Refused units are recorded on the receiving record and leave **with the same courier** on an automatic return shipment.
+- That shipment starts `picked_up`, in courier custody, with no new fee.
+- The original source receives it per line, and the units go back into the origin depot once (`refusal_return`).
+- A refusal after the courier has left is refused: the J7 return flow applies.
+
+### 17.4 Route reconciliation
+`GET businesses/:id/logistics/routes/:routeId/reconciliation` (dispatcher) returns, per stop, the status, proof, receiving and refusal-return state.
+
+The totals must satisfy:
+
+```
+dispatched = received + damaged + missing + refusedBackAtDepot + refusedInTransit + returnedToDepot + inTransit
+```
+
+so `unaccounted` must be 0. A route is `closed` only when every stop and refusal return is terminal.
+
+### 17.5 Buyer catalogue mapping (D40)
+- Receiving a supplier shipment **never** credits the supplier's product id to the buyer.
+- A mapped line goes to the buyer's **own** tracked product through the J5 inventory module (`StockMovement` `receive_purchase`, note = shipment reference).
+- An unmapped line becomes an `UnmatchedReceipt`: physically received, in **no** stock position, resolved **once** by the buyer (`business.inventory.adjust`) into one of its own products. The mapping is remembered.
+- The buyer can only map a supplier product it has bought (a line on one of its POs).
+- Transfers accept only the business's own products.
+- Invariant L5 reconciles received units against `receive_purchase` movements plus pending unmatched receipts.
+
+### 17.6 Legacy consumer delivery (D41)
+- The open-claim courier marketplace is closed to new usage (`LEGACY_CONSUMER_DELIVERY_ENABLED` off by default).
+- New consumer delivery orders are verified J8 `MERCHANT_FULFILLED` shipments: the customer's code proves delivery, and the merchant cannot mark a carried order delivered.
+- Cancelling before pickup cancels the shipment with the order.
+- In-flight legacy tasks complete.
+
+### 17.7 Interfaces
+| Screen | Who | What it does (every button = one authorized server transition) |
+|---|---|---|
+| `ShipmentScreen` | every party, shaped by the server-decided role | accept / decline, custody codes (issue / enter), steps, failure (claim) and its confirmation / contest, exception, per-line receiving (incl. refused at the door), pickup-point drop / release, disputes, history with honest proof labels, commercial order + payment shown **separately** |
+| `CourierWorkScreen` | Jokko courier, fleet driver | offered / active assigned work (no open marketplace), earnings by state, idempotent payout |
+| `DeliveriesScreen` | customer, merchant | my deliveries; incoming supplier shipments; unmatched receipts → map to my product |
+| `DispatchScreen` | distributor | PO accept → picking → ready → tracked hand-off; driver assignment; route creation (dispatcher's order); reconciliation |
+
+There is **no** GPS, map, ETA or optimisation anywhere. Emergency reassignment and operator rulings have **no consumer UI**: they are API / operator actions.
