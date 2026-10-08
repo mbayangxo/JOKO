@@ -410,6 +410,79 @@ async function loadAuditTab() {
   );
 }
 
+/* ── J9 Work & Opportunity ───────────────────────────────────────────────── */
+// Everything below renders user-entered text: always escaped.
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+function bindWork(rootId, attr, fn) {
+  $(rootId).querySelectorAll(`[${attr}]`).forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await fn(btn.getAttribute(attr), btn);
+        await loadWorkTab();
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+  });
+}
+
+async function loadWorkTab() {
+  const [review, disputes, feedback, approvals] = await Promise.all([
+    api('/work/review').catch(() => ({ opportunities: [], qualifications: [] })),
+    api('/work/disputes?status=open').catch(() => []),
+    api('/work/feedback').catch(() => []),
+    api('/approvals').catch(() => ({ items: [] })),
+  ]);
+  $('work-review-opps').innerHTML = tableHtml(['Posting', 'Flags', 'Created', 'Decision'], review.opportunities ?? [], (o) => `<tr>
+    <td><strong>${esc(o.title)}</strong><br><small>${esc(o.description).slice(0, 240)}</small></td>
+    <td>${(o.flags ?? []).map(esc).join(', ')}</td>
+    <td>${fmtDate(o.createdAt)}</td>
+    <td><button type="button" class="link-btn" data-work-opp-approve="${esc(o.id)}">Approve</button>
+        <button type="button" class="link-btn danger" data-work-opp-reject="${esc(o.id)}">Reject</button></td></tr>`);
+  $('work-review-quals').innerHTML = tableHtml(['Qualification', 'Evidence', 'Decision'], review.qualifications ?? [], (q) => `<tr>
+    <td>${esc(q.kind)} · <strong>${esc(q.title)}</strong><br><small>${esc(q.issuer)}</small></td>
+    <td><small>${esc(q.evidenceRef)}</small></td>
+    <td><button type="button" class="link-btn" data-work-qual-verify="${esc(q.id)}">Verified</button>
+        <button type="button" class="link-btn danger" data-work-qual-reject="${esc(q.id)}">Reject</button></td></tr>`);
+  $('work-disputes').innerHTML = tableHtml(['Dispute', 'At stake', 'Evidence (roles only)', 'Ruling'], Array.isArray(disputes) ? disputes : [], (d) => `<tr>
+    <td>${esc(d.kind)} · opened by ${esc(d.openedByRole)}<br><small>${esc(d.assignment?.reference)} · ${esc(d.assignment?.arrangement)} · ${fmtDate(d.createdAt)}</small></td>
+    <td>${d.milestone ? `${esc(d.milestone.amountKori)} ₭ (${esc(d.milestone.status)})` : 'no money (finding only)'}</td>
+    <td>${(d.evidence ?? []).map((e) => `<div><small><b>${esc(e.role)}</b>: ${esc(e.content)}</small></div>`).join('')}</td>
+    <td><button type="button" class="link-btn" data-work-rule="${esc(d.id)}">Rule…</button></td></tr>`);
+  const pending = (approvals.items ?? approvals.approvals ?? []).filter((a) => a.action === 'work_dispute_settle' && a.status === 'requested');
+  $('work-settlements').innerHTML = tableHtml(['Approval', 'Requested', 'Execute'], pending, (a) => `<tr>
+    <td>${esc(a.caseRef)}<br><small>${esc(a.reason)}</small></td><td>${fmtDate(a.createdAt)}</td>
+    <td><button type="button" class="link-btn" data-work-settle="${esc(a.id)}">Approve &amp; execute</button></td></tr>`);
+  $('work-feedback').innerHTML = tableHtml(['Feedback', 'Contest', 'Ruling'], Array.isArray(feedback) ? feedback : [], (f) => `<tr>
+    <td>${esc(f.rating)}/5 from ${esc(f.fromRole)}<br><small>${esc(f.comment)}</small></td>
+    <td><small>${esc(f.contestNote)}</small></td>
+    <td><button type="button" class="link-btn" data-work-fb-uphold="${esc(f.id)}">Uphold</button>
+        <button type="button" class="link-btn danger" data-work-fb-remove="${esc(f.id)}">Remove</button></td></tr>`);
+
+  const note = (q) => {
+    const n = prompt(q);
+    if (!n) throw new Error('A reason is required');
+    return n;
+  };
+  bindWork('work-review-opps', 'data-work-opp-approve', (id) => api(`/work/opportunities/${encodeURIComponent(id)}/review`, { method: 'POST', body: { decision: 'approve', note: note('Reason for approving?') } }));
+  bindWork('work-review-opps', 'data-work-opp-reject', (id) => api(`/work/opportunities/${encodeURIComponent(id)}/review`, { method: 'POST', body: { decision: 'reject', note: note('Reason for rejecting?') } }));
+  bindWork('work-review-quals', 'data-work-qual-verify', (id) => api(`/work/qualifications/${encodeURIComponent(id)}/review`, { method: 'POST', body: { decision: 'verified', note: prompt('Note (optional)') || undefined } }));
+  bindWork('work-review-quals', 'data-work-qual-reject', (id) => api(`/work/qualifications/${encodeURIComponent(id)}/review`, { method: 'POST', body: { decision: 'rejected', note: prompt('Note (optional)') || undefined } }));
+  bindWork('work-disputes', 'data-work-rule', async (id) => {
+    const outcome = prompt('Outcome: worker | business | split | finding_only');
+    if (!outcome) return;
+    const body = { outcome: outcome.trim(), note: note('Reason (10+ characters, recorded in the audit trail)') };
+    if (body.outcome === 'split') body.splitWorkerKori = Number(prompt('Worker share in ₭ (integer)'));
+    const r = await api(`/work/disputes/${encodeURIComponent(id)}/resolve`, { method: 'POST', body });
+    alert(r.approval ? 'Ruling recorded — a second (finance) operator must execute the settlement.' : 'Ruling recorded.');
+  });
+  bindWork('work-settlements', 'data-work-settle', (id) => api(`/approvals/${encodeURIComponent(id)}/approve`, { method: 'POST', body: {} }));
+  bindWork('work-feedback', 'data-work-fb-uphold', (id) => api(`/work/feedback/${encodeURIComponent(id)}/rule`, { method: 'POST', body: { decision: 'upheld', note: note('Reason (10+ characters)') } }));
+  bindWork('work-feedback', 'data-work-fb-remove', (id) => api(`/work/feedback/${encodeURIComponent(id)}/rule`, { method: 'POST', body: { decision: 'removed', note: note('Reason (10+ characters)') } }));
+}
+
 async function loadDashboard() {
   const data = await api('/dashboard');
   renderDashboard(data);
@@ -428,6 +501,7 @@ async function loadTabData(name) {
   if (name === 'ops') await loadOpsTab();
   if (name === 'audit') await loadAuditTab();
   if (name === 'agents') await loadFloatRequestsTab();
+  if (name === 'work') await loadWorkTab();
 }
 
 async function enterApp() {

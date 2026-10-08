@@ -62,6 +62,7 @@
       <button class="tab" data-tab="distributors">Distributors</button>
       <button class="tab" data-tab="deliveries">Deliveries &amp; riders</button>
       <button class="tab" data-tab="agents">Agents &amp; cash</button>
+      <button class="tab" data-tab="work">Work</button>
       <button class="tab" data-tab="ops">Ops health</button>
       <button class="tab" data-tab="audit">Audit log</button>
       <button class="tab" data-tab="actions">Actions</button>
@@ -204,6 +205,34 @@
             <button class="btn btn-sm" id="float-requests-refresh-btn">Refresh</button>
           </div>
           <div class="panel-body" id="float-requests-table"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-work" class="tab-panel hidden">
+      <p class="hint">J9 Work &amp; Opportunity. Rulings never move money: a work-dispute settlement needs a second operator holding <code>work.disputes.settle</code> (finance).</p>
+      <div class="panels">
+        <div class="panel">
+          <div class="panel-head"><h2>Postings held for review</h2></div>
+          <div class="panel-body" id="work-review-opps"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Qualifications to verify</h2></div>
+          <div class="panel-body" id="work-review-quals"></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:20px">
+        <div class="panel-head"><h2>Open work disputes</h2></div>
+        <div class="panel-body" id="work-disputes"></div>
+      </div>
+      <div class="panels" style="margin-top:20px">
+        <div class="panel">
+          <div class="panel-head"><h2>Settlements awaiting a second operator</h2></div>
+          <div class="panel-body" id="work-settlements"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Contested feedback</h2></div>
+          <div class="panel-body" id="work-feedback"></div>
         </div>
       </div>
     </div>

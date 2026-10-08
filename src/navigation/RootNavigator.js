@@ -17,6 +17,8 @@ import MovementScreen from '../screens/MovementScreen';
 import GiftRevealScreen from '../screens/GiftRevealScreen';
 import ShipmentScreen from '../screens/ShipmentScreen';
 import CourierWorkScreen from '../screens/CourierWorkScreen';
+import WorkScreen from '../screens/WorkScreen';
+import BusinessWorkScreen from '../screens/BusinessWorkScreen';
 import DeliveriesScreen from '../screens/DeliveriesScreen';
 import DispatchScreen from '../screens/DispatchScreen';
 import WorkerProfileScreen from '../screens/WorkerProfileScreen';
@@ -208,6 +210,8 @@ export default function RootNavigator() {
       <Stack.Screen name="Movement" component={MovementScreen} />
       <Stack.Screen name="Shipment" component={ShipmentScreen} />
       <Stack.Screen name="CourierWork" component={CourierWorkScreen} />
+      <Stack.Screen name="Work" component={WorkScreen} />
+      <Stack.Screen name="BusinessWork" component={BusinessWorkScreen} />
       <Stack.Screen name="Deliveries" component={DeliveriesScreen} />
       <Stack.Screen name="Dispatch" component={DispatchScreen} />
       <Stack.Screen name="WorkerProfile" component={WorkerProfileScreen} />

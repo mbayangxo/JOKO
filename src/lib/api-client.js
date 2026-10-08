@@ -1823,3 +1823,59 @@ export const advanceSellerOrder = (businessId, poId, body) => apiFetch(b2b(busin
 export const getProductMappings = (businessId) => apiFetch(b2b(businessId, 'product-mappings'), { skipCache: true });
 export const resolveUnmatchedReceipt = (businessId, receiptId, buyerProductId) =>
   apiFetch(b2b(businessId, `unmatched-receipts/${encodeURIComponent(receiptId)}/resolve`), { method: 'POST', body: { buyerProductId }, skipCache: true });
+
+/* ── J9 Work & Opportunity (lib/work/*) ─────────────────────────────────── */
+const wk = (path) => `/api/work/${path}`;
+const bizWk = (businessId, path) => `/api/businesses/${encodeURIComponent(businessId)}/work/${path}`;
+const enc = encodeURIComponent;
+/* worker */
+export const getWorkTypes = () => apiFetch(wk('types'));
+export const getWorkProfile = () => apiFetch(wk('profile'), { skipCache: true });
+export const saveWorkProfile = (body) => apiFetch(wk('profile'), { method: 'PUT', body, skipCache: true });
+export const addWorkQualification = (body) => post(wk('qualifications'), body);
+export const blockWorkBusiness = (businessId) => post(wk('blocks'), { businessId });
+export const discoverWork = ({ type, area, skill } = {}) => {
+  const q = new URLSearchParams(Object.entries({ type, area, skill }).filter(([, v]) => v)).toString();
+  return apiFetch(wk(`opportunities${q ? `?${q}` : ''}`), { skipCache: true });
+};
+export const applyToWork = (oppId, note) => post(wk(`opportunities/${enc(oppId)}/apply`), note ? { note } : {});
+export const getMyWorkApplications = () => apiFetch(wk('applications'), { skipCache: true });
+export const withdrawWorkApplication = (id) => post(wk(`applications/${enc(id)}/withdraw`));
+export const getMyWorkOffers = () => apiFetch(wk('offers'), { skipCache: true });
+export const acceptWorkOffer = (id, termsHash, ageAttested) => post(wk(`offers/${enc(id)}/accept`), { termsHash, ...(ageAttested ? { ageAttested: true } : {}) });
+export const declineWorkOffer = (id) => post(wk(`offers/${enc(id)}/decline`));
+export const getMyAssignments = () => apiFetch(wk('assignments'), { skipCache: true });
+export const getMyAssignment = (id) => apiFetch(wk(`assignments/${enc(id)}`), { skipCache: true });
+export const submitAttendance = (id, purpose, code) => post(wk(`assignments/${enc(id)}/attendance`), { purpose, code });
+export const submitMilestone = (id, seq, content, kind = 'note') => post(wk(`assignments/${enc(id)}/submit`), { seq, kind, content });
+export const endMyAssignment = (id, reason) => post(wk(`assignments/${enc(id)}/end`), { reason });
+export const openWorkDispute = (id, body) => post(wk(`assignments/${enc(id)}/disputes`), body);
+export const getWorkDispute = (id) => apiFetch(wk(`disputes/${enc(id)}`), { skipCache: true });
+export const addWorkDisputeEvidence = (id, content, kind = 'note') => post(wk(`disputes/${enc(id)}/evidence`), { content, kind });
+export const getWorkEarnings = () => apiFetch(wk('earnings'), { skipCache: true });
+export const payoutWorkEarnings = (idempotencyKey) => post(wk('earnings/payout'), {}, { idempotencyKey });
+export const leaveWorkFeedback = (assignmentId, rating, comment) => post(wk(`assignments/${enc(assignmentId)}/feedback`), { rating, ...(comment ? { comment } : {}) });
+export const getMyWorkFeedback = () => apiFetch(wk('feedback'), { skipCache: true });
+export const contestWorkFeedback = (id, note) => post(wk(`feedback/${enc(id)}/contest`), { note });
+/* business */
+export const listBizOpportunities = (businessId) => apiFetch(bizWk(businessId, 'opportunities'), { skipCache: true });
+export const createBizOpportunity = (businessId, body) => post(bizWk(businessId, 'opportunities'), body);
+export const setBizOpportunityStatus = (businessId, oppId, status) => post(bizWk(businessId, `opportunities/${enc(oppId)}/status`), { status });
+export const listBizApplicants = (businessId, oppId) => apiFetch(bizWk(businessId, `opportunities/${enc(oppId)}/applicants`), { skipCache: true });
+export const inviteBizWorker = (businessId, oppId, workerHandle) => post(bizWk(businessId, `opportunities/${enc(oppId)}/invite`), { workerHandle });
+export const decideBizApplication = (businessId, appId, decision) => post(bizWk(businessId, `applications/${enc(appId)}/decide`), { decision });
+export const searchBizWorkers = (businessId, { skill, area } = {}) => {
+  const q = new URLSearchParams(Object.entries({ skill, area }).filter(([, v]) => v)).toString();
+  return apiFetch(bizWk(businessId, `workers${q ? `?${q}` : ''}`), { skipCache: true });
+};
+export const createBizOffer = (businessId, body, { stepUpToken, idempotencyKey } = {}) => post(bizWk(businessId, 'offers'), body, { stepUpToken, idempotencyKey });
+export const withdrawBizOffer = (businessId, offerId) => post(bizWk(businessId, `offers/${enc(offerId)}/withdraw`));
+export const listBizAssignments = (businessId) => apiFetch(bizWk(businessId, 'assignments'), { skipCache: true });
+export const issueBizAttendanceCode = (businessId, assignmentId, purpose) => post(bizWk(businessId, `assignments/${enc(assignmentId)}/attendance-code`), { purpose });
+export const acceptBizMilestone = (businessId, assignmentId, seq) => post(bizWk(businessId, `assignments/${enc(assignmentId)}/accept`), { seq });
+export const endBizAssignment = (businessId, assignmentId, reason) => post(bizWk(businessId, `assignments/${enc(assignmentId)}/end`), { reason });
+export const openBizWorkDispute = (businessId, assignmentId, body) => post(bizWk(businessId, `assignments/${enc(assignmentId)}/disputes`), body);
+export const listBizWorkRules = (businessId) => apiFetch(bizWk(businessId, 'rules'), { skipCache: true });
+export const proposeBizWorkRule = (businessId, body) => post(bizWk(businessId, 'rules'), body);
+export const approveBizWorkRule = (businessId, ruleId) => post(bizWk(businessId, `rules/${enc(ruleId)}/approve`));
+export const fundBizWorkRule = (businessId, ruleId, amountKori, { stepUpToken, idempotencyKey } = {}) => post(bizWk(businessId, `rules/${enc(ruleId)}/fund`), { amountKori }, { stepUpToken, idempotencyKey });

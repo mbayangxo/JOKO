@@ -23,7 +23,10 @@ export function serveWeb({ dir, apiPort, port = 0 }) {
     const clean = normalize(decodeURIComponent(req.url.split('?')[0])).replace(/^(\.\.[/\\])+/, '');
     let file = join(dir, clean);
     try {
-      if (!(await stat(file)).isFile()) file = join(dir, 'index.html');
+      const st = await stat(file);
+      // A directory serves its own index.html (e.g. /admin/ → the ops console), as the static host does.
+      if (st.isDirectory()) file = (await stat(join(file, 'index.html')).catch(() => null))?.isFile() ? join(file, 'index.html') : join(dir, 'index.html');
+      else if (!st.isFile()) file = join(dir, 'index.html');
     } catch {
       file = join(dir, 'index.html');
     }
