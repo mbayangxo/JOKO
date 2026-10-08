@@ -4,7 +4,7 @@
 |---|---|
 | LOCAL CONTAINMENT | **DONE**: `948f2a6` (audit branch), regression test `tests/j8/p0-delivery-dispute.test.js` |
 | PRODUCTION EXPOSURE ASSESSED | **DONE (read-only): LIKELY EXPOSED** (§3) |
-| PRODUCTION PATCHED | **NO**: emergency package ready (§5); deployment **not authorized** |
+| PRODUCTION PATCHED | **NO**: deployment recommended by the owner on 2026-10-08, conditional on verifying the serving Vercel deployment first. Verification **blocked**: the Vercel connector returns 403 for scope `mbayangxos-projects` (project `joko`), and no Vercel CLI is installed. The patch was **not** applied (§5). |
 | HISTORICAL IMPACT ASSESSED | **NO, UNABLE TO DETERMINE**: no read access to the production database from this session; query set ready (§4) |
 | REMEDIATION COMPLETE | **NO** |
 
@@ -114,3 +114,15 @@
 | audit branch (`HEAD`) | any `ADMIN_API_KEY` / `x-admin-key` authorization | — | none: `legacyAdminKeyValid()` returns false; admin routes refuse a shared key (`legacy_admin_key_retired`); no user route reads `ADMIN_API_KEY` any more (the last one was this P0, fixed in `948f2a6`) |
 
 No other reachable money-moving route with this bypass was found in the live code.
+
+## 7. Deployment verification log
+
+| When | Check | Result |
+|---|---|---|
+| 2026-10-08 | Vercel `list_deployments` (project `prj_lOUwSQp2PPi8Bhe1tA1jjrKXdiYt`, target production) | **403 forbidden** for scope `mbayangxos-projects`; the connector's token has no team access (`list_teams` returns none) |
+| 2026-10-08 | Vercel CLI | not installed in this session |
+
+**Needed before deployment:**
+1. Reconnect the Vercel connector with access to the `mbayangxos-projects` team.
+2. Confirm which deployment serves production (expected `7d262de`).
+3. Then deploy `7d262de` + `emergency-7d262de.patch` as one commit, and run the §5 verification steps.
