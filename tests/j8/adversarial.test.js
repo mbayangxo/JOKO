@@ -246,3 +246,52 @@ test('scale: 3 000 shipments for one business — keyset pagination is complete 
   const text = plan.map((p) => Object.values(p)[0]).join('\n');
   assert.match(text, /Index/, text);
 });
+
+test('J8.33 role combinations stay independent: agent ≠ courier, rep ≠ dispatcher, courier ≠ cash agent, support ≠ money', async () => {
+  const x = await readyPo(api, { packs: 1 });
+  ok(await x.sup.owner.call('POST', `businesses/${x.sup.b.id}/b2b/purchase-orders/${x.po.id}/advance`, { to: 'fulfilment_requested', fulfilmentMode: 'jokko_logistics' }));
+  const sh = await shipmentFor(x.po.id);
+  const ops = await operator(api, ['logistics_ops']);
+  ok(await ops.call('POST', `admin/logistics/shipments/${sh.id}/accept`, {}));
+  ok(await x.sup.owner.call('POST', `logistics/shipments/${sh.id}/ready`, {}));
+  // A J6 financial agent is not a courier.
+  const agentC = await customer();
+  await prisma.accountRole.create({ data: { userId: agentC.id, role: 'agent', status: 'active' } });
+  assert.equal((await ops.call('POST', `admin/logistics/shipments/${sh.id}/assign`, { courierUserId: agentC.id })).body.code, 'courier_inactive');
+  // A distribution rep of the distributor cannot dispatch its fleet or drive.
+  const rep = await member(api, x.sup.b, 'distribution_rep');
+  const y = await ownFleetInTransit();
+  assert.equal((await rep.call('POST', `logistics/shipments/${y.sh.id}/unassign`, { reason: 'rep tente' })).status, 404);
+  assert.equal((await y.sup.owner.call('POST', `logistics/shipments/${y.sh.id}/unassign`, { reason: 'remplacement' })).status, 200);
+  assert.equal((await y.sup.owner.call('POST', `logistics/shipments/${y.sh.id}/assign`, { courierUserId: rep.id })).body.code, 'not_a_driver');
+  // A Jokko courier has no agent cash authority (role-gated centrally).
+  const courier = await jokkoCourier(api);
+  const scan = await courier.call('POST', 'agent/cash/scan', { token: 'x'.repeat(32) });
+  assert.equal(scan.status, 403, JSON.stringify(scan.body));
+  // Support has no logistics money authority.
+  const support = await operator(api, ['support']);
+  for (const [path, body] of [[`admin/logistics/shipments/${sh.id}/assign`, { courierUserId: courier.id }], [`admin/logistics/shipments/${sh.id}/cancel`, { reason: 'support tente' }]]) {
+    assert.equal((await support.call('POST', path, body)).status, 403);
+  }
+  // A courier never sees the receiver's wallet / orders: the shipment view has no such fields.
+  ok(await ops.call('POST', `admin/logistics/shipments/${sh.id}/assign`, { courierUserId: courier.id }));
+  const v = ok(await courier.call('GET', `logistics/shipments/${sh.id}`));
+  for (const k of ['wallet', 'balance', 'orders', 'phone', 'customer', 'buyer', 'feeKori']) assert.equal(k in v, false, k);
+  assert.equal((await courier.call('GET', `businesses/${x.m.b.id}/b2b/purchase-orders/${x.po.id}`)).status, 404);
+});
+
+test('J8.28–J8.30 adapter contracts: an external source (Kabu) enters through the same contract, idempotently; events carry no PII', async () => {
+  const ownerC = await customer();
+  const b = await business(ownerC.user);
+  const kabuOrder = `kabu-${crypto.randomBytes(4).toString('hex')}`;
+  const mk = () => runMoneyTransaction(prisma, (tx) => createRequestInTx(tx, { sourceSystem: 'kabu', sourceId: kabuOrder, fulfilmentOwner: 'MERCHANT_FULFILLED', fulfillerBusinessId: b.id, originBusinessId: b.id, destinationUserId: ownerC.id, lines: [{ productId: 'p1', sku: 'KABU-1', units: 1 }], dest: { area: 'Plateau', precise: 'Rue 10' }, createdBy: ownerC.id }));
+  const first = await mk();
+  const again = await mk();
+  assert.equal(again.request.id, first.request.id);
+  assert.equal(first.request.sourceKey, `kabu:${kabuOrder}:outbound`);
+  const evs = await prisma.commerceEvent.findMany({ where: { aggregateType: 'shipment', aggregateId: first.shipment.id } });
+  assert.equal(evs.length, 1);
+  assert.ok(!evs[0].payloadJson.includes('Rue 10'), 'outbox events never carry the precise destination');
+  // The request references the source; it never copies the commercial order (no amounts, no customer fields).
+  for (const k of ['totalKori', 'customerName', 'phone', 'items']) assert.equal(k in first.request, false);
+});

@@ -94,3 +94,16 @@ The J7 gate was accepted **locally**. The code gate is `eb7d7cb` and the report 
 | D31 | **The legacy marketplace-based B2B ordering path is no longer the normal path for new B2B orders.** The J7 purchase order is the canonical path for new B2B / wholesale orders. Legacy data is not deleted. Existing legacy orders and their history keep whatever safe completion and read behaviour they need. A compatibility / deprecation boundary stops new B2B activity from creating orders through the weaker legacy lifecycle. Historical records are not migrated unless that is necessary and proven safe. | J8.0: new `channel='b2b'` marketplace orders are refused (`b2b_use_purchase_orders`), with an explicit, default-off compatibility switch. Legacy B2B order read, fulfilment, COD settlement, invoice payment and disputes stay working. |
 | D32 | **A read-only production inspection is required before any deployment of the J7 migration**, because legacy invoice and trade-account states may conflict with the new safeguards (J7 report §40.1–2). That inspection is **not** performed until explicitly authorized. | `scripts/forensics/production-exposure.sql` §20 is the prepared read-only query set. |
 | D33 | **Jokko Distribution is meant to support real physical distribution at large scale.** The founder's future physical distribution company uses the same neutral infrastructure as every other distributor, with **no hard-coded privileged access**. | No business-id-keyed code path in J7 / J8. Scale claims are limited to what was measured. |
+
+## J8: proposed decisions (awaiting acceptance)
+
+These are the choices J8 was built on. They are **not accepted decisions** until the owner says so. Each is reversible without data loss.
+
+| # | Proposal | Why / where |
+|---|---|---|
+| P-J8-1 | **Own-fleet and buyer-pickup PO deliveries are tracked by J8 only when the seller opts in** (`tracked: true`). Untracked deliveries keep J7's seller-recorded path, labelled `deliveryRecordedBy: 'seller'`. Making tracking mandatory for every distributor is a product decision, not made here. | `lib/b2b/purchase-orders.js` hand-off; `docs/JOKKO-J8-LOGISTICS.md` §2. |
+| P-J8-2 | **Jokko Logistics stays operationally not activated** (`JOKKO_LOGISTICS_ENABLED` unset) until real couriers, an operations desk and a fee are approved. The default rule (local 150 Kori, 80 % to the courier, 24 h hold) is a placeholder for finance to set. | `lib/logistics/fees.js`. |
+| P-J8-3 | **COD stays DORMANT** in J8 (no courier cash collection) until a separately authorized cash-collection capability is built on J6 primitives. | §10. |
+| P-J8-4 | **A receiver-side failure (absent, refused, closed, bad address) still pays the courier** once the goods are back at the source; an operational failure refunds the sender. | §8.5. |
+| P-J8-5 | **Paid courier earnings are not clawed back** by a dispute ruling; only unpaid earnings are reversed (maker/checker). Recovering paid amounts would be a separate, explicit finance process. | `reverseEarningInTx`. |
+| P-J8-6 | **No courier handoff after pickup** (re-assignment of goods already in a courier's custody) in J8; such cases go through exception / return. | §6. |
