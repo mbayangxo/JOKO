@@ -71,6 +71,14 @@ test('pickup point: enrollment ≠ activation; only an approved point’s operat
   const listed = ok(await buyer.call('GET', 'logistics/pickup-points')).items.find((p) => p.id === point.id);
   assert.ok(listed);
   assert.equal(listed.operatorBusinessId, undefined, 'no operator identity / address in the public list');
+  // Another APPROVED point's operator is not the operator of this parcel's point.
+  const otherC = await customer();
+  const otherOp = await signedIn(api, otherC);
+  const otherBiz = await business(otherC.user);
+  const otherPoint = ok(await otherOp.call('POST', `businesses/${otherBiz.id}/pickup-points`, { name: 'Autre Relais Grand Yoff', services: ['customer_pickup'] }));
+  ok(await comp.call('POST', `admin/pickup-points/${otherPoint.id}/decide`, { status: 'active', reason: 'visite effectuée' }));
+  assert.equal((await otherOp.call('POST', `logistics/shipments/${shipment.id}/drop`, {})).status, 404);
+  assert.equal((await otherOp.call('GET', `logistics/shipments/${shipment.id}`)).status, 404);
   ok(await pointOwner.call('POST', `logistics/shipments/${shipment.id}/drop`, {}), 'drop');
   const cc = ok(await buyer.call('POST', `logistics/shipments/${shipment.id}/codes`, { purpose: 'collection' }));
   assert.equal((await merchantS.call('POST', `logistics/shipments/${shipment.id}/release`, { code: cc.code })).status, 404, 'the source cannot release a parcel held at a point');
@@ -78,6 +86,7 @@ test('pickup point: enrollment ≠ activation; only an approved point’s operat
   ok(await comp.call('POST', `admin/pickup-points/${point.id}/decide`, { status: 'suspended', reason: 'contrôle en cours' }));
   assert.equal((await pointOwner.call('POST', `logistics/shipments/${shipment.id}/release`, { code: cc.code })).status, 404);
   ok(await comp.call('POST', `admin/pickup-points/${point.id}/decide`, { status: 'active', reason: 'contrôle terminé' }));
+  assert.equal((await otherOp.call('POST', `logistics/shipments/${shipment.id}/release`, { code: cc.code })).status, 404, 'another point cannot release it');
   const rel = ok(await pointOwner.call('POST', `logistics/shipments/${shipment.id}/release`, { code: cc.code }));
   assert.equal(rel.status, 'delivered');
   assert.equal(rel.custody, 'receiver');
