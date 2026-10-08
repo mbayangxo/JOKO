@@ -128,3 +128,13 @@ No other reachable money-moving route with this bypass was found in the live cod
 1. Reconnect the Vercel connector with access to the `mbayangxos-projects` team.
 2. Confirm which deployment serves production (expected `7d262de`).
 3. Then deploy `7d262de` + `emergency-7d262de.patch` as one commit, and run the §5 verification steps.
+
+## 8. Deployment-base warning (found 2026-10-08, during J8 browser testing)
+
+**Do not apply the emergency patch on the default branch head `19ac203`.**
+
+- On that head, `src/navigation/RootNavigator.js` uses `GiftRevealScreen` without importing it. The bug was introduced in `494991d` (2026-08-02).
+- The app throws `ReferenceError` on first render and shows a **blank screen** for every user, on web and native alike.
+- Production deployments from that branch all failed after `7d262de`, so the live build (`7d262de`, 2026-07-17) does **not** contain the bug.
+- The patch package's recommended base, **`7d262de`**, remains correct. Applying the patch on `19ac203` would ship a blank app.
+- Fixed on the audit branch (one-line import). This does not change any state of the incident.

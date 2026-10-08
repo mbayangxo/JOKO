@@ -96,7 +96,8 @@
     "test:resend-email": "node scripts/test-resend-email.mjs",
     "user:set-password": "node scripts/set-user-password.mjs",
     "business:backfill-wallets": "node scripts/backfill-business-wallets.mjs",
-    "kori:migrate-primary": "node scripts/migrate-kori-primary.mjs"
+    "kori:migrate-primary": "node scripts/migrate-kori-primary.mjs",
+    "test:e2e:j8": "node tests/e2e/j8-ui.mjs"
   },
   "private": true,
   "overrides": {

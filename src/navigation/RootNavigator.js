@@ -14,6 +14,7 @@ import PayMerchantScreen from '../screens/PayMerchantScreen';
 import CashScreen from '../screens/CashScreen';
 import MoreActionsScreen from '../screens/MoreActionsScreen';
 import MovementScreen from '../screens/MovementScreen';
+import GiftRevealScreen from '../screens/GiftRevealScreen';
 import ShipmentScreen from '../screens/ShipmentScreen';
 import CourierWorkScreen from '../screens/CourierWorkScreen';
 import DeliveriesScreen from '../screens/DeliveriesScreen';
