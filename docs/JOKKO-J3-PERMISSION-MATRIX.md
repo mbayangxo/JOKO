@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**529 routes.** Column legend:
+**569 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -23,6 +23,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
 |---|---|---|---|---|---|---|---|---|---|
+| `GET cron/logistics` | cron | cron.logistics | cron_secret |  |  |  |  | job |  |
+| `POST cron/logistics` | cron | cron.logistics | cron_secret |  |  |  |  | job |  |
 | `GET cron/daily` | cron | cron.daily | cron_secret |  |  |  |  | job |  |
 | `POST cron/daily` | cron | cron.daily | cron_secret |  |  |  |  | job |  |
 | `GET cron/scheduled-payments` | cron | cron.scheduled_payments | cron_secret |  |  |  |  | job |  |
@@ -50,6 +52,15 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
 |---|---|---|---|---|---|---|---|---|---|
+| `GET admin/logistics/shipments` | admin | logistics.read | operator_scope |  |  |  |  |  |  |
+| `POST admin/logistics/shipments/:id/accept` | admin | logistics.dispatch | operator_scope |  |  |  |  | shipment_event |  |
+| `POST admin/logistics/shipments/:id/assign` | admin | logistics.dispatch | operator_scope |  |  |  |  | shipment_event |  |
+| `POST admin/logistics/shipments/:id/unassign` | admin | logistics.dispatch | operator_scope |  |  |  |  | shipment_event |  |
+| `POST admin/logistics/shipments/:id/cancel` | admin | logistics.dispatch | operator_scope |  |  |  |  | shipment_event+ledger |  |
+| `POST admin/logistics/shipments/:id/rule` | admin | logistics.exceptions.resolve | operator_scope |  |  |  |  | admin+identity+ledger |  |
+| `GET admin/logistics/disputes` | admin | logistics.read | operator_scope |  |  |  |  |  |  |
+| `POST admin/logistics/disputes/:id/resolve` | admin | logistics.disputes.resolve | operator_scope |  |  |  |  | admin+identity; money reversal via maker/checker (logistics.disputes.reverse) |  |
+| `POST admin/pickup-points/:id/decide` | admin | pickup_points.approve | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/auth/logout` | admin | (authenticated) | operator_scope |  |  |  |  |  | any authenticated operator |
 | `GET admin/me` | admin | (authenticated) | operator_scope |  |  |  |  |  | own roles and permissions |
 | `GET admin/dashboard` | admin | ops.dashboard.read | operator_scope |  |  |  |  |  |  |
@@ -332,7 +343,13 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST businesses/:id/b2b/purchase-orders/:subId/accept` | user | b2b.po.accept | party:seller business.orders.fulfill \| distribution.manage |  |  |  |  | po_event |  |
 | `POST businesses/:id/b2b/purchase-orders/:subId/reject` | user | b2b.po.reject | party:seller business.orders.fulfill \| distribution.manage |  |  |  |  | po_event |  |
 | `POST businesses/:id/b2b/purchase-orders/:subId/pay` | user | b2b.po.pay | party:buyer business.pay (business wallet → seller) |  |  | always |  | ledger+risk |  |
-| `POST businesses/:id/b2b/purchase-orders/:subId/advance` | user | b2b.po.advance | party:seller business.orders.fulfill \| distribution.manage; delivery recorded by seller |  |  |  |  | po_event |  |
+| `GET businesses/:id/logistics/shipments` | user | logistics.business.read | business:business.orders.read (origin) \| business.purchasing (destination) |  |  |  |  |  |  |
+| `GET businesses/:id/logistics/transfers` | user | logistics.transfers.read | business:business.orders.read |  |  |  |  |  |  |
+| `POST businesses/:id/logistics/transfers` | user | logistics.transfers.create | business:business.inventory.adjust; both locations of this business |  |  |  |  | stock |  |
+| `GET businesses/:id/logistics/routes` | user | logistics.routes.read | business:business.fleet.dispatch |  |  |  |  |  |  |
+| `POST businesses/:id/logistics/routes` | user | logistics.routes.create | business:business.fleet.dispatch; own ready shipments; driver holds business.fleet.drive |  |  |  |  | shipment_event |  |
+| `POST businesses/:id/pickup-points` | user | logistics.pickup_point.apply | business:business.profile.manage |  |  |  |  | identity |  |
+| `POST businesses/:id/b2b/purchase-orders/:subId/advance` | user | b2b.po.advance | party:seller business.orders.fulfill \| distribution.manage; delivery recorded by seller unless a tracked J8 shipment carries the order |  |  |  |  | po_event |  |
 | `POST businesses/:id/b2b/purchase-orders/:subId/buyer` | user | b2b.po.receive | party:buyer business.purchasing (receive / complete / dispute) |  |  |  |  | po_event |  |
 | `POST businesses/:id/b2b/purchase-orders/:subId/resolve` | user | b2b.po.resolve | party:seller business.orders.fulfill \| distribution.manage |  |  |  |  | po_event |  |
 | `POST businesses/:id/b2b/purchase-orders/:subId/cancel` | user | b2b.po.cancel | party: buyer business.purchasing (before acceptance) \| seller business.orders.cancel (refund needs business.refund) |  |  |  |  | ledger+risk |  |
@@ -545,6 +562,34 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET kyc/status` | user | kyc.status.read | self |  |  |  |  |  |  |
 | `POST kyc/cni/submit` | user | kyc.submit | self |  |  |  |  | identity | submitted ≠ verified; provider or compliance decides |
 | `POST kyc/address/submit` | user | kyc.submit | self |  |  |  |  | identity |  |
+
+## User — logistics
+
+| Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| `GET logistics/shipments/:id` | user | logistics.shipment.read | party: source \| receiver \| active courier \| dispatcher \| pickup point (role-shaped DTO; precise destination only to the active courier) |  |  |  |  |  |  |
+| `GET logistics/courier/shipments` | user | logistics.courier.read | self: own active assignments |  |  |  |  |  |  |
+| `POST logistics/shipments/:id/ready` | user | logistics.shipment.ready | party:source business.orders.fulfill |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/:id/assign` | user | logistics.shipment.assign | business:business.fleet.dispatch of the fulfiller; courier holds business.fleet.drive; courier ≠ receiver |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/:id/unassign` | user | logistics.shipment.assign | business:business.fleet.dispatch of the fulfiller; before pickup only |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/:id/codes` | user | logistics.code.issue | party: source (pickup / return) \| receiver (delivery / collection); code bound to the assigned courier |  |  |  |  | custody_challenge |  |
+| `POST logistics/shipments/:id/pickup` | user | logistics.custody.pickup | active assigned courier + source-issued single-use code |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/:id/step` | user | logistics.custody.step | active assigned courier |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/:id/deliver` | user | logistics.custody.deliver | active assigned courier + receiver-issued single-use code |  |  |  |  | shipment_event+ledger |  |
+| `POST logistics/shipments/:id/fail` | user | logistics.custody.fail | active assigned courier |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/:id/exception` | user | logistics.custody.exception | active assigned courier (claim only — never a delivery) |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/:id/return/start` | user | logistics.custody.return | active assigned courier |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/:id/return/complete` | user | logistics.custody.return | active assigned courier + source-issued single-use code |  |  |  |  | shipment_event+ledger+stock |  |
+| `POST logistics/shipments/:id/receiving` | user | logistics.receiving.record | party:receiver business.purchasing; never the courier; once per shipment |  |  |  |  | receiving_record+stock |  |
+| `POST logistics/shipments/:id/drop` | user | logistics.pickup_point.drop | operator of the ACTIVE pickup point on the request |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/:id/release` | user | logistics.pickup_point.release | releasing desk (source or pickup point operator) + receiver-issued code; never the receiver |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/:id/cancel` | user | logistics.shipment.cancel | party:source business.orders.fulfill; before pickup only |  |  |  |  | shipment_event+ledger |  |
+| `POST logistics/shipments/:id/dispute` | user | logistics.dispute.open | party: source \| receiver \| courier; once per shipment; window 7 days |  |  |  |  | dispute |  |
+| `GET logistics/disputes/:id` | user | logistics.dispute.read | party to the disputed shipment |  |  |  |  |  |  |
+| `POST logistics/disputes/:id/evidence` | user | logistics.dispute.evidence | party to the disputed shipment; append-only |  |  |  |  | dispute |  |
+| `GET logistics/earnings` | user | logistics.earnings.read | self: own courier earnings |  |  |  |  |  |  |
+| `POST logistics/earnings/payout` | user | logistics.earnings.payout | self: own releasable earnings → own wallet |  |  |  |  | ledger |  |
+| `GET logistics/pickup-points` | user | logistics.pickup_points.read | public: name / services / hours only |  |  |  |  |  |  |
 
 ## User — marketplace
 
@@ -844,9 +889,10 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 |---|---|
 | `support` | `ops.dashboard.read`, `support.tickets.read`, `support.tickets.write`, `support.calls`, `users.search`, `users.read`, `users.freeze`, `money.transactions.read`, `agents.read`, `distributors.read`, `businesses.read` |
 | `risk` | `ops.dashboard.read`, `risk.held.read`, `risk.held.decide`, `risk.alerts.read`, `risk.alerts.ack`, `users.search`, `users.read`, `users.read.sensitive`, `users.freeze`, `users.unfreeze.request`, `users.unfreeze.approve`, `users.credentials.invalidate`, `money.transactions.read`, `audit.read`, `agents.read`, `agents.suspend`, `couriers.suspend`, `deliveries.disputes.resolve`, `approvals.read`, `businesses.read`, `businesses.suspend` |
-| `compliance` | `ops.dashboard.read`, `kyc.review`, `users.search`, `users.read`, `users.read.sensitive`, `users.unfreeze.approve`, `agents.read`, `agents.onboard`, `agents.activate`, `agents.manage`, `agents.suspend`, `couriers.onboard`, `couriers.suspend`, `distributors.read`, `distributors.manage`, `audit.read`, `approvals.read`, `businesses.read`, `businesses.suspend`, `merchants.verify` |
-| `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `finance.commission.propose`, `risk.held.read`, `agents.read`, `approvals.read` |
+| `compliance` | `ops.dashboard.read`, `kyc.review`, `users.search`, `users.read`, `users.read.sensitive`, `users.unfreeze.approve`, `agents.read`, `agents.onboard`, `agents.activate`, `agents.manage`, `agents.suspend`, `couriers.onboard`, `couriers.suspend`, `distributors.read`, `distributors.manage`, `audit.read`, `approvals.read`, `businesses.read`, `businesses.suspend`, `merchants.verify`, `pickup_points.approve` |
+| `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `finance.commission.propose`, `risk.held.read`, `agents.read`, `approvals.read`, `logistics.disputes.reverse` |
 | `finance_approver` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.reports.read`, `finance.adjust.approve`, `finance.agent_float.approve`, `finance.commission.approve`, `finance.refund.approve`, `approvals.read` |
+| `logistics_ops` | `ops.dashboard.read`, `logistics.read`, `logistics.dispatch`, `logistics.exceptions.resolve`, `logistics.disputes.resolve` |
 | `sysadmin` | `ops.health.read`, `ops.dashboard.read`, `admin.roles.read`, `admin.roles.manage`, `audit.read`, `approvals.read` |
 
 **Separation-of-duty conflicts:** these pairs can never be held by one operator.
@@ -855,6 +901,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 - `sysadmin` × `finance_approver`
 - `sysadmin` × `risk`
 - `sysadmin` × `compliance`
+- `sysadmin` × `logistics_ops`
+- `logistics_ops` × `finance_ops`
 
 ## Maker-checker actions
 
@@ -868,6 +916,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `agent_commission_rule_activate` | `finance.commission.propose` | `finance.commission.approve` |
 | `agent_commission_budget_fund` | `finance.adjust.request` | `finance.adjust.approve` |
 | `agent_commission_clawback` | `risk.held.decide` | `finance.adjust.approve` |
+| `shipment_earning_reverse` | `logistics.disputes.resolve` | `logistics.disputes.reverse` |
 | `support_refund` | `finance.refund` | `finance.refund.approve` |
 
 **Single-operator ceilings** (decision D10):
@@ -896,7 +945,7 @@ The owner (`Business.ownerId`) holds every capability. Members hold a capability
 
 | Capability | Member roles |
 |---|---|
-| `business.read` | manager, distribution_rep, cashier, inventory, fulfillment, finance, viewer, staff, sales, warehouse, hr_admin, admin, cfo, ceo, owner |
+| `business.read` | manager, distribution_rep, cashier, inventory, fulfillment, fleet_driver, finance, viewer, staff, sales, warehouse, hr_admin, admin, cfo, ceo, owner |
 | `business.profile.manage` | manager, admin, ceo, owner |
 | `business.members.manage` | manager, admin, ceo, owner |
 | `business.catalog.manage` | manager, inventory, sales, warehouse, admin, ceo, owner |
@@ -919,5 +968,7 @@ The owner (`Business.ownerId`) holds every capability. Members hold a capability
 | `business.distribution.manage` | manager, owner |
 | `business.distribution.invite` | manager, distribution_rep, owner |
 | `business.purchasing` | manager, inventory, owner |
+| `business.fleet.dispatch` | manager, owner |
+| `business.fleet.drive` | fulfillment, fleet_driver, owner |
 
 Only the owner may grant `owner`, `admin`, `cfo` or `ceo`. Nobody may grant a role above their own level.

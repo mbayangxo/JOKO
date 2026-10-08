@@ -74,6 +74,9 @@ test('dynamic: critical user routes on someone else’s objects — authorizatio
     await prisma.agentDeposit.create({ data: { reference: `AGD-BND-${k}`, token: `bnddep${k}`, userId: victim.id, amountXof: 5000, status: 'pending', expiresAt: exp } });
     await prisma.agentWithdrawal.create({ data: { reference: `AGW-BND-${k}`, token: `bndwd${k}`, userId: victim.id, amountXof: 5000, status: 'pending', expiresAt: exp } });
     await prisma.paymentFund.create({ data: { userId: victim.id, name: 'Épargne' } });
+    const vb = await prisma.business.create({ data: { ownerId: victim.id, name: `Victim ${k}` } });
+    const fr = await prisma.fulfilmentRequest.create({ data: { reference: `FR-BND-${k}`, sourceSystem: 'jokko_po', sourceId: `bnd-${k}`, sourceKey: `bnd:${k}`, fulfilmentOwner: 'MERCHANT_FULFILLED', fulfillerBusinessId: vb.id, originBusinessId: vb.id, createdBy: victim.id } });
+    await prisma.shipment.create({ data: { reference: `SH-BND-${k}`, requestId: fr.id, status: 'in_transit', custody: 'courier' } });
   }
   const results = [];
   const findings = [];

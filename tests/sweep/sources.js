@@ -54,6 +54,9 @@ export function sourceFor(routeKey) {
     [/^businesses\/:id\/school\/periods\/:subId/, `SELECT "businessId" || '|' || "id" FROM "SchoolFeePeriod" WHERE "businessId" NOT IN ($MYBIZ)`],
     [/^businesses\/:id\/cooperative\/deliveries\/:subId/, `SELECT "businessId" || '|' || "id" FROM "FarmerDeliveryLog" WHERE "businessId" NOT IN ($MYBIZ)`],
     // J7 B2B sub-objects: another business's purchase orders / invoices / returns (both sides), relationships, territories, depots.
+    // J8: a fresh attacker is never a party to an existing shipment / dispute.
+    [/^logistics\/shipments\/:id/, `SELECT "id" FROM "Shipment"`],
+    [/^logistics\/disputes\/:id/, `SELECT "id" FROM "ShipmentDispute"`],
     [/^businesses\/:id\/b2b\/purchase-orders\/:subId/, `SELECT v FROM (SELECT "buyerBusinessId" || '|' || "id" AS v FROM "PurchaseOrder" WHERE "buyerBusinessId" NOT IN ($MYBIZ) UNION ALL SELECT "sellerBusinessId" || '|' || "id" FROM "PurchaseOrder" WHERE "sellerBusinessId" NOT IN ($MYBIZ)) u`],
     [/^businesses\/:id\/b2b\/invoices\/:subId/, `SELECT v FROM (SELECT "buyerBusinessId" || '|' || "id" AS v FROM "TradeInvoice" WHERE "buyerBusinessId" IS NOT NULL AND "buyerBusinessId" NOT IN ($MYBIZ) UNION ALL SELECT "supplierBusinessId" || '|' || "id" FROM "TradeInvoice" WHERE "supplierBusinessId" NOT IN ($MYBIZ)) u`],
     [/^businesses\/:id\/b2b\/returns\/:subId/, `SELECT v FROM (SELECT "buyerBusinessId" || '|' || "id" AS v FROM "CommercialReturn" WHERE "buyerBusinessId" NOT IN ($MYBIZ) UNION ALL SELECT "sellerBusinessId" || '|' || "id" FROM "CommercialReturn" WHERE "sellerBusinessId" NOT IN ($MYBIZ)) u`],

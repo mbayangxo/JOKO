@@ -44,6 +44,10 @@ export const VALID_BODIES = {
   'POST businesses/:id/b2b/invoices/:subId/pay': () => ({ amountKori: 100 }),
   'POST businesses/:id/b2b/invoices/:subId/credit-memos': () => ({ amountKori: 100, reason: 'sweep: credit someone else’s invoice', reference: 'SWEEP-1' }),
   'POST businesses/:id/b2b/returns/:subId/resolve': () => ({ resolution: 'none', note: 'sweep: resolve someone else’s return' }),
+  // J8 logistics: custody / money acts on someone else's shipment.
+  'POST logistics/shipments/:id/deliver': () => ({ code: 'ABCDEFGH' }),
+  'POST logistics/shipments/:id/return/complete': () => ({ code: 'ABCDEFGH' }),
+  'POST logistics/shipments/:id/cancel': () => ({ reason: 'sweep: cancel someone else’s shipment' }),
   'POST businesses/:id/payroll/pay': (ctx) => ({ employeeHandle: ctx.attackerHandle, amount: 100 }),
   'POST businesses/:id/payroll/run': () => ({}),
   'POST businesses/:id/school/pay': () => ({ studentId: 'x', periodId: 'x' }),
