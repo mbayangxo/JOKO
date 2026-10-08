@@ -188,3 +188,40 @@ test('failed delivery → return to the depot with a source code → stock re-cr
   assert.deepEqual([c.onHand, c.reserved], [120, 12]);
   assert.equal((await prisma.purchaseOrder.findUnique({ where: { id: x.po.id } })).status, 'ready');
 });
+
+test('J8.18 tracked return: seller fleet collects from the buyer with the buyer’s code; seller receives per line; restock of received units only, once', async () => {
+  const x = await readyPo(api, { packs: 2, stock: 120 });
+  const driver = await fleetDriver(api, x.sup.b);
+  ok(await adv(x, { to: 'fulfilment_requested', fulfilmentMode: 'seller_delivery', tracked: true }));
+  const sh = await shipmentFor(x.po.id);
+  ok(await x.sup.owner.call('POST', `logistics/shipments/${sh.id}/assign`, { courierUserId: driver.id }));
+  const pc = ok(await x.sup.owner.call('POST', `logistics/shipments/${sh.id}/codes`, { purpose: 'pickup' }));
+  ok(await driver.call('POST', `logistics/shipments/${sh.id}/pickup`, { code: pc.code }));
+  ok(await driver.call('POST', `logistics/shipments/${sh.id}/step`, { step: 'arrive_delivery' }));
+  ok(await x.m.owner.call('POST', `logistics/shipments/${sh.id}/receiving`, { lines: [{ productId: x.sup.product.id, received: 24 }] }));
+  // Return one pack (12 units).
+  const ret = ok(await x.m.owner.call('POST', `businesses/${x.m.b.id}/b2b/purchase-orders/${x.po.id}/returns`, { lines: [{ listingId: x.sup.listing.id, packs: 1 }], reason: 'date courte' }, { headers: { 'idempotency-key': `ret-${x.po.id}` } }));
+  ok(await x.sup.owner.call('POST', `businesses/${x.sup.b.id}/b2b/returns/${ret.id}/decide`, { approve: true }));
+  ok(await x.m.owner.call('POST', `businesses/${x.m.b.id}/b2b/returns/${ret.id}/ship`, { tracked: true }));
+  const rreq = await prisma.fulfilmentRequest.findUnique({ where: { sourceKey: `j7_return:${ret.id}:return` } });
+  assert.ok(rreq, 'return shipment created');
+  assert.equal(rreq.originBusinessId, x.m.b.id);
+  const rsh = await prisma.shipment.findFirst({ where: { requestId: rreq.id } });
+  // The seller cannot shortcut the tracked return.
+  assert.equal((await x.sup.owner.call('POST', `businesses/${x.sup.b.id}/b2b/returns/${ret.id}/receive`, { restock: true })).body.code, 'received_by_shipment');
+  ok(await x.sup.owner.call('POST', `logistics/shipments/${rsh.id}/assign`, { courierUserId: driver.id }), 'seller’s own driver collects (internal-bound movement)');
+  assert.equal((await x.sup.owner.call('POST', `logistics/shipments/${rsh.id}/codes`, { purpose: 'pickup' })).status, 404, 'the buyer (source of the return) issues the pickup code');
+  const rpc = ok(await x.m.owner.call('POST', `logistics/shipments/${rsh.id}/codes`, { purpose: 'pickup' }));
+  ok(await driver.call('POST', `logistics/shipments/${rsh.id}/pickup`, { code: rpc.code }));
+  ok(await driver.call('POST', `logistics/shipments/${rsh.id}/step`, { step: 'arrive_delivery' }));
+  assert.equal((await driver.call('POST', `logistics/shipments/${rsh.id}/receiving`, { lines: [{ productId: x.sup.product.id, received: 12 }] })).status, 404);
+  const before = await stockAt(x.sup.depot.id, x.sup.product.id);
+  const rc = ok(await x.sup.owner.call('POST', `logistics/shipments/${rsh.id}/receiving`, { lines: [{ productId: x.sup.product.id, received: 10, damaged: 2 }] }));
+  assert.equal(rc.receiving.outcome, 'damaged');
+  assert.equal((await stockAt(x.sup.depot.id, x.sup.product.id)).onHand, before.onHand + 10, 'restocks received units only');
+  const r = await prisma.commercialReturn.findUnique({ where: { id: ret.id } });
+  assert.equal(r.status, 'received');
+  assert.equal(r.restocked, true);
+  // Resolution (money) stays a J7 seller decision.
+  ok(await x.sup.owner.call('POST', `businesses/${x.sup.b.id}/b2b/returns/${ret.id}/resolve`, { resolution: 'none', note: 'remplacé au prochain passage' }));
+});
