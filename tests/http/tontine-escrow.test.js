@@ -64,7 +64,8 @@ test('invitation without acceptance: no debit, cannot contribute, and the creato
   assert.equal(g.body.myStatus, 'invited');
   assert.equal(g.body.status, 'forming');
 
-  assert.equal((await call(on, 'POST', `tontine/groups/${id}/contribute`, invited)).status, 409, 'group not active');
+  // An invitee who has not accepted is not a participant: refused on authority (before any state is revealed).
+  assert.equal((await call(on, 'POST', `tontine/groups/${id}/contribute`, invited)).status, 403, 'not a participant');
   const start = await call(on, 'POST', `tontine/groups/${id}/start`, creator);
   assert.equal(start.status, 409, 'cannot start with only the creator accepted');
   assert.equal((await call(on, 'POST', `tontine/groups/${id}/release`, creator)).status, 409);
@@ -102,7 +103,7 @@ test('forged membership: strangers cannot read, accept, contribute or release; n
   assert.equal(forged.status, 409, 'creator already accepted; cannot accept on behalf of invitee');
   const m = await prisma.tontineMembership.findUnique({ where: { groupId_userId: { groupId: id, userId: invited.id } } });
   assert.equal(m.status, 'invited');
-  assert.equal((await call(on, 'POST', `tontine/groups/${id}/contribute`, stranger)).status, 409);
+  assert.equal((await call(on, 'POST', `tontine/groups/${id}/contribute`, stranger)).status, 403, 'stranger refused on authority, before group state');
   assert.equal((await call(on, 'POST', `tontine/groups/${id}/release`, stranger)).status, 403);
 });
 
