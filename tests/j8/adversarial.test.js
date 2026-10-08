@@ -218,6 +218,11 @@ test('scale: 3 000 shipments for one business — keyset pagination is complete 
   const N = 3000;
   const tag = crypto.randomBytes(3).toString('hex');
   const reqs = Array.from({ length: N }, (_, i) => ({ id: `fr${tag}${i}`, reference: `FR-SC-${tag}-${i}`, sourceSystem: 'jokko_order', sourceId: `${tag}-${i}`, sourceKey: `scale:${tag}:${i}`, fulfilmentOwner: 'MERCHANT_FULFILLED', fulfillerBusinessId: b.id, originBusinessId: b.id, createdBy: ownerC.id }));
+  // 2 000 distinct merchant destinations (one shipment each for the first 2 000).
+  const D = 2000;
+  const dests = Array.from({ length: D }, (_, i) => ({ id: `bz${tag}${i}`, ownerId: ownerC.id, name: `Boutique ${tag} ${i}`, type: 'merchant' }));
+  await prisma.business.createMany({ data: dests });
+  reqs.forEach((r, i) => { if (i < D) r.destinationBusinessId = dests[i].id; });
   await prisma.fulfilmentRequest.createMany({ data: reqs });
   await prisma.shipment.createMany({ data: reqs.map((r, i) => ({ reference: `SH-SC-${tag}-${i}`, requestId: r.id, status: i % 3 ? 'ready_for_pickup' : 'cancelled', custody: 'source' })) });
   const seen = new Set();
@@ -238,7 +243,40 @@ test('scale: 3 000 shipments for one business — keyset pagination is complete 
   assert.equal(pages, 15);
   const filtered = ok(await owner.call('GET', `businesses/${b.id}/logistics/shipments?status=cancelled&limit=200`));
   assert.ok(filtered.items.every((s) => s.status === 'cancelled'));
-  console.log(JSON.stringify({ shipments: N, pages, ms: Date.now() - t0 }));
+  console.log(JSON.stringify({ shipments: N, destinations: D, pages, ms: Date.now() - t0 }));
+  // Authorization under scale: a stranger sees nothing; one destination owner (a separate user) sees exactly its one shipment.
+  const stranger = await signedIn(api, await customer());
+  assert.equal((await stranger.call('GET', `businesses/${b.id}/logistics/shipments?limit=200`)).status, 404);
+  const destOwnerC = await customer();
+  await prisma.business.update({ where: { id: dests[7].id }, data: { ownerId: destOwnerC.id } });
+  const destOwner = await signedIn(api, destOwnerC);
+  const inbound = ok(await destOwner.call('GET', `businesses/${dests[7].id}/logistics/shipments?side=destination&limit=200`));
+  assert.equal(inbound.items.length, 1);
+  assert.equal((await destOwner.call('GET', `businesses/${b.id}/logistics/shipments`)).status, 404);
+  // Courier assigned-delivery query: 1 000 active assignments, paginated, only their own.
+  const courierC = await customer();
+  const courier = await signedIn(api, courierC);
+  const ready = await prisma.shipment.findMany({ where: { requestId: { in: reqs.map((r) => r.id) }, status: 'ready_for_pickup' }, select: { id: true }, take: 1000 });
+  await prisma.courierAssignment.createMany({ data: ready.map((x) => ({ shipmentId: x.id, courierUserId: courierC.id, courierKind: 'fleet_driver', assignedBy: ownerC.id, assignedByType: 'user' })) });
+  await prisma.shipment.updateMany({ where: { id: { in: ready.map((x) => x.id) } }, data: { status: 'assigned' } });
+  let cc = null;
+  let mineCount = 0;
+  const t1 = Date.now();
+  do {
+    const r = ok(await courier.call('GET', `logistics/courier/shipments?limit=200${cc ? `&cursor=${encodeURIComponent(cc)}` : ''}`));
+    mineCount += r.items.length;
+    cc = r.nextCursor;
+  } while (cc);
+  assert.equal(mineCount, ready.length);
+  assert.equal(ok(await stranger.call('GET', 'logistics/courier/shipments')).items.length, 0);
+  // Route stop access: a 60-stop route lists in order.
+  const route = await prisma.deliveryRoute.create({ data: { reference: `RT-SC-${tag}`, ownerBusinessId: b.id, serviceDate: new Date(), driverUserId: courierC.id, createdBy: ownerC.id } });
+  await prisma.routeStop.createMany({ data: ready.slice(0, 60).map((x, i) => ({ routeId: route.id, sequence: i + 1, shipmentId: x.id })) });
+  await prisma.businessMember.create({ data: { businessId: b.id, userId: courierC.id, role: 'fleet_driver', status: 'active', acceptedAt: new Date() } });
+  const routes = ok(await owner.call('GET', `businesses/${b.id}/logistics/routes`));
+  assert.deepEqual(routes[0].stops.map((x) => x.sequence), Array.from({ length: 60 }, (_, i) => i + 1));
+  assert.equal((await courier.call('GET', `businesses/${b.id}/logistics/routes`)).status, 404, 'a driver does not read the dispatch plan');
+  console.log(JSON.stringify({ courierAssignments: ready.length, courierPagesMs: Date.now() - t1, routeStops: 60 }));
   const plan = await prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe('SET LOCAL enable_seqscan = off');
     return tx.$queryRawUnsafe(`EXPLAIN SELECT s.id FROM "Shipment" s JOIN "FulfilmentRequest" r ON r.id = s."requestId" WHERE r."originBusinessId" = '${b.id}' ORDER BY s.id LIMIT 201`);
