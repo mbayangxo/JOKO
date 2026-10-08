@@ -16,6 +16,18 @@ import { listDeliveryHubs } from '../../lib/hub-service.js';
 
 after(() => prisma.$disconnect());
 
+/** J8.0: hub actions need an operator of the ACTIVE pickup point running that hub. */
+async function hubOperator(hubId) {
+  const staff = await createUserWithWallet({ koriBalance: 0 });
+  const owner = await createUserWithWallet({ koriBalance: 0 });
+  const biz = await prisma.business.create({ data: { ownerId: owner.id, name: `Point ${Math.random().toString(36).slice(2, 7)}`, type: 'merchant' } });
+  await prisma.businessMember.create({ data: { businessId: biz.id, userId: staff.id, role: 'fulfillment', status: 'active', acceptedAt: new Date() } });
+  const existing = await prisma.pickupPoint.findUnique({ where: { hubId } });
+  if (existing) await prisma.businessMember.create({ data: { businessId: existing.operatorBusinessId, userId: staff.id, role: 'fulfillment', status: 'active', acceptedAt: new Date() } });
+  else await prisma.pickupPoint.create({ data: { operatorBusinessId: biz.id, hubId, name: 'Point K21 test', status: 'active', appliedBy: owner.id } });
+  return staff;
+}
+
 async function call(handler, { userId, body, query, method = 'POST' } = {}) {
   const req = mockReq({ userId, body, query, method });
   const res = mockRes();
@@ -23,13 +35,14 @@ async function call(handler, { userId, body, query, method = 'POST' } = {}) {
   return res;
 }
 
-test('hub parcel: register → arrive → pickup', async () => {
+test('hub parcel: register → arrive (pickup-point operator) → release by staff with the owner’s code', async () => {
   const owner = await createUserWithWallet({ koriBalance: 1000 });
-  const staff = await createUserWithWallet({ koriBalance: 0 });
-  await prisma.driverProfile.create({ data: { userId: staff.id, status: 'available' } });
+  const courier = await createUserWithWallet({ koriBalance: 0 });
+  await prisma.driverProfile.create({ data: { userId: courier.id, status: 'available' } });
 
   const hubs = await listDeliveryHubs(prisma, { lat: 14.69, lng: -17.44 });
   assert.ok(hubs.length >= 6);
+  const staff = await hubOperator(hubs[0].id);
 
   const createRes = await call(hubParcelsCreate, {
     userId: owner.id,
@@ -45,13 +58,16 @@ test('hub parcel: register → arrive → pickup', async () => {
   assert.equal(createRes.statusCode, 201);
   assert.ok(createRes.body.shippingAddress?.line2?.includes(createRes.body.reference));
 
+  // A courier (or any worker profile) is not a hub operator.
+  const courierArrive = await call(hubParcelArrive, { userId: courier.id, query: { id: createRes.body.id } });
+  assert.equal(courierArrive.statusCode, 403);
   const arriveRes = await call(hubParcelArrive, {
     userId: staff.id,
     query: { id: createRes.body.id },
   });
   assert.equal(arriveRes.statusCode, 200);
   assert.equal(arriveRes.body.status, 'ready_for_pickup');
-  assert.ok(arriveRes.body.pickupCode);
+  assert.equal(arriveRes.body.pickupCode, null, 'staff never see the owner’s collection code');
 
   const notif = await prisma.notification.findFirst({
     where: { userId: owner.id, kind: 'hub_parcel' },
@@ -60,13 +76,20 @@ test('hub parcel: register → arrive → pickup', async () => {
   assert.ok(notif);
 
   const parcel = await prisma.hubParcel.findUnique({ where: { id: createRes.body.id } });
+  // The owner can no longer "confirm" their own collection.
+  const selfConfirm = await call(hubParcelConfirmPickup, { userId: owner.id, body: { pickupCode: parcel.pickupCode }, query: { id: createRes.body.id } });
+  assert.equal(selfConfirm.statusCode, 403);
+  const wrong = await call(hubParcelConfirmPickup, { userId: staff.id, body: { pickupCode: '000000' === parcel.pickupCode ? '111111' : '000000' }, query: { id: createRes.body.id } });
+  assert.equal(wrong.statusCode, 400);
   const pickupRes = await call(hubParcelConfirmPickup, {
-    userId: owner.id,
+    userId: staff.id,
     body: { pickupCode: parcel.pickupCode },
     query: { id: createRes.body.id },
   });
   assert.equal(pickupRes.statusCode, 200);
   assert.equal(pickupRes.body.status, 'picked_up');
+  const again = await call(hubParcelConfirmPickup, { userId: staff.id, body: { pickupCode: parcel.pickupCode }, query: { id: createRes.body.id } });
+  assert.equal(again.statusCode, 400, 'released once');
 });
 
 test('hub parcel: last mile creates rider job', async () => {
@@ -74,9 +97,9 @@ test('hub parcel: last mile creates rider job', async () => {
   const staff = await createUserWithWallet({ koriBalance: 0 });
   const rider = await createUserWithWallet({ koriBalance: 500 });
   await prisma.accountRole.create({ data: { userId: rider.id, role: 'driver', status: 'active' } }); // open jobs are courier-only
-  await prisma.driverProfile.create({ data: { userId: staff.id } });
 
   const hubs = await listDeliveryHubs(prisma);
+  const staffOp = await hubOperator(hubs[1].id);
   const createRes = await call(hubParcelsCreate, {
     userId: owner.id,
     body: {
@@ -87,7 +110,7 @@ test('hub parcel: last mile creates rider job', async () => {
     },
   });
 
-  await call(hubParcelArrive, { userId: staff.id, query: { id: createRes.body.id } });
+  await call(hubParcelArrive, { userId: staffOp.id, query: { id: createRes.body.id } });
 
   const lastMileRes = await call(hubParcelLastMile, {
     userId: owner.id,

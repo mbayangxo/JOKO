@@ -1,4 +1,7 @@
--- J8: movement, logistics & fulfilment. Additive only: new tables and guards; no existing row is changed.
+-- J8: movement, logistics & fulfilment. Additive only: new tables, one defaulted column, guards; no existing row's data is changed.
+-- AlterTable
+ALTER TABLE "HubParcel" ADD COLUMN     "pickupAttempts" INTEGER NOT NULL DEFAULT 0;
+
 -- CreateTable
 CREATE TABLE "PickupPoint" (
     "id" TEXT NOT NULL,

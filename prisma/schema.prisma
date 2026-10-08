@@ -696,6 +696,8 @@ model HubParcel {
   dropoffLat      Float?
   dropoffLng      Float?
   pickupCode      String?
+  /// J8.0: wrong release codes entered at the pickup point (locks at 5)
+  pickupAttempts  Int       @default(0)
   lastMileOrderId String?   @unique
   arrivedAt       DateTime?
   pickedUpAt      DateTime?

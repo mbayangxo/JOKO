@@ -510,9 +510,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET hubs/parcels/origins` | user | parcels.origins.read | public |  |  |  |  |  |  |
 | `GET hubs/parcels/:id` | user | parcels.read | party |  |  |  |  |  |  |
 | `POST hubs/parcels/:id/in-transit` | user | parcels.update | hub operator (business member of the hub) |  |  |  |  |  |  |
-| `POST hubs/parcels/:id/arrive` | user | parcels.update | hub operator (business member of the hub) |  |  |  |  |  |  |
+| `POST hubs/parcels/:id/arrive` | user | parcels.update | operator of the ACTIVE pickup point running this hub (J8.0; couriers/workers are not hub operators) |  |  |  |  |  |  |
 | `POST hubs/parcels/:id/last-mile` | user | parcels.update | hub operator (business member of the hub) |  |  |  |  |  |  |
-| `POST hubs/parcels/:id/pickup` | user | parcels.pickup | recipient |  |  |  |  |  |  |
+| `POST hubs/parcels/:id/pickup` | user | parcels.release | pickup-point operator releases on the code presented by the owner (J8.0; the owner cannot self-confirm; 5 wrong codes lock) |  |  |  |  |  |  |
 
 ## User — invite
 
