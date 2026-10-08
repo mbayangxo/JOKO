@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**584 routes.** Column legend:
+**641 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -23,6 +23,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
 |---|---|---|---|---|---|---|---|---|---|
+| `GET cron/work` | cron | cron.work | cron_secret |  |  |  |  | job |  |
+| `POST cron/work` | cron | cron.work | cron_secret |  |  |  |  | job |  |
 | `GET cron/logistics` | cron | cron.logistics | cron_secret |  |  |  |  | job |  |
 | `POST cron/logistics` | cron | cron.logistics | cron_secret |  |  |  |  | job |  |
 | `GET cron/daily` | cron | cron.daily | cron_secret |  |  |  |  | job |  |
@@ -64,6 +66,13 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET admin/logistics/disputes` | admin | logistics.read | operator_scope |  |  |  |  |  |  |
 | `POST admin/logistics/disputes/:id/resolve` | admin | logistics.disputes.resolve | operator_scope |  |  |  |  | admin+identity; money reversal via maker/checker (logistics.disputes.reverse) |  |
 | `POST admin/pickup-points/:id/decide` | admin | pickup_points.approve | operator_scope |  |  |  |  | admin+identity |  |
+| `GET admin/work/review` | admin | work.review | operator_scope |  |  |  |  |  |  |
+| `POST admin/work/opportunities/:id/review` | admin | work.review | operator_scope |  |  |  |  | admin+identity |  |
+| `POST admin/work/qualifications/:id/review` | admin | work.qualifications.verify | operator_scope |  |  |  |  | admin+identity |  |
+| `GET admin/work/disputes` | admin | work.read | operator_scope |  |  |  |  |  |  |
+| `POST admin/work/disputes/:id/resolve` | admin | work.disputes.resolve | operator_scope |  |  |  |  | admin+identity; money via maker/checker (work.disputes.settle) |  |
+| `GET admin/work/feedback` | admin | work.read | operator_scope |  |  |  |  |  |  |
+| `POST admin/work/feedback/:id/rule` | admin | work.feedback.rule | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/auth/logout` | admin | (authenticated) | operator_scope |  |  |  |  |  | any authenticated operator |
 | `GET admin/me` | admin | (authenticated) | operator_scope |  |  |  |  |  | own roles and permissions |
 | `GET admin/dashboard` | admin | ops.dashboard.read | operator_scope |  |  |  |  |  |  |
@@ -357,6 +366,28 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET businesses/:id/logistics/routes` | user | logistics.routes.read | business:business.fleet.dispatch |  |  |  |  |  |  |
 | `POST businesses/:id/logistics/routes` | user | logistics.routes.create | business:business.fleet.dispatch; own ready shipments; driver holds business.fleet.drive |  |  |  |  | shipment_event |  |
 | `POST businesses/:id/pickup-points` | user | logistics.pickup_point.apply | business:business.profile.manage |  |  |  |  | identity |  |
+| `GET businesses/:id/work/opportunities` | user | work.business.read | business:business.staffing.manage |  |  |  |  |  |  |
+| `POST businesses/:id/work/opportunities` | user | work.opportunity.create | business:business.staffing.manage; verified business; fee-language postings held for review |  |  |  |  |  |  |
+| `POST businesses/:id/work/opportunities/:subId/status` | user | work.opportunity.status | business:business.staffing.manage |  |  |  |  |  |  |
+| `GET businesses/:id/work/opportunities/:subId/applicants` | user | work.applicants.read | business:business.staffing.manage; worker card only (no phone, age, nationality, language, photo) |  |  |  |  |  |  |
+| `POST businesses/:id/work/opportunities/:subId/invite` | user | work.invite | business:business.staffing.manage; discoverable workers only; blocked = not found |  |  |  |  |  |  |
+| `POST businesses/:id/work/applications/:subId/decide` | user | work.applicants.decide | business:business.staffing.manage |  |  |  |  |  |  |
+| `GET businesses/:id/work/workers` | user | work.workers.search | business:business.staffing.manage; discoverable profiles only |  |  |  |  |  |  |
+| `POST businesses/:id/work/offers` | user | work.offer.create | business:business.staffing.manage (+ business.pay to fund a prepaid offer) |  |  | amount |  | ledger+risk | prepaid offers are funded into escrow when sent |
+| `POST businesses/:id/work/offers/:subId/withdraw` | user | work.offer.withdraw | business:business.staffing.manage; while sent |  |  |  |  | ledger+risk |  |
+| `GET businesses/:id/work/assignments` | user | work.business.read | business:business.staffing.manage |  |  |  |  |  |  |
+| `GET businesses/:id/work/assignments/:subId` | user | work.business.read | business:business.staffing.manage; own assignment |  |  |  |  |  |  |
+| `POST businesses/:id/work/assignments/:subId/attendance-code` | user | work.attendance.code | business:business.staffing.manage; own active assignment |  |  |  |  | work_challenge |  |
+| `POST businesses/:id/work/assignments/:subId/accept` | user | work.milestone.accept | business:business.staffing.manage; never the worker themself |  |  |  |  | ledger+risk |  |
+| `POST businesses/:id/work/assignments/:subId/end` | user | work.assignment.end | business:business.staffing.manage; no unilateral end once work is attended / submitted |  |  |  |  | ledger+risk |  |
+| `POST businesses/:id/work/assignments/:subId/disputes` | user | work.dispute.open | business:business.staffing.manage (false completion within the window; unpaid only) |  |  |  |  | work_evidence |  |
+| `POST businesses/:id/work/assignments/:subId/feedback` | user | work.feedback.leave | business:business.staffing.manage; once; after work |  |  |  |  |  |  |
+| `POST businesses/:id/work/disputes/:subId/evidence` | user | work.dispute.evidence | business:business.staffing.manage; party |  |  |  |  | work_evidence |  |
+| `GET businesses/:id/work/rules` | user | work.rules.read | business:business.staffing.manage \| business.pay |  |  |  |  |  |  |
+| `POST businesses/:id/work/rules` | user | work.rules.propose | business:business.distribution.manage (rep) \| business.staffing.manage (pickup fee); amount defaults to 0 |  |  |  |  |  |  |
+| `POST businesses/:id/work/rules/:subId/approve` | user | work.rules.approve | business:business.pay; a DIFFERENT member than the proposer |  |  |  |  | identity |  |
+| `POST businesses/:id/work/rules/:subId/fund` | user | work.rules.fund | business:business.pay; prefunded budget |  |  | amount |  | ledger+risk |  |
+| `POST businesses/:id/work/rules/:subId/end` | user | work.rules.end | business:business.pay; unused budget back to the business |  |  |  |  | ledger+risk |  |
 | `POST businesses/:id/b2b/purchase-orders/:subId/advance` | user | b2b.po.advance | party:seller business.orders.fulfill \| distribution.manage; delivery recorded by seller unless a tracked J8 shipment carries the order |  |  |  |  | po_event |  |
 | `POST businesses/:id/b2b/purchase-orders/:subId/buyer` | user | b2b.po.receive | party:buyer business.purchasing (receive / complete / dispute) |  |  |  |  | po_event |  |
 | `POST businesses/:id/b2b/purchase-orders/:subId/resolve` | user | b2b.po.resolve | party:seller business.orders.fulfill \| distribution.manage |  |  |  |  | po_event |  |
@@ -879,6 +910,37 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST withdrawals/agent` | user | wallet.agent_withdraw | self |  | 2 | always | cash_out | ledger+risk |  |
 | `GET withdrawals/agent/:reference` | user | wallet.agent_withdraw.read | party |  |  |  |  |  |  |
 
+## User — work
+
+| Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| `GET work/types` | user | work.types.read | public |  |  |  |  |  |  |
+| `GET work/profile` | user | work.profile.read | self |  |  |  |  |  |  |
+| `PUT work/profile` | user | work.profile.update | self |  |  |  |  | none | worker-entered only; no protected-attribute fields exist |
+| `POST work/qualifications` | user | work.qualification.add | self |  |  |  |  |  | self_declared until an operator verifies |
+| `POST work/blocks` | user | work.block | self |  |  |  |  |  | withdraws pending offers (escrow refunded) and invitations |
+| `GET work/opportunities` | user | work.discover | public: open postings of verified businesses; worker-chosen filters; newest first |  |  |  |  |  | no paid ranking, no profiling |
+| `GET work/opportunities/:id` | user | work.discover | public (open; not from a business the caller blocked) |  |  |  |  |  |  |
+| `POST work/opportunities/:id/apply` | user | work.apply | self; age / minor rules; never into a business the caller runs |  |  |  |  |  |  |
+| `GET work/applications` | user | work.applications.read | self |  |  |  |  |  |  |
+| `POST work/applications/:id/withdraw` | user | work.applications.withdraw | party: the applicant |  |  |  |  |  |  |
+| `GET work/offers` | user | work.offers.read | self |  |  |  |  |  |  |
+| `POST work/offers/:id/accept` | user | work.offer.accept | party: the offered worker; exact termsHash; funded if prepaid; age attestation |  |  |  |  | ledger |  |
+| `POST work/offers/:id/decline` | user | work.offer.decline | party: the offered worker |  |  |  |  | ledger+risk |  |
+| `GET work/assignments` | user | work.assignments.read | self |  |  |  |  |  |  |
+| `GET work/assignments/:id` | user | work.assignments.read | party: the worker |  |  |  |  |  |  |
+| `POST work/assignments/:id/attendance` | user | work.attendance.submit | party: the worker + business-issued single-use code |  |  |  |  | work_evidence |  |
+| `POST work/assignments/:id/submit` | user | work.milestone.submit | party: the worker; evidence required |  |  |  |  | work_evidence |  |
+| `POST work/assignments/:id/end` | user | work.assignment.end | party: the worker; before submitting work; unearned escrow back to the business |  |  |  |  | ledger+risk |  |
+| `POST work/assignments/:id/disputes` | user | work.dispute.open | party: the worker (nonpayment / terms / harassment / other) |  |  |  |  | work_evidence |  |
+| `POST work/assignments/:id/feedback` | user | work.feedback.leave | party: the worker; once; after work |  |  |  |  |  |  |
+| `GET work/disputes/:id` | user | work.dispute.read | party (roles and content only) |  |  |  |  |  |  |
+| `POST work/disputes/:id/evidence` | user | work.dispute.evidence | party; append-only |  |  |  |  | work_evidence |  |
+| `GET work/earnings` | user | work.earnings.read | self (J8 courier earnings shown read-only, never duplicated) |  |  |  |  |  |  |
+| `POST work/earnings/payout` | user | work.earnings.payout | self: own releasable earnings, not frozen by a dispute → own wallet |  |  |  |  | ledger+risk |  |
+| `GET work/feedback` | user | work.feedback.read | self: feedback about me |  |  |  |  |  |  |
+| `POST work/feedback/:id/contest` | user | work.feedback.contest | subject of the feedback |  |  |  |  |  |  |
+
 ## User — workers
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
@@ -905,9 +967,10 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `support` | `ops.dashboard.read`, `support.tickets.read`, `support.tickets.write`, `support.calls`, `users.search`, `users.read`, `users.freeze`, `money.transactions.read`, `agents.read`, `distributors.read`, `businesses.read` |
 | `risk` | `ops.dashboard.read`, `risk.held.read`, `risk.held.decide`, `risk.alerts.read`, `risk.alerts.ack`, `users.search`, `users.read`, `users.read.sensitive`, `users.freeze`, `users.unfreeze.request`, `users.unfreeze.approve`, `users.credentials.invalidate`, `money.transactions.read`, `audit.read`, `agents.read`, `agents.suspend`, `couriers.suspend`, `deliveries.disputes.resolve`, `approvals.read`, `businesses.read`, `businesses.suspend` |
 | `compliance` | `ops.dashboard.read`, `kyc.review`, `users.search`, `users.read`, `users.read.sensitive`, `users.unfreeze.approve`, `agents.read`, `agents.onboard`, `agents.activate`, `agents.manage`, `agents.suspend`, `couriers.onboard`, `couriers.suspend`, `distributors.read`, `distributors.manage`, `audit.read`, `approvals.read`, `businesses.read`, `businesses.suspend`, `merchants.verify`, `pickup_points.approve` |
-| `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `finance.commission.propose`, `risk.held.read`, `agents.read`, `approvals.read`, `logistics.disputes.reverse` |
+| `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `finance.commission.propose`, `risk.held.read`, `agents.read`, `approvals.read`, `logistics.disputes.reverse`, `work.disputes.settle` |
 | `finance_approver` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.reports.read`, `finance.adjust.approve`, `finance.agent_float.approve`, `finance.commission.approve`, `finance.refund.approve`, `approvals.read` |
 | `logistics_ops` | `ops.dashboard.read`, `logistics.read`, `logistics.dispatch`, `logistics.exceptions.resolve`, `logistics.disputes.resolve` |
+| `work_ops` | `ops.dashboard.read`, `work.read`, `work.review`, `work.qualifications.verify`, `work.disputes.resolve`, `work.feedback.rule`, `approvals.read` |
 | `sysadmin` | `ops.health.read`, `ops.dashboard.read`, `admin.roles.read`, `admin.roles.manage`, `audit.read`, `approvals.read` |
 
 **Separation-of-duty conflicts:** these pairs can never be held by one operator.
@@ -918,6 +981,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 - `sysadmin` × `compliance`
 - `sysadmin` × `logistics_ops`
 - `logistics_ops` × `finance_ops`
+- `work_ops` × `finance_ops`
+- `sysadmin` × `work_ops`
 
 ## Maker-checker actions
 
@@ -932,6 +997,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `agent_commission_budget_fund` | `finance.adjust.request` | `finance.adjust.approve` |
 | `agent_commission_clawback` | `risk.held.decide` | `finance.adjust.approve` |
 | `shipment_earning_reverse` | `logistics.disputes.resolve` | `logistics.disputes.reverse` |
+| `work_dispute_settle` | `work.disputes.resolve` | `work.disputes.settle` |
 | `support_refund` | `finance.refund` | `finance.refund.approve` |
 
 **Single-operator ceilings** (decision D10):
@@ -985,5 +1051,6 @@ The owner (`Business.ownerId`) holds every capability. Members hold a capability
 | `business.purchasing` | manager, inventory, owner |
 | `business.fleet.dispatch` | manager, owner |
 | `business.fleet.drive` | fulfillment, fleet_driver, owner |
+| `business.staffing.manage` | manager, owner |
 
 Only the owner may grant `owner`, `admin`, `cfo` or `ceo`. Nobody may grant a role above their own level.

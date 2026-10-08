@@ -232,3 +232,87 @@ CREATE TRIGGER "ReturnStockHold_guard" BEFORE UPDATE OR DELETE ON "ReturnStockHo
   FOR EACH ROW EXECUTE FUNCTION joko_return_hold_guard();
 ALTER TABLE "ReturnStockHold" DROP CONSTRAINT IF EXISTS "ReturnStockHold_units_check";
 ALTER TABLE "ReturnStockHold" ADD CONSTRAINT "ReturnStockHold_units_check" CHECK ("sellableUnits" >= 0 AND "damagedUnits" >= 0 AND "sellableUnits" + "damagedUnits" > 0);
+
+-- ─────────────────────────── J9 Work & Opportunity guards ───────────────────────────
+-- Evidence and outcomes are append-only.
+CREATE OR REPLACE FUNCTION joko_work_append_only() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION '% rows are append-only', TG_TABLE_NAME USING ERRCODE = 'restrict_violation';
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "WorkEvidence_append_only" ON "WorkEvidence";
+CREATE TRIGGER "WorkEvidence_append_only" BEFORE UPDATE OR DELETE ON "WorkEvidence" FOR EACH ROW EXECUTE FUNCTION joko_work_append_only();
+DROP TRIGGER IF EXISTS "WorkOutcome_append_only" ON "WorkOutcome";
+CREATE TRIGGER "WorkOutcome_append_only" BEFORE UPDATE OR DELETE ON "WorkOutcome" FOR EACH ROW EXECUTE FUNCTION joko_work_append_only();
+
+-- Offer terms never change once sent; status only leaves `sent`.
+CREATE OR REPLACE FUNCTION joko_work_offer_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'WorkOffer rows are never deleted' USING ERRCODE = 'restrict_violation'; END IF;
+  IF NEW."termsJson" <> OLD."termsJson" OR NEW."termsHash" <> OLD."termsHash" OR NEW."totalKori" <> OLD."totalKori"
+     OR NEW."workerUserId" <> OLD."workerUserId" OR NEW."businessId" <> OLD."businessId" OR NEW.arrangement <> OLD.arrangement OR NEW.funding <> OLD.funding THEN
+    RAISE EXCEPTION 'WorkOffer %: terms are immutable', OLD.id USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.status <> OLD.status AND NOT (OLD.status = 'sent' AND NEW.status IN ('accepted','declined','withdrawn','expired')) THEN
+    RAISE EXCEPTION 'WorkOffer %: % → % not allowed', OLD.id, OLD.status, NEW.status USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "WorkOffer_guard" ON "WorkOffer";
+CREATE TRIGGER "WorkOffer_guard" BEFORE UPDATE OR DELETE ON "WorkOffer" FOR EACH ROW EXECUTE FUNCTION joko_work_offer_guard();
+
+-- Milestone amounts are immutable; status moves forward only.
+CREATE OR REPLACE FUNCTION joko_work_milestone_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'WorkMilestone rows are never deleted' USING ERRCODE = 'restrict_violation'; END IF;
+  IF NEW."amountKori" <> OLD."amountKori" OR NEW."assignmentId" <> OLD."assignmentId" OR NEW.seq <> OLD.seq OR NEW.kind <> OLD.kind THEN
+    RAISE EXCEPTION 'WorkMilestone %: amount is immutable', OLD.id USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.status <> OLD.status AND NOT (
+       (OLD.status = 'pending' AND NEW.status IN ('submitted','refunded'))
+    OR (OLD.status = 'submitted' AND NEW.status IN ('accepted','disputed'))
+    OR (OLD.status = 'disputed' AND NEW.status IN ('accepted','refunded','split'))) THEN
+    RAISE EXCEPTION 'WorkMilestone %: % → % not allowed', OLD.id, OLD.status, NEW.status USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "WorkMilestone_guard" ON "WorkMilestone";
+CREATE TRIGGER "WorkMilestone_guard" BEFORE UPDATE OR DELETE ON "WorkMilestone" FOR EACH ROW EXECUTE FUNCTION joko_work_milestone_guard();
+
+-- Earnings: amount / payee / source immutable; accrued → releasable → paid; accrued | releasable → reversed.
+CREATE OR REPLACE FUNCTION joko_work_earning_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'WorkEarning rows are never deleted' USING ERRCODE = 'restrict_violation'; END IF;
+  IF NEW."amountKori" <> OLD."amountKori" OR NEW."sourceKey" <> OLD."sourceKey" OR NEW.classification <> OLD.classification
+     OR NEW."workerUserId" IS DISTINCT FROM OLD."workerUserId" OR NEW."payeeBusinessId" IS DISTINCT FROM OLD."payeeBusinessId"
+     OR NEW."payerBusinessId" <> OLD."payerBusinessId" THEN
+    RAISE EXCEPTION 'WorkEarning %: amount and parties are immutable', OLD.id USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.status <> OLD.status AND NOT (
+       (OLD.status = 'accrued' AND NEW.status IN ('releasable','reversed'))
+    OR (OLD.status = 'releasable' AND NEW.status IN ('paid','reversed'))) THEN
+    RAISE EXCEPTION 'WorkEarning %: % → % not allowed', OLD.id, OLD.status, NEW.status USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "WorkEarning_guard" ON "WorkEarning";
+CREATE TRIGGER "WorkEarning_guard" BEFORE UPDATE OR DELETE ON "WorkEarning" FOR EACH ROW EXECUTE FUNCTION joko_work_earning_guard();
+
+DROP TRIGGER IF EXISTS "WorkDispute_no_delete" ON "WorkDispute";
+CREATE TRIGGER "WorkDispute_no_delete" BEFORE DELETE ON "WorkDispute" FOR EACH ROW EXECUTE FUNCTION joko_work_append_only();
+
+ALTER TABLE "WorkOpportunity" DROP CONSTRAINT IF EXISTS "WorkOpportunity_amounts_check";
+ALTER TABLE "WorkOpportunity" ADD CONSTRAINT "WorkOpportunity_amounts_check" CHECK ("rateKori" >= 0 AND units >= 1 AND headcount >= 1 AND "minAge" >= 16);
+ALTER TABLE "WorkOffer" DROP CONSTRAINT IF EXISTS "WorkOffer_amounts_check";
+ALTER TABLE "WorkOffer" ADD CONSTRAINT "WorkOffer_amounts_check" CHECK ("totalKori" >= 0);
+ALTER TABLE "WorkMilestone" DROP CONSTRAINT IF EXISTS "WorkMilestone_amounts_check";
+ALTER TABLE "WorkMilestone" ADD CONSTRAINT "WorkMilestone_amounts_check" CHECK ("amountKori" >= 0);
+ALTER TABLE "WorkEarning" DROP CONSTRAINT IF EXISTS "WorkEarning_amounts_check";
+ALTER TABLE "WorkEarning" ADD CONSTRAINT "WorkEarning_amounts_check" CHECK ("amountKori" > 0 AND (("workerUserId" IS NULL) <> ("payeeBusinessId" IS NULL)));
+ALTER TABLE "WorkRule" DROP CONSTRAINT IF EXISTS "WorkRule_amounts_check";
+ALTER TABLE "WorkRule" ADD CONSTRAINT "WorkRule_amounts_check" CHECK ("amountKori" >= 0 AND "minOrderKori" >= 0);
+ALTER TABLE "WorkFeedback" DROP CONSTRAINT IF EXISTS "WorkFeedback_rating_check";
+ALTER TABLE "WorkFeedback" ADD CONSTRAINT "WorkFeedback_rating_check" CHECK (rating BETWEEN 1 AND 5);

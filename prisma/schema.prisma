@@ -4283,3 +4283,334 @@ model ReturnStockHold {
   @@unique([returnId, sellerProductId, attempt])
   @@index([buyerBusinessId, state])
 }
+
+// ───────────────────────────── J9: Work & Opportunity ─────────────────────────────
+
+/// J9: the worker's OWN work profile — entered by them, never inferred. By design there is no field
+/// for ethnicity, ancestry, nationality, language, neighbourhood or diaspora status.
+model WorkProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  headline      String?
+  skillsJson    String   @default("[]")
+  /// coarse areas the worker chooses to work in
+  areasJson     String   @default("[]")
+  availability  String?
+  /// private | applications_only | discoverable
+  visibility    String   @default("applications_only")
+  /// [{title, ref}] — references only, no files
+  portfolioJson String   @default("[]")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// J9: a qualification the worker claims; `verified` only by an operator holding work.qualifications.verify.
+model WorkQualification {
+  id          String    @id @default(cuid())
+  userId      String
+  /// skill | certificate | licence | training | experience
+  kind        String
+  title       String
+  issuer      String?
+  evidenceRef String?
+  /// self_declared | verified | rejected
+  status      String    @default("self_declared")
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNote  String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([status, createdAt])
+}
+
+/// J9: work a verified business offers. Requirements are structured (skills, qualification kinds,
+/// age only through hazardous / minAge) — no free-text screening criteria.
+model WorkOpportunity {
+  id            String    @id @default(cuid())
+  reference     String    @unique
+  businessId    String
+  /// courier | rep | pickup_point | staffing | gig | apprenticeship | coop_work
+  type          String
+  /// employment | contract | apprenticeship | coop_member
+  arrangement   String
+  title         String
+  description   String
+  area          String?
+  skillsJson    String    @default("[]")
+  headcount     Int       @default(1)
+  /// fixed | per_unit | hourly | stipend | wage | commission | fee
+  payKind       String
+  rateKori      Int
+  units         Int       @default(1)
+  /// prepaid | payroll | outcome | j8
+  funding       String
+  hazardous     Boolean   @default(false)
+  minAge        Int       @default(18)
+  nightWork     Boolean   @default(false)
+  hoursPerWeek  Int?
+  durationWeeks Int?
+  /// under_review | open | paused | closed | rejected
+  status        String    @default("open")
+  reviewFlags   String?
+  reviewedBy    String?
+  createdBy     String
+  closesAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, type, createdAt])
+  @@index([businessId, status])
+}
+
+model WorkApplication {
+  id            String   @id @default(cuid())
+  opportunityId String
+  workerUserId  String
+  /// applied | invited
+  source        String
+  /// submitted | invited | shortlisted | declined | withdrawn | offered | hired
+  status        String
+  note          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([opportunityId, workerUserId])
+  @@index([workerUserId, status])
+}
+
+/// J9: explicit terms. Prepaid offers are FUNDED when sent (escrow:work:<offerId>) so a worker can
+/// never accept an unfunded paid assignment. Terms are immutable once sent (DB guard).
+model WorkOffer {
+  id            String    @id @default(cuid())
+  reference     String    @unique
+  opportunityId String
+  applicationId String
+  businessId    String
+  workerUserId  String
+  arrangement   String
+  termsJson     String
+  termsHash     String
+  totalKori     Int
+  funding       String
+  /// none | held | refunded | transferred (escrow now backs the assignment)
+  fundingStatus String    @default("none")
+  /// sent | accepted | declined | withdrawn | expired
+  status        String    @default("sent")
+  expiresAt     DateTime
+  createdBy     String
+  decidedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([workerUserId, status])
+  @@index([businessId, status])
+  @@index([applicationId])
+}
+
+model WorkAssignment {
+  id            String    @id @default(cuid())
+  reference     String    @unique
+  offerId       String    @unique
+  opportunityId String
+  businessId    String
+  workerUserId  String
+  type          String
+  arrangement   String
+  totalKori     Int
+  funding       String
+  /// escrow returned to the business (cancelled / refunded milestones / unused per-unit budget)
+  refundedKori  Int       @default(0)
+  /// active | completed | cancelled
+  status        String    @default("active")
+  checkedInAt   DateTime?
+  checkedOutAt  DateTime?
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  cancelReason  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workerUserId, status])
+  @@index([businessId, status])
+}
+
+model WorkMilestone {
+  id             String    @id @default(cuid())
+  assignmentId   String
+  seq            Int
+  title          String
+  amountKori     Int
+  /// work | reimbursement
+  kind           String    @default("work")
+  /// pending | submitted | accepted | refunded | disputed
+  status         String    @default("pending")
+  submittedAt    DateTime?
+  acceptDeadline DateTime?
+  acceptedAt     DateTime?
+  /// user id | auto | ruling
+  acceptedBy     String?
+
+  @@unique([assignmentId, seq])
+  @@index([status, acceptDeadline])
+}
+
+/// Append-only (DB guard).
+model WorkEvidence {
+  id           String   @id @default(cuid())
+  assignmentId String
+  milestoneId  String?
+  disputeId    String?
+  byUserId     String
+  /// worker | business | operator
+  role         String
+  /// note | photo_ref | document_ref | attendance | receipt_ref
+  kind         String
+  content      String
+  createdAt    DateTime @default(now())
+
+  @@index([assignmentId, createdAt])
+  @@index([disputeId])
+}
+
+/// Counterpart-issued, single-use, bound code (attendance check-in / check-out).
+model WorkChallenge {
+  id           String    @id @default(cuid())
+  assignmentId String
+  /// checkin | checkout
+  purpose      String
+  codeHash     String
+  issuedBy     String
+  expiresAt    DateTime
+  usedAt       DateTime?
+  attempts     Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  @@index([assignmentId, purpose])
+}
+
+/// J9: a FUNDED earning (value already sits in worker:<id>:earnings or work_business:<id>:earnings).
+/// accrued → releasable (after hold, no open dispute) → paid; accrued | releasable → reversed (ruling, maker/checker).
+model WorkEarning {
+  id              String    @id @default(cuid())
+  /// deterministic: milestone:<id> | outcome:<id> — one earning per source, ever
+  sourceKey       String    @unique
+  workerUserId    String?
+  payeeBusinessId String?
+  payerBusinessId String
+  assignmentId    String?
+  milestoneId     String?
+  ruleId          String?
+  /// contractor_payment | apprenticeship_stipend | member_work_payment | commission | service_fee | reimbursement
+  classification  String
+  amountKori      Int
+  /// accrued | releasable | paid | reversed
+  status          String    @default("accrued")
+  releasableAt    DateTime
+  paidAt          DateTime?
+  payoutReference String?   @unique
+  reversedAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([workerUserId, status])
+  @@index([payeeBusinessId, status])
+  @@index([assignmentId])
+}
+
+model WorkDispute {
+  id              String    @id @default(cuid())
+  assignmentId    String
+  milestoneId     String?
+  openedBy        String
+  /// worker | business
+  openedByRole    String
+  /// nonpayment | false_completion | terms_breach | harassment | other
+  kind            String
+  reason          String
+  /// open | awaiting_settlement | resolved
+  status          String    @default("open")
+  /// worker | business | split | finding_only
+  resolution      String?
+  splitWorkerKori Int?
+  resolvedBy      String?
+  resolvedAt      DateTime?
+  note            String?
+  settledBy       String?
+  settledAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([assignmentId, status])
+  @@index([status, createdAt])
+}
+
+/// J9: an outcome-funded rule (rep commission on a verified received first order; pickup-point fee
+/// on a verified release). Amount defaults to 0; ACTIVE only after a second business member with
+/// business.pay approves; pays only from its prefunded budget (escrow:work_rule:<id>).
+model WorkRule {
+  id            String    @id @default(cuid())
+  businessId    String
+  /// rep_first_received_order | pickup_release_fee
+  kind          String
+  amountKori    Int       @default(0)
+  minOrderKori  Int       @default(0)
+  pickupPointId String?
+  /// proposed | active | paused | ended
+  status        String    @default("proposed")
+  proposedBy    String
+  approvedBy    String?
+  approvedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([businessId, kind, status])
+}
+
+model WorkOutcome {
+  id                String   @id @default(cuid())
+  ruleId            String
+  /// rule:<id>:merchant:<id> | rule:<id>:shipment:<id> — once per outcome, ever
+  outcomeKey        String   @unique
+  sourceRef         String
+  beneficiaryUserId String?
+  beneficiaryBizId  String?
+  /// accrued | budget_exhausted | ineligible
+  status            String
+  reason            String?
+  earningId         String?
+  createdAt         DateTime @default(now())
+
+  @@index([ruleId, createdAt])
+}
+
+/// J9: feedback between the parties of a finished assignment — contestable; contested feedback is
+/// excluded from aggregates until an operator rules.
+model WorkFeedback {
+  id                String    @id @default(cuid())
+  assignmentId      String
+  /// worker | business
+  fromRole          String
+  fromUserId        String
+  subjectUserId     String?
+  subjectBusinessId String?
+  rating            Int
+  comment           String?
+  /// published | contested | upheld | removed
+  status            String    @default("published")
+  contestNote       String?
+  ruledBy           String?
+  ruledAt           DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@unique([assignmentId, fromRole])
+  @@index([subjectUserId, status])
+  @@index([subjectBusinessId, status])
+}
+
+/// A worker blocks a business from inviting / offering them (harassment protection).
+model WorkBlock {
+  id         String   @id @default(cuid())
+  userId     String
+  businessId String
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, businessId])
+}
