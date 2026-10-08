@@ -238,6 +238,60 @@ try {
     assert.equal((await prisma.wallet.findUnique({ where: { userId: c.id } })).koriBalance, before);
   });
 
+  await step('distributor: two ready shipments → one route with the driver → reconciliation view (units accounted)', async () => {
+    const a = await readyPo(api, { packs: 1 });
+    const { merchant, submit, withStepUp } = await import('../j7/fixture.js');
+    const m2 = await merchant(api, a.sup);
+    const po2 = (await submit(m2, a.sup, { packs: 1 })).body;
+    await a.sup.owner.call('POST', `businesses/${a.sup.b.id}/b2b/purchase-orders/${po2.id}/accept`, {});
+    await m2.owner.call('POST', `businesses/${m2.b.id}/b2b/purchase-orders/${po2.id}/pay`, { expectedAmountKori: po2.totalKori }, await withStepUp(m2.owner));
+    for (const to of ['preparing', 'ready']) await a.sup.owner.call('POST', `businesses/${a.sup.b.id}/b2b/purchase-orders/${po2.id}/advance`, { to });
+    for (const id of [a.po.id, po2.id]) await a.sup.owner.call('POST', `businesses/${a.sup.b.id}/b2b/purchase-orders/${id}/advance`, { to: 'fulfilment_requested', fulfilmentMode: 'seller_delivery', tracked: true });
+    const d = await fleetDriver(api, a.sup.b);
+    const dp = await sessionPage(a.sup.owner, 'distributor-2');
+    await tap(dp, 'Dispatch : expéditions & tournées');
+    await tap(dp, 'Expéditions', { exact: true });
+    await tap(dp, d.user.name ?? 'Test User');
+    const s1 = await shipmentFor(a.po.id);
+    const s2 = await shipmentFor(po2.id);
+    await dp.getByLabel(`Choisir ${s1.reference}`).filter({ visible: true }).first().click();
+    await dp.getByLabel(`Choisir ${s2.reference}`).filter({ visible: true }).first().click();
+    await tap(dp, 'Créer une tournée (2 arrêts)');
+    await see(dp, 'Tournée créée');
+    const r = await prisma.deliveryRoute.findFirst({ where: { ownerBusinessId: a.sup.b.id } });
+    assert.equal(await prisma.routeStop.count({ where: { routeId: r.id } }), 2);
+    assert.equal(await prisma.courierAssignment.count({ where: { shipmentId: { in: [s1.id, s2.id] }, courierUserId: d.id, status: 'active' } }), 2);
+    await tap(dp, 'Tournées', { exact: true });
+    await tap(dp, r.reference, { exact: false });
+    await see(dp, 'Partis : 24');
+    await see(dp, 'Non justifiés : 0');
+  });
+
+  await step('failure: the courier declares "closed", the merchant contests it in-app → no compensation possible without an operator', async () => {
+    const f = await readyPo(api, { packs: 1 });
+    await f.sup.owner.call('POST', `businesses/${f.sup.b.id}/b2b/purchase-orders/${f.po.id}/advance`, { to: 'fulfilment_requested', fulfilmentMode: 'seller_delivery', tracked: true });
+    const fs = await shipmentFor(f.po.id);
+    const d = await fleetDriver(api, f.sup.b);
+    await f.sup.owner.call('POST', `logistics/shipments/${fs.id}/assign`, { courierUserId: d.id });
+    const pc = (await f.sup.owner.call('POST', `logistics/shipments/${fs.id}/codes`, { purpose: 'pickup' })).body;
+    await d.call('POST', `logistics/shipments/${fs.id}/pickup`, { code: pc.code });
+    const dpage = await sessionPage(d, 'driver-2');
+    await tap(dpage, 'Plus', { exact: true });
+    await tap(dpage, 'Mouvement', { exact: true });
+    await tap(dpage, 'Mes livraisons attribuées');
+    await tap(dpage, fs.reference, { exact: false });
+    await tap(dpage, 'Échec de livraison');
+    await tap(dpage, 'Commerce destinataire fermé');
+    await see(dpage, 'Échec noté');
+    const mp = await sessionPage(f.m.owner, 'merchant-2');
+    await tap(mp, 'Réceptions fournisseurs à déclarer →');
+    await tap(mp, fs.reference, { exact: false });
+    await see(mp, 'Le livreur déclare : Commerce destinataire fermé');
+    await tap(mp, 'Non, je conteste');
+    await see(mp, 'Contesté');
+    assert.equal((await prisma.shipment.findUnique({ where: { id: fs.id } })).failureEvidence, 'receiver_contested');
+  });
+
   await step('no uncaught page errors in any session', async () => {
     assert.deepEqual(errors, []);
   });
