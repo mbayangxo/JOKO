@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**569 routes.** Column legend:
+**582 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -52,6 +52,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
 |---|---|---|---|---|---|---|---|---|---|
+| `POST admin/logistics/shipments/:id/failure/rule` | admin | logistics.exceptions.resolve | operator_scope |  |  |  |  | admin+identity |  |
+| `POST admin/logistics/shipments/:id/emergency-reassign` | admin | logistics.dispatch | operator_scope |  |  |  |  | admin+identity |  |
+| `POST admin/logistics/shipments/:id/handoff-code` | admin | logistics.dispatch | operator_scope |  |  |  |  | custody_challenge |  |
 | `GET admin/logistics/shipments` | admin | logistics.read | operator_scope |  |  |  |  |  |  |
 | `POST admin/logistics/shipments/:id/accept` | admin | logistics.dispatch | operator_scope |  |  |  |  | shipment_event |  |
 | `POST admin/logistics/shipments/:id/assign` | admin | logistics.dispatch | operator_scope |  |  |  |  | shipment_event |  |
@@ -343,6 +346,10 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST businesses/:id/b2b/purchase-orders/:subId/accept` | user | b2b.po.accept | party:seller business.orders.fulfill \| distribution.manage |  |  |  |  | po_event |  |
 | `POST businesses/:id/b2b/purchase-orders/:subId/reject` | user | b2b.po.reject | party:seller business.orders.fulfill \| distribution.manage |  |  |  |  | po_event |  |
 | `POST businesses/:id/b2b/purchase-orders/:subId/pay` | user | b2b.po.pay | party:buyer business.pay (business wallet → seller) |  |  | always |  | ledger+risk |  |
+| `GET businesses/:id/logistics/routes/:subId/reconciliation` | user | logistics.routes.read | business:business.fleet.dispatch; own route |  |  |  |  |  |  |
+| `GET businesses/:id/b2b/product-mappings` | user | b2b.mapping.read | business:business.inventory.adjust (buyer) |  |  |  |  |  |  |
+| `POST businesses/:id/b2b/product-mappings` | user | b2b.mapping.write | business:business.inventory.adjust (buyer); supplier product bought by this buyer; own tracked product |  |  |  |  | stock |  |
+| `POST businesses/:id/b2b/unmatched-receipts/:subId/resolve` | user | b2b.mapping.resolve | business:business.inventory.adjust (buyer); own receipt; once |  |  |  |  | stock |  |
 | `GET businesses/:id/logistics/shipments` | user | logistics.business.read | business:business.orders.read (origin) \| business.purchasing (destination) |  |  |  |  |  |  |
 | `GET businesses/:id/logistics/transfers` | user | logistics.transfers.read | business:business.orders.read |  |  |  |  |  |  |
 | `POST businesses/:id/logistics/transfers` | user | logistics.transfers.create | business:business.inventory.adjust; both locations of this business |  |  |  |  | stock |  |
@@ -567,6 +574,12 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
 |---|---|---|---|---|---|---|---|---|---|
+| `GET logistics/shipments/mine` | user | logistics.shipment.read | self: shipments addressed to me (area-level view) |  |  |  |  |  |  |
+| `POST logistics/shipments/:id/respond` | user | logistics.assignment.respond | active assigned courier; before pickup; decline returns it to dispatch |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/:id/failure/respond` | user | logistics.failure.respond | party on the claimed failure side (receiver \| source); once |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/:id/emergency-reassign` | user | logistics.shipment.emergency_reassign | business:business.fleet.dispatch of the fulfiller (own fleet); reason; new courier holds nothing until handoff |  |  |  |  | shipment_event+identity |  |
+| `POST logistics/shipments/:id/handoff-code` | user | logistics.handoff.code | previous custodian courier \| business:business.fleet.dispatch (own fleet); bound to the new courier |  |  |  |  | custody_challenge |  |
+| `POST logistics/shipments/:id/handoff` | user | logistics.handoff.accept | new active courier + handoff code; custody moves once |  |  |  |  | shipment_event |  |
 | `GET logistics/shipments/:id` | user | logistics.shipment.read | party: source \| receiver \| active courier \| dispatcher \| pickup point (role-shaped DTO; precise destination only to the active courier) |  |  |  |  |  |  |
 | `GET logistics/courier/shipments` | user | logistics.courier.read | self: own active assignments |  |  |  |  |  |  |
 | `POST logistics/shipments/:id/ready` | user | logistics.shipment.ready | party:source business.orders.fulfill |  |  |  |  | shipment_event |  |

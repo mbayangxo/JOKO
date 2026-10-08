@@ -89,8 +89,6 @@ test('tracked own-fleet delivery: verified proof, receiving with a discrepancy, 
   const bad = await x.m.owner.call('POST', `logistics/shipments/${sh.id}/receiving`, { lines: [{ productId, received: 20 }] });
   assert.equal(bad.body.code, 'quantity_mismatch');
   assert.equal((await driver.call('POST', `logistics/shipments/${sh.id}/receiving`, { lines: [{ productId, received: 24 }] })).status, 404, 'the courier cannot sign the receiving');
-  const loc = await ensurePrimaryInventoryLocation(x.m.b.id, prisma);
-  const before = await stockAt(loc.id, productId);
   const rc = ok(await x.m.owner.call('POST', `logistics/shipments/${sh.id}/receiving`, { lines: [{ productId, received: 21, damaged: 2, missing: 1 }], note: 'carton abîmé' }), 'receiving');
   assert.equal(rc.receiving.outcome, 'partial');
   assert.equal(rc.shipment.status, 'delivered');
@@ -98,7 +96,23 @@ test('tracked own-fleet delivery: verified proof, receiving with a discrepancy, 
   const again = ok(await x.m.owner.call('POST', `logistics/shipments/${sh.id}/receiving`, { lines: [{ productId, received: 24 }] }));
   assert.equal(again.replayed, true);
   assert.equal(again.receiving.outcome, 'partial', 'the first record stands; a second cannot overwrite it');
-  assert.equal((await stockAt(loc.id, productId)).onHand, before.onHand + 21, 'only received units credited, once');
+  // D40: the supplier's product id never enters the buyer's stock. Unmapped → held as an unmatched receipt.
+  const loc = await ensurePrimaryInventoryLocation(x.m.b.id, prisma);
+  assert.equal((await stockAt(loc.id, productId)).onHand, 0, 'no supplier product in any buyer stock position');
+  const um = ok(await x.m.owner.call('GET', `businesses/${x.m.b.id}/b2b/product-mappings`));
+  assert.deepEqual(um.unmatched.map((u) => u.units), [21], 'only received units, once');
+  // The buyer maps it to its OWN product: stock +21 once; a replay changes nothing.
+  const mine = await prisma.product.create({ data: { businessId: x.m.b.id, title: 'Huile 1L (mon rayon)', price: 1700, inventory: 3, category: 'epicerie' } });
+  const foreignProduct = await prisma.product.create({ data: { businessId: x.sup.b.id, title: 'Produit du fournisseur', price: 1, inventory: 0 } });
+  assert.equal((await x.m.owner.call('POST', `businesses/${x.m.b.id}/b2b/unmatched-receipts/${um.unmatched[0].id}/resolve`, { buyerProductId: foreignProduct.id })).status, 404, 'cannot map into another business’s product');
+  const outsider2 = await signedIn(api, await customer());
+  assert.equal((await outsider2.call('POST', `businesses/${x.m.b.id}/b2b/unmatched-receipts/${um.unmatched[0].id}/resolve`, { buyerProductId: mine.id })).status, 404);
+  ok(await x.m.owner.call('POST', `businesses/${x.m.b.id}/b2b/unmatched-receipts/${um.unmatched[0].id}/resolve`, { buyerProductId: mine.id }), 'resolve');
+  assert.equal((await x.m.owner.call('POST', `businesses/${x.m.b.id}/b2b/unmatched-receipts/${um.unmatched[0].id}/resolve`, { buyerProductId: mine.id })).body.replayed, true);
+  assert.equal((await prisma.product.findUnique({ where: { id: mine.id } })).inventory, 24, '3 + 21, once');
+  const st = ok(await x.m.owner.call('GET', `businesses/${x.m.b.id}/b2b/product-mappings`));
+  assert.deepEqual(st.mappings.map((m) => m.buyerProductId), [mine.id], 'remembered for future deliveries');
+  assert.equal(st.unmatched.length, 0);
 
   const po = await prisma.purchaseOrder.findUnique({ where: { id: x.po.id } });
   assert.equal(po.status, 'disputed');
@@ -145,7 +159,8 @@ test('untracked seller delivery keeps the J7 seller-recorded path (honestly labe
   ok(await adv(x, { to: 'fulfilment_requested', fulfilmentMode: 'seller_delivery' }));
   assert.equal(await shipmentFor(x.po.id), null);
   const d = ok(await adv(x, { to: 'delivered' }));
-  assert.equal(d.deliveryRecordedBy, 'seller');
+  assert.equal(d.deliveryRecordedBy, 'seller_self_reported');
+  assert.equal(d.deliveryVerified, false);
   const y = await readyPo(api, { packs: 1 });
   ok(await adv(y, { to: 'fulfilment_requested', fulfilmentMode: 'third_party', tracked: true }));
   assert.equal(await shipmentFor(y.po.id), null);

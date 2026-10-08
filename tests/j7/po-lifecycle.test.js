@@ -98,7 +98,8 @@ test('due-now PO: server price, idempotent submit, accept reserves depot stock, 
   const early = await m.owner.call('POST', `businesses/${m.b.id}/b2b/purchase-orders/${po.body.id}/buyer`, { action: 'receive' });
   assert.equal(early.body.code, 'invalid_state');
   const del = await sup.owner.call('POST', `businesses/${sup.b.id}/b2b/purchase-orders/${po.body.id}/advance`, { to: 'delivered' });
-  assert.equal(del.body.deliveryRecordedBy, 'seller');
+  assert.equal(del.body.deliveryRecordedBy, 'seller_self_reported');
+  assert.equal(del.body.deliveryVerified, false, 'D34: a seller’s own record is never presented as proof');
   const rcv = await clerk.call('POST', `businesses/${m.b.id}/b2b/purchase-orders/${po.body.id}/buyer`, { action: 'receive' });
   assert.equal(rcv.body.status, 'received');
   const done = await clerk.call('POST', `businesses/${m.b.id}/b2b/purchase-orders/${po.body.id}/buyer`, { action: 'complete' });

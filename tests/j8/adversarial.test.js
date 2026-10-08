@@ -18,7 +18,6 @@ import { redactPreciseDestinations } from '../../lib/logistics/shipments.js';
 import { runMoneyTransaction } from '../../lib/wallet-atomic.js';
 import { business, customer, operator, signedIn } from '../j3/helpers.js';
 import { fleetDriver, jokkoCourier, member, readyPo, shipmentFor, stockAt } from './fixture.js';
-import { ensurePrimaryInventoryLocation } from '../../lib/business/identity.js';
 
 let api;
 before(async () => { api = await startApiServer({ JOKKO_LOGISTICS_ENABLED: 'true' }); });
@@ -51,12 +50,11 @@ test('concurrency: parallel pickups with one code → one handoff; parallel rece
   assert.ok(ps.some((r) => r.status === 200 && !r.body.replayed));
   assert.equal(await prisma.shipmentEvent.count({ where: { shipmentId: x.sh.id, toStatus: 'picked_up' } }), 1);
   ok(await x.driver.call('POST', `logistics/shipments/${x.sh.id}/step`, { step: 'arrive_delivery' }));
-  const loc = await ensurePrimaryInventoryLocation(x.m.b.id, prisma);
-  const before = (await stockAt(loc.id, x.sup.product.id)).onHand;
   const rs = await Promise.all(Array.from({ length: 6 }, () => x.m.owner.call('POST', `logistics/shipments/${x.sh.id}/receiving`, { lines: [{ productId: x.sup.product.id, received: 24 }] })));
   assert.ok(rs.every((r) => r.status < 500), JSON.stringify(rs.map((r) => [r.status, r.body.code])));
   assert.equal(await prisma.receivingRecord.count({ where: { shipmentId: x.sh.id } }), 1);
-  assert.equal((await stockAt(loc.id, x.sup.product.id)).onHand, before + 24);
+  const held = await prisma.unmatchedReceipt.findMany({ where: { shipmentId: x.sh.id } });
+  assert.equal(held.reduce((n, r) => n + r.units, 0), 24, 'received once (held unmatched until the buyer maps it)');
   assert.equal(await prisma.shipmentEvent.count({ where: { shipmentId: x.sh.id, toStatus: 'delivered' } }), 1);
 });
 
@@ -197,13 +195,11 @@ test('invariant checker detects tampering (inside a rolled-back transaction)', a
   ok(await x.driver.call('POST', `logistics/shipments/${x.sh.id}/pickup`, { code: pc.code }));
   ok(await x.driver.call('POST', `logistics/shipments/${x.sh.id}/step`, { step: 'arrive_delivery' }));
   ok(await x.m.owner.call('POST', `logistics/shipments/${x.sh.id}/receiving`, { lines: [{ productId: x.sup.product.id, received: 12 }] }));
-  const loc = await ensurePrimaryInventoryLocation(x.m.b.id, prisma);
   const sh = await prisma.shipment.findUnique({ where: { id: x.sh.id } });
   const ROLLBACK = new Error('rollback');
   let seen;
   await prisma.$transaction(async (tx) => {
-    const { moveDepotStockInTx } = await import('../../lib/b2b/depot.js');
-    await moveDepotStockInTx(tx, { locationId: loc.id, productId: x.sup.product.id, deltaOnHand: 12, reason: 'receive_shipment', note: sh.reference });
+    await tx.unmatchedReceipt.create({ data: { buyerBusinessId: x.m.b.id, sellerBusinessId: x.sup.b.id, sellerProductId: 'phantom', units: 12, shipmentId: sh.id, shipmentRef: sh.reference } });
     await tx.courierAssignment.updateMany({ where: { shipmentId: sh.id }, data: { status: 'active' } });
     seen = await checkLogisticsInvariants(tx);
     throw ROLLBACK;

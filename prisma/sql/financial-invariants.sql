@@ -189,3 +189,24 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS "Shipment_guard" ON "Shipment";
 CREATE TRIGGER "Shipment_guard" BEFORE INSERT OR UPDATE OR DELETE ON "Shipment"
   FOR EACH ROW EXECUTE FUNCTION joko_shipment_guard();
+
+-- J8 pilot: an unmatched receipt is resolved once (pending → mapped), never deleted, units never change.
+CREATE OR REPLACE FUNCTION joko_unmatched_receipt_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'UnmatchedReceipt rows are never deleted' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.units <> OLD.units OR NEW."shipmentId" <> OLD."shipmentId" OR NEW."sellerProductId" <> OLD."sellerProductId" OR NEW."buyerBusinessId" <> OLD."buyerBusinessId" THEN
+    RAISE EXCEPTION 'UnmatchedReceipt %: facts are immutable', OLD.id USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF OLD.status = 'mapped' THEN
+    RAISE EXCEPTION 'UnmatchedReceipt %: already mapped', OLD.id USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "UnmatchedReceipt_guard" ON "UnmatchedReceipt";
+CREATE TRIGGER "UnmatchedReceipt_guard" BEFORE UPDATE OR DELETE ON "UnmatchedReceipt"
+  FOR EACH ROW EXECUTE FUNCTION joko_unmatched_receipt_guard();
+ALTER TABLE "UnmatchedReceipt" DROP CONSTRAINT IF EXISTS "UnmatchedReceipt_units_check";
+ALTER TABLE "UnmatchedReceipt" ADD CONSTRAINT "UnmatchedReceipt_units_check" CHECK ("units" > 0);

@@ -4033,6 +4033,10 @@ model Shipment {
   deliveryProof     String?
   deliveredAt       DateTime?
   failureReason     String?
+  /// J8 pilot (D37): evidence for the failure side — receiver_confirmed | receiver_contested | operator_confirmed | operator_rejected
+  failureEvidence   String?
+  failureEvidenceBy String?
+  failureEvidenceAt DateTime?
   routeId           String?
   /// destination snapshot for the assigned courier; precise fields redacted after the retention window
   destArea          String?
@@ -4088,6 +4092,8 @@ model CourierAssignment {
   status         String    @default("active")
   assignedBy     String
   assignedByType String
+  /// J8 pilot: the courier accepted the offered assignment (null = offered, not yet accepted)
+  acceptedAt     DateTime?
   endedAt        DateTime?
   endReason      String?
   createdAt      DateTime  @default(now())
@@ -4212,4 +4218,39 @@ model RouteStop {
   shipmentId String @unique
 
   @@index([routeId, sequence])
+}
+
+/// J8 pilot (D40): a buyer's explicit mapping of a supplier's product to the buyer's OWN catalogue product.
+model BuyerProductMapping {
+  id               String   @id @default(cuid())
+  buyerBusinessId  String
+  sellerBusinessId String
+  sellerProductId  String
+  buyerProductId   String
+  createdBy        String
+  createdAt        DateTime @default(now())
+
+  @@unique([buyerBusinessId, sellerProductId])
+  @@index([buyerProductId])
+}
+
+/// J8 pilot (D40): goods physically received but not yet matched to the buyer's catalogue — never in any stock position until mapped.
+model UnmatchedReceipt {
+  id               String    @id @default(cuid())
+  buyerBusinessId  String
+  sellerBusinessId String
+  sellerProductId  String
+  sku              String?
+  units            Int
+  shipmentId       String
+  shipmentRef      String
+  /// pending → mapped
+  status           String    @default("pending")
+  buyerProductId   String?
+  resolvedBy       String?
+  resolvedAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@unique([shipmentId, sellerProductId])
+  @@index([buyerBusinessId, status])
 }

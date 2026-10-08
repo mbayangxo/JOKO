@@ -19,7 +19,8 @@ import { bizBal } from '../j7/fixture.js';
 import { jokkoCourier, readyPo, shipmentFor } from './fixture.js';
 
 let api;
-before(async () => { api = await startApiServer({ JOKKO_LOGISTICS_ENABLED: 'true' }); });
+// TEST CONFIGURATION ONLY (D35): the default fee rule plus a 50 % receiver-side failed-attempt share.
+before(async () => { api = await startApiServer({ JOKKO_LOGISTICS_ENABLED: 'true', LOGISTICS_FEE_JSON: JSON.stringify({ local: { feeKori: 150, courierShareBps: 8000, failedAttemptBps: { receiver: 5000 } } }) }); });
 after(async () => { await api?.stop(); await prisma.$disconnect(); });
 afterEach(async () => {
   await assertInvariants(prisma);
@@ -110,23 +111,66 @@ test('cancel before pickup (ops or seller) refunds the held fee once; nothing is
   assert.equal((await prisma.purchaseOrder.findUnique({ where: { id: x.po.id } })).status, 'ready');
 });
 
-test('failure: operational (unsafe) → refund; receiver-side (merchant closed) → courier still earns; both only once the goods are back', async () => {
-  const a = await inTransit();
-  ok(await a.courier.call('POST', `logistics/shipments/${a.sh.id}/fail`, { reason: 'unsafe' }));
-  assert.equal((await prisma.fulfilmentRequest.findUnique({ where: { id: a.req.id } })).feeStatus, 'held', 'nothing settles while the courier still holds the goods');
-  ok(await a.courier.call('POST', `logistics/shipments/${a.sh.id}/return/start`, {}));
-  const rc = ok(await a.sup.owner.call('POST', `logistics/shipments/${a.sh.id}/codes`, { purpose: 'return_delivery' }));
-  ok(await a.courier.call('POST', `logistics/shipments/${a.sh.id}/return/complete`, { code: rc.code }));
-  assert.equal((await prisma.fulfilmentRequest.findUnique({ where: { id: a.req.id } })).feeStatus, 'refunded');
-  assert.equal(await bizBal(a.sup.b.id), a.sellerBefore);
+async function failAndReturn(x, reason, { respond } = {}) {
+  ok(await x.courier.call('POST', `logistics/shipments/${x.sh.id}/fail`, { reason }));
+  if (respond) await respond();
+  ok(await x.courier.call('POST', `logistics/shipments/${x.sh.id}/return/start`, {}));
+  const rc = ok(await x.sup.owner.call('POST', `logistics/shipments/${x.sh.id}/codes`, { purpose: 'return_delivery' }));
+  ok(await x.courier.call('POST', `logistics/shipments/${x.sh.id}/return/complete`, { code: rc.code }));
+  return prisma.fulfilmentRequest.findUnique({ where: { id: x.req.id } });
+}
 
+test('D37 failed attempts: a courier’s claim earns nothing; only a CONFIRMED receiver-side failure pays the configured, funded share', async () => {
+  // Operational / safety: refunded in full, nothing earned.
+  const a = await inTransit();
+  assert.equal((await failAndReturn(a, 'unsafe')).feeStatus, 'refunded');
+  assert.equal(await bizBal(a.sup.b.id), a.sellerBefore);
+  assert.equal(await prisma.courierEarning.count({ where: { shipmentId: a.sh.id } }), 0);
+
+  // Receiver-side CLAIM without confirmation: the courier cannot manufacture an earning.
   const b = await inTransit();
-  ok(await b.courier.call('POST', `logistics/shipments/${b.sh.id}/fail`, { reason: 'merchant_closed' }));
-  ok(await b.courier.call('POST', `logistics/shipments/${b.sh.id}/return/start`, {}));
-  const rc2 = ok(await b.sup.owner.call('POST', `logistics/shipments/${b.sh.id}/codes`, { purpose: 'return_delivery' }));
-  ok(await b.courier.call('POST', `logistics/shipments/${b.sh.id}/return/complete`, { code: rc2.code }));
-  assert.equal((await prisma.fulfilmentRequest.findUnique({ where: { id: b.req.id } })).feeStatus, 'released');
-  assert.equal((await prisma.courierEarning.findUnique({ where: { shipmentId: b.sh.id } })).amountKori, 120);
+  assert.equal((await failAndReturn(b, 'merchant_closed')).feeStatus, 'refunded');
+  assert.equal(await prisma.courierEarning.count({ where: { shipmentId: b.sh.id } }), 0);
+  assert.equal(await bizBal(b.sup.b.id), b.sellerBefore);
+
+  // Receiver CONFIRMS it was closed: 50 % test rate (LOGISTICS_FEE_JSON) of the held fee = 75 to the courier, 75 back to the sender.
+  const c = await inTransit();
+  const req = await failAndReturn(c, 'merchant_closed', {
+    respond: async () => {
+      assert.equal((await c.courier.call('POST', `logistics/shipments/${c.sh.id}/failure/respond`, { agree: true })).status, 404, 'the courier cannot confirm their own claim');
+      assert.equal((await c.sup.owner.call('POST', `logistics/shipments/${c.sh.id}/failure/respond`, { agree: true })).status, 404, 'the source cannot confirm a receiver-side claim');
+      ok(await c.m.owner.call('POST', `logistics/shipments/${c.sh.id}/failure/respond`, { agree: true }));
+      assert.equal((await c.m.owner.call('POST', `logistics/shipments/${c.sh.id}/failure/respond`, { agree: false })).body.code, 'already_answered');
+    },
+  });
+  assert.equal(req.feeStatus, 'released');
+  assert.equal((await prisma.courierEarning.findUnique({ where: { shipmentId: c.sh.id } })).amountKori, 75);
+  assert.equal(await bizBal(c.sup.b.id), c.sellerBefore - 75);
+
+  // Receiver CONTESTS ("I was open"), operator rules the claim unfounded: refund, nothing earned.
+  const d = await inTransit();
+  const req2 = await failAndReturn(d, 'merchant_closed', {
+    respond: async () => {
+      ok(await d.m.owner.call('POST', `logistics/shipments/${d.sh.id}/failure/respond`, { agree: false }));
+      const support = await operator(api, ['support']);
+      assert.equal((await support.call('POST', `admin/logistics/shipments/${d.sh.id}/failure/rule`, { side: 'courier', confirmed: true, note: 'boutique ouverte selon appel' })).status, 403);
+      ok(await d.ops.call('POST', `admin/logistics/shipments/${d.sh.id}/failure/rule`, { side: 'courier', confirmed: true, note: 'boutique ouverte selon appel' }));
+    },
+  });
+  assert.equal(req2.feeStatus, 'refunded');
+  assert.equal(await prisma.courierEarning.count({ where: { shipmentId: d.sh.id } }), 0);
+  assert.equal(await prisma.identityAuditEvent.count({ where: { action: 'shipment_failure_ruled', subjectId: d.sh.id } }), 1);
+
+  // A courier-side reason can never be compensated, even if "confirmed".
+  const e = await inTransit();
+  const req3 = await failAndReturn(e, 'courier_issue', {
+    respond: async () => {
+      assert.equal((await e.m.owner.call('POST', `logistics/shipments/${e.sh.id}/failure/respond`, { agree: true })).status, 404);
+      ok(await e.ops.call('POST', `admin/logistics/shipments/${e.sh.id}/failure/rule`, { side: 'courier', confirmed: true, note: 'panne de moto confirmée' }));
+    },
+  });
+  assert.equal(req3.feeStatus, 'refunded');
+  assert.equal(await prisma.courierEarning.count({ where: { shipmentId: e.sh.id } }), 0);
 });
 
 test('courier claim without receiver proof is an exception: only logistics_ops rules it; ruling delivered releases once and is audited', async () => {
