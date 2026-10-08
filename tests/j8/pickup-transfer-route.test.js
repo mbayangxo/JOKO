@@ -59,7 +59,7 @@ test('pickup point: enrollment ≠ activation; only an approved point’s operat
   const buyerC = await customer();
   const buyer = await signedIn(api, buyerC);
   const { shipment } = await runMoneyTransaction(prisma, (tx) => createRequestInTx(tx, {
-    sourceSystem: 'jokko_order', sourceId: `ord-${Date.now()}`, fulfilmentOwner: 'CUSTOMER_PICKUP', fulfillerBusinessId: shop.id, originBusinessId: shop.id,
+    sourceSystem: 'kabu', sourceId: `ord-${Date.now()}`, fulfilmentOwner: 'CUSTOMER_PICKUP', fulfillerBusinessId: shop.id, originBusinessId: shop.id,
     destinationUserId: buyerC.id, pickupPointId: point.id, lines: [], createdBy: merchantC.id,
   }));
   assert.equal((await pointOwner.call('POST', `logistics/shipments/${shipment.id}/drop`, {})).status, 404, 'an unapproved point cannot take custody');

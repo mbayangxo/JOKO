@@ -98,5 +98,8 @@
     "business:backfill-wallets": "node scripts/backfill-business-wallets.mjs",
     "kori:migrate-primary": "node scripts/migrate-kori-primary.mjs"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "shell-quote": "1.12.0"
+  }
 }

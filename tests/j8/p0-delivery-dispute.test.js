@@ -11,6 +11,8 @@ import { fundUser, prisma } from '../helpers/db.js';
 import { startApiServer } from '../helpers/http-harness.js';
 import { assertInvariants } from '../../lib/money-kernel/invariants.js';
 import { customer, operator, signedIn } from '../j3/helpers.js';
+// D41: the legacy open-claim courier marketplace is off by default; these tests cover it explicitly re-enabled.
+process.env.LEGACY_CONSUMER_DELIVERY_ENABLED = 'true';
 
 let api;
 before(async () => { api = await startApiServer({ ADMIN_API_KEY: '' }); });

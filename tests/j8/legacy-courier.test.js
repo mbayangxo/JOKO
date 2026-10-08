@@ -18,6 +18,8 @@ import { assertInvariants } from '../../lib/money-kernel/invariants.js';
 import { business, customer, signedIn } from '../j3/helpers.js';
 import { ensureBusinessWallet } from '../../lib/business-wallet-service.js';
 import { processAutoReleases } from '../../lib/delivery-service.js';
+// D41: the legacy open-claim courier marketplace is off by default; these tests cover it explicitly re-enabled.
+process.env.LEGACY_CONSUMER_DELIVERY_ENABLED = 'true';
 
 let api;
 before(async () => { api = await startApiServer(); });

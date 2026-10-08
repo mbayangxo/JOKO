@@ -28,6 +28,8 @@ import { acceptDelivery, confirmDelivery, createDeliveryTask, markDelivered, mar
 import { createTransferUndoInTx, undoTransfer } from '../../lib/transfer-undo-service.js';
 import { cancelTontine, contribute, createTontine, respondToInvitation, startTontine } from '../../lib/tontine-service.js';
 import { settleStripeDepositFromSession } from '../../lib/stripe-service.js';
+// D41: the legacy open-claim courier marketplace is off by default; these tests cover it explicitly re-enabled.
+process.env.LEGACY_CONSUMER_DELIVERY_ENABLED = 'true';
 
 const realFetch = globalThis.fetch;
 const env0 = { ...process.env };

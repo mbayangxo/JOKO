@@ -10,6 +10,8 @@ import jwt from 'jsonwebtoken';
 import { createUserWithWallet, createVerifiedDevice, establishedSessionToken, prisma } from '../helpers/db.js';
 import { approveRole } from '../../lib/identity/roles.js';
 import { freshIp, startApiServer } from '../helpers/http-harness.js';
+// D41: the legacy open-claim courier marketplace is off by default; these tests cover it explicitly re-enabled.
+process.env.LEGACY_CONSUMER_DELIVERY_ENABLED = 'true';
 
 const ACCESS_SECRET = 'http-test-access-secret-0123456789';
 let api;

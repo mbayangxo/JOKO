@@ -13,6 +13,8 @@ import {
 import { deliveriesNearby } from '../../lib/handlers.js';
 import { createUserWithWallet, mockReq, mockRes, prisma, resetReserveToWallets, createVerifiedDevice } from '../helpers/db.js';
 import { signAccessToken } from '../../api/_lib/auth.js';
+// D41: the legacy open-claim courier marketplace is off by default; these tests cover it explicitly re-enabled.
+process.env.LEGACY_CONSUMER_DELIVERY_ENABLED = 'true';
 
 after(async () => {
   await prisma.$disconnect();
