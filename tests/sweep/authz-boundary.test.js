@@ -66,6 +66,15 @@ test('dynamic: critical user routes on someone else’s objects — authorizatio
   const own = await prisma.business.create({ data: { ownerId: user.id, name: `Boundary ${crypto.randomBytes(3).toString('hex')}` } });
   await prisma.accountRole.createMany({ data: ['personal', 'driver', 'agent'].map((role) => ({ userId: user.id, role, status: 'active' })) });
   const ctx = { attackerId: user.id, attackerHandle: user.handle, ownBizId: own.id };
+  // Victim rows for every source (a fresh gate database has none of these legacy objects).
+  {
+    const victim = await createUserWithWallet({ koriBalance: 0, tier: 2 });
+    const k = crypto.randomBytes(6).toString('hex');
+    const exp = new Date(Date.now() + 15 * 60_000);
+    await prisma.agentDeposit.create({ data: { reference: `AGD-BND-${k}`, token: `bnddep${k}`, userId: victim.id, amountXof: 5000, status: 'pending', expiresAt: exp } });
+    await prisma.agentWithdrawal.create({ data: { reference: `AGW-BND-${k}`, token: `bndwd${k}`, userId: victim.id, amountXof: 5000, status: 'pending', expiresAt: exp } });
+    await prisma.paymentFund.create({ data: { userId: victim.id, name: 'Épargne' } });
+  }
   const results = [];
   const findings = [];
   for (const r of listRoutes().filter((x) => x.auth === 'user')) {
