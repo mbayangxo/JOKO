@@ -32,12 +32,12 @@ after(async () => { await api?.stop(); await prisma.$disconnect(); });
 
 const N = 40;
 /**
- * The script performs a depot's loading in seconds; a person takes many minutes.
- * The J3 per-user limiter (80 requests / minute → 15-minute block) is NOT weakened:
- * between steps the test clears its window, as the passing of real time would.
- * (Pilot finding: a very busy dispatcher on one account can hit this limit — see the report.)
+ * D42: the distributor uses BATCH endpoints and the dispatch budget — no account-wide
+ * limiter is cleared, and the test asserts at the end that no account was ever blocked.
+ * The only "time passes" step: a script enters a driver's custody codes faster than a
+ * human can (custody budget 60/min); between stops we reset that one budget window.
  */
-const pace = () => prisma.userRateLimit.deleteMany({});
+const pace = () => prisma.rateLimitBucket.deleteMany({ where: { key: { startsWith: 'user-custody:' } } });
 const ok = (r, what = '') => {
   assert.ok(r.status >= 200 && r.status < 300, `${what} ${r.status} ${JSON.stringify(r.body)}`);
   return r.body;
@@ -69,12 +69,19 @@ test('40-merchant distribution pilot: one route, 40 verified receivings, conserv
   }
   assert.equal(new Set(ms.map((x) => x.po.id)).size, N, '40 separate commercial orders');
 
+  // Accept all 40 in one batch (per-item authorization), merchants pay their own, then pick / ready / hand off in batches.
+  const batch = async (items) => {
+    const r = ok(await sup.owner.call('POST', P('purchase-orders/batch'), { items }), 'batch');
+    assert.ok(r.items.every((i) => !i.error), JSON.stringify(r.items.filter((i) => i.error).slice(0, 3)));
+  };
+  await batch(ms.map((x) => ({ poId: x.po.id, action: 'accept' })));
   for (const x of ms) {
-    await pace();
-    ok(await sup.owner.call('POST', P(`purchase-orders/${x.po.id}/accept`), {}), `accept ${x.i}`);
     if (x.term === 'due_now') ok(await x.m.owner.call('POST', `businesses/${x.m.b.id}/b2b/purchase-orders/${x.po.id}/pay`, { expectedAmountKori: x.po.totalKori }, await withStepUp(x.m.owner)), `pay ${x.i}`);
-    for (const to of ['preparing', 'ready']) ok(await sup.owner.call('POST', P(`purchase-orders/${x.po.id}/advance`), { to }), `${to} ${x.i}`);
-    ok(await sup.owner.call('POST', P(`purchase-orders/${x.po.id}/advance`), { to: 'fulfilment_requested', fulfilmentMode: 'seller_delivery', tracked: true }), `handoff ${x.i}`);
+  }
+  await batch(ms.map((x) => ({ poId: x.po.id, action: 'advance', to: 'preparing' })));
+  await batch(ms.map((x) => ({ poId: x.po.id, action: 'advance', to: 'ready' })));
+  await batch(ms.map((x) => ({ poId: x.po.id, action: 'advance', to: 'fulfilment_requested', fulfilmentMode: 'seller_delivery', tracked: true })));
+  for (const x of ms) {
     x.sh = await shipmentFor(x.po.id);
     assert.ok(x.sh, `shipment ${x.i}`);
   }
@@ -87,9 +94,10 @@ test('40-merchant distribution pilot: one route, 40 verified receivings, conserv
   assert.equal(route1.stops.filter((s) => s.assigned).length, N);
 
   // Loading: the depot gives each pickup code; a network retry (same code twice) never double-picks.
+  const codes = ok(await sup.owner.call('POST', 'logistics/shipments/batch/codes', { shipmentIds: ms.map((x) => x.sh.id), purpose: 'pickup' }), 'codes for the load');
   for (const x of ms) {
     await pace();
-    const pc = ok(await sup.owner.call('POST', `logistics/shipments/${x.sh.id}/codes`, { purpose: 'pickup' }));
+    const pc = codes.items.find((c) => c.shipmentId === x.sh.id);
     ok(await drv1.call('POST', `logistics/shipments/${x.sh.id}/pickup`, { code: pc.code }), `pickup ${x.i}`);
     if (x.i % 10 === 7) assert.equal(ok(await drv1.call('POST', `logistics/shipments/${x.sh.id}/pickup`, { code: pc.code })).replayed, true);
   }
@@ -235,6 +243,8 @@ test('40-merchant distribution pilot: one route, 40 verified receivings, conserv
   assert.equal(await prisma.paymentRecord.count({ where: { businessId: sup.b.id, sourceChannel: 'b2b_purchase_order' } }), dueNow.length, 'one payment record per due-now order');
   for (const x of dueNow) assert.equal((await prisma.purchaseOrder.findUnique({ where: { id: x.po.id } })).paymentStatus, 'paid');
 
+  // D42: a full depot day on one account never triggered the account-wide block.
+  assert.equal(await prisma.userRateLimit.count({ where: { userId: { in: [sup.owner.id, drv1.id, drv2.id] }, blockedUntil: { gt: new Date() } } }), 0, 'no account lockout');
   await assertInvariants(prisma);
   await assertLogisticsInvariants(prisma);
   process.stdout.write(`# pilot ${JSON.stringify({ merchants: N, orders: N, dispatched: dispatched1, routes: 2, receivings: recs.length, refusalReturns: refusalReturns.length, redeliveries: failed.length, depotLeft: leftDepot, route1: r1.totals })}\n`);

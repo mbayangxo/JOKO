@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**582 routes.** Column legend:
+**584 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -350,6 +350,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET businesses/:id/b2b/product-mappings` | user | b2b.mapping.read | business:business.inventory.adjust (buyer) |  |  |  |  |  |  |
 | `POST businesses/:id/b2b/product-mappings` | user | b2b.mapping.write | business:business.inventory.adjust (buyer); supplier product bought by this buyer; own tracked product |  |  |  |  | stock |  |
 | `POST businesses/:id/b2b/unmatched-receipts/:subId/resolve` | user | b2b.mapping.resolve | business:business.inventory.adjust (buyer); own receipt; once |  |  |  |  | stock |  |
+| `POST businesses/:id/b2b/purchase-orders/batch` | user | b2b.po.advance | per item: party:seller business.orders.fulfill \| distribution.manage; ≤ 60 items (D42) |  |  |  |  | po_event |  |
 | `GET businesses/:id/logistics/shipments` | user | logistics.business.read | business:business.orders.read (origin) \| business.purchasing (destination) |  |  |  |  |  |  |
 | `GET businesses/:id/logistics/transfers` | user | logistics.transfers.read | business:business.orders.read |  |  |  |  |  |  |
 | `POST businesses/:id/logistics/transfers` | user | logistics.transfers.create | business:business.inventory.adjust; both locations of this business |  |  |  |  | stock |  |
@@ -580,6 +581,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST logistics/shipments/:id/emergency-reassign` | user | logistics.shipment.emergency_reassign | business:business.fleet.dispatch of the fulfiller (own fleet); reason; new courier holds nothing until handoff |  |  |  |  | shipment_event+identity |  |
 | `POST logistics/shipments/:id/handoff-code` | user | logistics.handoff.code | previous custodian courier \| business:business.fleet.dispatch (own fleet); bound to the new courier |  |  |  |  | custody_challenge |  |
 | `POST logistics/shipments/:id/handoff` | user | logistics.handoff.accept | new active courier + handoff code; custody moves once |  |  |  |  | shipment_event |  |
+| `POST logistics/shipments/batch/codes` | user | logistics.code.issue | per item: party:source of that shipment; ≤ 60 items; each item counts against the dispatch budget (D42) |  |  |  |  | custody_challenge |  |
 | `GET logistics/shipments/:id` | user | logistics.shipment.read | party: source \| receiver \| active courier \| dispatcher \| pickup point (role-shaped DTO; precise destination only to the active courier) |  |  |  |  |  |  |
 | `GET logistics/courier/shipments` | user | logistics.courier.read | self: own active assignments |  |  |  |  |  |  |
 | `POST logistics/shipments/:id/ready` | user | logistics.shipment.ready | party:source business.orders.fulfill |  |  |  |  | shipment_event |  |
