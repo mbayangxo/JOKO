@@ -27,7 +27,7 @@
 | Check | Result |
 |---|---|
 | `test:db:setup` (schema + guards) | exit 0 |
-| `npm test` (unit → J8; 45 J8 tests) | **616 / 616** |
+| `npm test` (unit → J8; 42 J8 test cases) | **616 / 616** |
 | `money:check` (J2 I1–I21) after the suite / after load + sweeps | exit 0 / exit 0 |
 | Logistics invariants L1–L8 after the suite / after everything | ok / ok |
 | `test:load` | 3 / 3 |
@@ -239,7 +239,7 @@ The legacy "request a courier" button now explains the change and opens Récepti
 | `297f045` | four J8 screens |
 | `5e33c3e` | browser E2E, blank-app fix, accessibility fix |
 | `a5cd3f5` | E2E routes and failure |
-| `1d0e64b` | 40-merchant pilot |
+| `256ba42` | 40-merchant pilot |
 | `1dbb77e` | rehearsal for the pilot migration (**gate commit**) |
 | `dfefaf0` | design doc §17 and J9 plan (documentation only) |
 
