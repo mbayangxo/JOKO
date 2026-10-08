@@ -3945,3 +3945,269 @@ model CommercialReturn {
   @@index([sellerBusinessId, status])
   @@index([buyerBusinessId, status])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// J8 — Movement, logistics & fulfilment (docs/JOKKO-J8-LOGISTICS.md).
+// J8 is authoritative for PHYSICAL movement only: commerce (J5/J7) stays the
+// commercial record, J2 the money. They meet through references and events.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// An explicitly enrolled place that may hold parcels for collection / drop-off.
+/// Being an agent, a merchant or a distributor never makes a place a pickup point.
+model PickupPoint {
+  id                 String    @id @default(cuid())
+  operatorBusinessId String
+  /// legacy hub this point operates (hub parcels), if any
+  hubId              String?   @unique
+  addressId          String?
+  name               String
+  /// JSON array: customer_pickup | parcel_dropoff | return_dropoff
+  servicesJson       String    @default("[\"customer_pickup\"]")
+  hoursText          String?
+  capacityParcels    Int?
+  /// applied → active → suspended | closed
+  status             String    @default("applied")
+  appliedBy          String
+  decidedBy          String?
+  decidedAt          DateTime?
+  decisionReason     String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([operatorBusinessId, status])
+}
+
+/// One request to physically move goods for a commercial source. References the
+/// source (never copies the order); idempotent per (source, purpose).
+model FulfilmentRequest {
+  id                    String   @id @default(cuid())
+  reference             String   @unique
+  /// jokko_order | jokko_po | j7_return | stock_transfer | kabu | askaan | mbolo
+  sourceSystem          String
+  sourceId              String
+  /// outbound | return
+  purpose               String   @default("outbound")
+  sourceKey             String   @unique
+  /// MERCHANT_FULFILLED | DISTRIBUTOR_FULFILLED | CUSTOMER_PICKUP | JOKKO_LOGISTICS
+  fulfilmentOwner       String
+  /// business doing the moving (the seller / distributor), or null for JOKKO_LOGISTICS
+  fulfillerBusinessId   String?
+  /// local | intercity | regional
+  serviceType           String   @default("local")
+  originLocationId      String?
+  originBusinessId      String
+  destinationBusinessId String?
+  destinationUserId     String?
+  destinationAddressId  String?
+  pickupPointId         String?
+  /// none | sender | receiver
+  feePayer              String   @default("none")
+  feeKori               Int      @default(0)
+  courierEarningKori    Int      @default(0)
+  /// none | held | released | refunded
+  feeStatus             String   @default("none")
+  status                String   @default("open")
+  createdBy             String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([fulfillerBusinessId, status])
+  @@index([originBusinessId, createdAt])
+  @@index([destinationBusinessId, createdAt])
+}
+
+model Shipment {
+  id                String    @id @default(cuid())
+  reference         String    @unique
+  requestId         String
+  /// requested | accepted | ready_for_pickup | assigned | pickup_arrived | picked_up | in_transit
+  /// | delivery_arrived | delivered | delivery_failed | delivery_exception | return_requested
+  /// | return_in_transit | returned | cancelled
+  status            String
+  /// source | courier | receiver | pickup_point
+  custody           String    @default("source")
+  custodianUserId   String?
+  /// receiver_challenge | receiver_receiving | pickup_point_release | operator_ruling
+  deliveryProof     String?
+  deliveredAt       DateTime?
+  failureReason     String?
+  routeId           String?
+  /// destination snapshot for the assigned courier; precise fields redacted after the retention window
+  destArea          String?
+  destPrecise       String?
+  destLat           Float?
+  destLng           Float?
+  preciseRedactedAt DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([requestId])
+  @@index([status, updatedAt])
+  @@index([routeId])
+}
+
+model ShipmentPackage {
+  id          String  @id @default(cuid())
+  shipmentId  String
+  reference   String  @unique
+  /// JSON [{productId, sku, units}] — contents by reference, no PII
+  linesJson   String
+  weightGrams Int?
+  dimsCm      String?
+  handling    String?
+
+  @@index([shipmentId])
+}
+
+/// Append-only physical history (DB trigger). A shipment is delivered at most once (partial unique index).
+model ShipmentEvent {
+  id            String   @id @default(cuid())
+  shipmentId    String
+  fromStatus    String?
+  toStatus      String
+  custodyBefore String?
+  custodyAfter  String?
+  actorType     String
+  actorId       String?
+  evidence      String?
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@index([shipmentId, createdAt])
+}
+
+/// At most one ACTIVE assignment per shipment (partial unique index).
+model CourierAssignment {
+  id             String    @id @default(cuid())
+  shipmentId     String
+  courierUserId  String
+  /// jokko_courier | fleet_driver
+  courierKind    String
+  status         String    @default("active")
+  assignedBy     String
+  assignedByType String
+  endedAt        DateTime?
+  endReason      String?
+  createdAt      DateTime  @default(now())
+
+  @@index([shipmentId, status])
+  @@index([courierUserId, status])
+}
+
+/// Purpose-bound, single-use, short-lived custody code bound to one shipment AND one counterpart.
+model CustodyChallenge {
+  id          String    @id @default(cuid())
+  shipmentId  String
+  /// pickup | delivery | collection | return_pickup | return_delivery
+  purpose     String
+  codeHash    String
+  issuedBy    String
+  boundUserId String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  usedBy      String?
+  attempts    Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([shipmentId, purpose])
+}
+
+/// Receiver's own record of what arrived. Append-only; inventory moves only from these.
+model ReceivingRecord {
+  id                 String   @id @default(cuid())
+  shipmentId         String   @unique
+  receiverBusinessId String?
+  receiverUserId     String
+  /// full | partial | damaged | refused | missing
+  outcome            String
+  /// JSON [{productId, sku, expected, received, damaged, missing, refused}]
+  linesJson          String
+  note               String?
+  createdAt          DateTime @default(now())
+}
+
+model StockTransfer {
+  id             String    @id @default(cuid())
+  reference      String    @unique
+  businessId     String
+  fromLocationId String
+  toLocationId   String
+  linesJson      String
+  status         String    @default("draft")
+  createdBy      String
+  dispatchedAt   DateTime?
+  receivedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([businessId, status])
+}
+
+/// Funded courier earning for ONE verified delivery (unique per shipment).
+model CourierEarning {
+  id              String    @id @default(cuid())
+  shipmentId      String    @unique
+  courierUserId   String
+  amountKori      Int
+  /// accrued → releasable → paid | reversed
+  status          String    @default("accrued")
+  releasableAt    DateTime
+  paidAt          DateTime?
+  payoutReference String?   @unique
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([courierUserId, status])
+}
+
+model ShipmentDispute {
+  id           String    @id @default(cuid())
+  shipmentId   String    @unique
+  openedBy     String
+  openedByRole String
+  reason       String
+  status       String    @default("open")
+  resolution   String?
+  resolvedBy   String?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+/// Append-only evidence (DB trigger).
+model ShipmentDisputeEvidence {
+  id        String   @id @default(cuid())
+  disputeId String
+  userId    String
+  role      String
+  kind      String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([disputeId])
+}
+
+/// A planned delivery run (manual planning is legitimate; no optimizer).
+model DeliveryRoute {
+  id              String   @id @default(cuid())
+  reference       String   @unique
+  ownerBusinessId String
+  depotLocationId String?
+  serviceDate     DateTime
+  driverUserId    String?
+  status          String   @default("planned")
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([ownerBusinessId, serviceDate])
+}
+
+model RouteStop {
+  id         String @id @default(cuid())
+  routeId    String
+  sequence   Int
+  shipmentId String @unique
+
+  @@index([routeId, sequence])
+}

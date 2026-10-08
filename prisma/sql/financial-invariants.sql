@@ -139,3 +139,53 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS "PurchaseOrder_guard" ON "PurchaseOrder";
 CREATE TRIGGER "PurchaseOrder_guard" BEFORE UPDATE OR DELETE ON "PurchaseOrder"
   FOR EACH ROW EXECUTE FUNCTION joko_purchase_order_guard();
+
+-- J8: physical custody invariants, enforced by the database.
+-- Shipment / receiving / dispute-evidence history is append-only.
+DROP TRIGGER IF EXISTS "ShipmentEvent_append_only" ON "ShipmentEvent";
+CREATE TRIGGER "ShipmentEvent_append_only" BEFORE UPDATE OR DELETE ON "ShipmentEvent"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+DROP TRIGGER IF EXISTS "ReceivingRecord_append_only" ON "ReceivingRecord";
+CREATE TRIGGER "ReceivingRecord_append_only" BEFORE UPDATE OR DELETE ON "ReceivingRecord"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+DROP TRIGGER IF EXISTS "ShipmentDisputeEvidence_append_only" ON "ShipmentDisputeEvidence";
+CREATE TRIGGER "ShipmentDisputeEvidence_append_only" BEFORE UPDATE OR DELETE ON "ShipmentDisputeEvidence"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+
+-- A shipment is delivered at most once; at most one active courier assignment per shipment.
+CREATE UNIQUE INDEX IF NOT EXISTS "ShipmentEvent_one_delivery" ON "ShipmentEvent" ("shipmentId") WHERE "toStatus" = 'delivered';
+CREATE UNIQUE INDEX IF NOT EXISTS "CourierAssignment_one_active" ON "CourierAssignment" ("shipmentId") WHERE "status" = 'active';
+
+ALTER TABLE "CourierEarning" DROP CONSTRAINT IF EXISTS "CourierEarning_amount_check";
+ALTER TABLE "CourierEarning" ADD CONSTRAINT "CourierEarning_amount_check" CHECK ("amountKori" > 0);
+ALTER TABLE "FulfilmentRequest" DROP CONSTRAINT IF EXISTS "FulfilmentRequest_fee_check";
+ALTER TABLE "FulfilmentRequest" ADD CONSTRAINT "FulfilmentRequest_fee_check" CHECK ("feeKori" >= 0 AND "courierEarningKori" >= 0 AND "courierEarningKori" <= "feeKori");
+
+-- Status ⇒ custody: one custodian at a time, consistent with the physical state; terminal states are final.
+CREATE OR REPLACE FUNCTION joko_shipment_guard() RETURNS trigger AS $$
+DECLARE expected TEXT;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'Shipment rows are never deleted' USING ERRCODE = 'restrict_violation';
+  END IF;
+  expected := CASE
+    WHEN NEW.status IN ('requested','accepted','ready_for_pickup','assigned','pickup_arrived','cancelled','returned') THEN 'source'
+    WHEN NEW.status IN ('picked_up','in_transit','delivery_arrived','delivery_failed','delivery_exception','return_requested','return_in_transit') THEN 'courier'
+    WHEN NEW.status = 'at_pickup_point' THEN 'pickup_point'
+    WHEN NEW.status = 'delivered' THEN 'receiver'
+    ELSE NULL END;
+  IF expected IS NULL THEN
+    RAISE EXCEPTION 'Shipment %: unknown status %', NEW.id, NEW.status USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.custody <> expected THEN
+    RAISE EXCEPTION 'Shipment %: status % requires custody %, got %', NEW.id, NEW.status, expected, NEW.custody USING ERRCODE = 'check_violation';
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.status IN ('delivered','returned','cancelled') AND NEW.status <> OLD.status THEN
+    RAISE EXCEPTION 'Shipment %: % is final', OLD.id, OLD.status USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "Shipment_guard" ON "Shipment";
+CREATE TRIGGER "Shipment_guard" BEFORE INSERT OR UPDATE OR DELETE ON "Shipment"
+  FOR EACH ROW EXECUTE FUNCTION joko_shipment_guard();
