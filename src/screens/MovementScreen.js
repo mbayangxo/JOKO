@@ -490,8 +490,30 @@ export default function MovementScreen({ navigation, route }) {
           showsVerticalScrollIndicator={false}
         >
           {mode === 'drive' ? (
+            <View style={styles.panel}>
+              {/* J8: verified, ASSIGNED deliveries — the open-claim courier marketplace is closed to new requests (D41). */}
+              <PressScale scaleTo={0.98} onPress={() => navigation.navigate('CourierWork')} style={styles.postBtn}>
+                <Text style={styles.postBtnIcon}>🛵</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.postBtnTitle}>Mes livraisons attribuées</Text>
+                  <Text style={styles.postBtnSub}>Codes d’enlèvement et de livraison · gains et retenues</Text>
+                </View>
+              </PressScale>
+              <PressScale scaleTo={0.98} onPress={() => navigation.navigate('Deliveries')} style={styles.postBtn}>
+                <Text style={styles.postBtnIcon}>📦</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.postBtnTitle}>Mes réceptions</Text>
+                  <Text style={styles.postBtnSub}>Ce qui arrive pour moi ou mon commerce</Text>
+                </View>
+              </PressScale>
+            </View>
+          ) : null}
+          {mode === 'drive' ? (
             <DrivePanel
-              onRequestCourier={() => setCourierSheetOpen(true)}
+              onRequestCourier={() => {
+                showToast('Les courses libres sont fermées : la livraison se demande avec ta commande, et elle est prouvée par ton code.');
+                navigation.navigate('Deliveries');
+              }}
               refreshKey={refreshKey}
               navigation={navigation}
               coords={riderCoords}

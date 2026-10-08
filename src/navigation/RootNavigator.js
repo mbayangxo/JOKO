@@ -14,6 +14,10 @@ import PayMerchantScreen from '../screens/PayMerchantScreen';
 import CashScreen from '../screens/CashScreen';
 import MoreActionsScreen from '../screens/MoreActionsScreen';
 import MovementScreen from '../screens/MovementScreen';
+import ShipmentScreen from '../screens/ShipmentScreen';
+import CourierWorkScreen from '../screens/CourierWorkScreen';
+import DeliveriesScreen from '../screens/DeliveriesScreen';
+import DispatchScreen from '../screens/DispatchScreen';
 import WorkerProfileScreen from '../screens/WorkerProfileScreen';
 import NuLekkScreen from '../screens/NuLekkScreen';
 import ReceiveScreen from '../screens/ReceiveScreen';
@@ -201,6 +205,10 @@ export default function RootNavigator() {
       <Stack.Screen name="Cash" component={CashScreen} />
       <Stack.Screen name="MoreActions" component={MoreActionsScreen} />
       <Stack.Screen name="Movement" component={MovementScreen} />
+      <Stack.Screen name="Shipment" component={ShipmentScreen} />
+      <Stack.Screen name="CourierWork" component={CourierWorkScreen} />
+      <Stack.Screen name="Deliveries" component={DeliveriesScreen} />
+      <Stack.Screen name="Dispatch" component={DispatchScreen} />
       <Stack.Screen name="WorkerProfile" component={WorkerProfileScreen} />
       <Stack.Screen name="NuLekk" component={NuLekkScreen} />
       <Stack.Screen name="Receive" component={ReceiveScreen} />

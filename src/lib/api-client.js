@@ -1775,3 +1775,51 @@ export const payRestockOrder = (businessId, poId, expectedAmountKori, { stepUpTo
   apiFetch(b2b(businessId, `purchase-orders/${encodeURIComponent(poId)}/pay`), { method: 'POST', body: { expectedAmountKori }, stepUpToken, idempotencyKey, skipCache: true });
 export const receiveRestockOrder = (businessId, poId, action = 'receive') =>
   apiFetch(b2b(businessId, `purchase-orders/${encodeURIComponent(poId)}/buyer`), { method: 'POST', body: { action }, skipCache: true });
+
+/* ── J8 logistics (lib/logistics/* on the server; every action is an authorized server transition) ── */
+const lg = (path) => `/api/logistics/${path}`;
+const shp = (id, action = '') => lg(`shipments/${encodeURIComponent(id)}${action ? `/${action}` : ''}`);
+const bizLg = (businessId, path) => `/api/businesses/${encodeURIComponent(businessId)}/logistics/${path}`;
+const post = (path, body = {}, opts = {}) => apiFetch(path, { method: 'POST', body, skipCache: true, ...opts });
+
+export const getShipment = (id) => apiFetch(shp(id), { skipCache: true });
+export const getMyShipments = () => apiFetch(lg('shipments/mine'), { skipCache: true });
+export const getCourierShipments = (cursor) => apiFetch(lg(`courier/shipments${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`), { skipCache: true });
+export const getBusinessShipments = (businessId, { side = 'origin', status, cursor } = {}) =>
+  apiFetch(bizLg(businessId, `shipments?side=${side}${status ? `&status=${encodeURIComponent(status)}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`), { skipCache: true });
+export const respondToAssignment = (id, accept, reason) => post(shp(id, 'respond'), { accept, ...(reason ? { reason } : {}) });
+export const issueShipmentCode = (id, purpose) => post(shp(id, 'codes'), { purpose });
+export const courierPickupShipment = (id, code, idempotencyKey) => post(shp(id, 'pickup'), { code }, { idempotencyKey });
+export const courierShipmentStep = (id, step) => post(shp(id, 'step'), { step });
+export const courierDeliverShipment = (id, code, idempotencyKey) => post(shp(id, 'deliver'), { code }, { idempotencyKey });
+export const courierFailShipment = (id, reason, note) => post(shp(id, 'fail'), { reason, ...(note ? { note } : {}) });
+export const courierShipmentException = (id, note) => post(shp(id, 'exception'), { note });
+export const courierReturnStart = (id) => post(shp(id, 'return/start'));
+export const courierReturnComplete = (id, code, idempotencyKey) => post(shp(id, 'return/complete'), { code }, { idempotencyKey });
+export const acceptShipmentHandoff = (id, code) => post(shp(id, 'handoff'), { code });
+export const issueHandoffCode = (id) => post(shp(id, 'handoff-code'));
+export const recordShipmentReceiving = (id, lines, note, idempotencyKey) => post(shp(id, 'receiving'), { lines, ...(note ? { note } : {}) }, { idempotencyKey });
+export const respondToShipmentFailure = (id, agree) => post(shp(id, 'failure/respond'), { agree });
+export const releaseShipmentCollection = (id, code) => post(shp(id, 'release'), { code });
+export const dropShipmentAtPoint = (id) => post(shp(id, 'drop'));
+export const cancelShipment = (id, reason) => post(shp(id, 'cancel'), { reason });
+export const assignShipmentCourier = (id, courierUserId) => post(shp(id, 'assign'), { courierUserId });
+export const unassignShipmentCourier = (id, reason) => post(shp(id, 'unassign'), { reason });
+export const emergencyReassignShipment = (id, courierUserId, reason) => post(shp(id, 'emergency-reassign'), { courierUserId, reason });
+export const openShipmentDispute = (id, reason) => post(shp(id, 'dispute'), { reason });
+export const getShipmentDispute = (disputeId) => apiFetch(lg(`disputes/${encodeURIComponent(disputeId)}`), { skipCache: true });
+export const addShipmentDisputeEvidence = (disputeId, content, kind = 'note') => post(lg(`disputes/${encodeURIComponent(disputeId)}/evidence`), { content, kind });
+export const getCourierEarnings = () => apiFetch(lg('earnings'), { skipCache: true });
+export const payoutCourierEarnings = (idempotencyKey) => post(lg('earnings/payout'), {}, { idempotencyKey });
+export const createDeliveryRoute = (businessId, body) => post(bizLg(businessId, 'routes'), body);
+export const listDeliveryRoutes = (businessId) => apiFetch(bizLg(businessId, 'routes'), { skipCache: true });
+export const getRouteReconciliation = (businessId, routeId) => apiFetch(bizLg(businessId, `routes/${encodeURIComponent(routeId)}/reconciliation`), { skipCache: true });
+/* seller side of J7 purchase orders, for the distributor's dispatch desk */
+export const listSellerOrders = (businessId) => apiFetch(b2b(businessId, 'purchase-orders?side=seller'), { skipCache: true });
+export const getPurchaseOrder = (businessId, poId) => apiFetch(b2b(businessId, `purchase-orders/${encodeURIComponent(poId)}`), { skipCache: true });
+export const acceptSellerOrder = (businessId, poId) => apiFetch(b2b(businessId, `purchase-orders/${encodeURIComponent(poId)}/accept`), { method: 'POST', body: {}, skipCache: true });
+export const advanceSellerOrder = (businessId, poId, body) => apiFetch(b2b(businessId, `purchase-orders/${encodeURIComponent(poId)}/advance`), { method: 'POST', body, skipCache: true });
+/* D40 buyer catalogue mapping */
+export const getProductMappings = (businessId) => apiFetch(b2b(businessId, 'product-mappings'), { skipCache: true });
+export const resolveUnmatchedReceipt = (businessId, receiptId, buyerProductId) =>
+  apiFetch(b2b(businessId, `unmatched-receipts/${encodeURIComponent(receiptId)}/resolve`), { method: 'POST', body: { buyerProductId }, skipCache: true });
