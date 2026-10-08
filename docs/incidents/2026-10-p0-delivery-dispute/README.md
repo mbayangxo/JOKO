@@ -122,6 +122,8 @@ No other reachable money-moving route with this bypass was found in the live cod
 | 2026-10-08 | Vercel `list_deployments` (project `prj_lOUwSQp2PPi8Bhe1tA1jjrKXdiYt`, target production) | **403 forbidden** for scope `mbayangxos-projects`; the connector's token has no team access (`list_teams` returns none) |
 | 2026-10-08 | Vercel CLI | not installed in this session |
 
+| 2026-10-08 (after the owner's written deployment authorization) | Vercel `list_teams` / `get_project` (`prj_lOUwSQp2PPi8Bhe1tA1jjrKXdiYt`, team `team_DuHLYw71m5ATHKdtGSur1Diw`) | `list_teams` returns no teams; `get_project` **403 forbidden** for scope `mbayangxos-projects`. **Deployment authorized but NOT performed**: the live deployment cannot be verified (authorization step 1). |
+
 **Needed before deployment:**
 1. Reconnect the Vercel connector with access to the `mbayangxos-projects` team.
 2. Confirm which deployment serves production (expected `7d262de`).
