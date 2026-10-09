@@ -1281,6 +1281,7 @@ export function getNotificationsFeed({ category, before } = {}) {
   if (before) q.set('before', before);
   return apiFetch(`/api/notifications/feed${q.toString() ? `?${q}` : ''}`, { skipCache: true });
 }
+export const getToday = () => apiFetch('/api/me/today', { skipCache: true });
 export const getUnreadNotifications = () => apiFetch('/api/notifications/unread', { skipCache: true });
 export const markAllNotificationsRead = (category) => apiFetch('/api/notifications/read-all', { method: 'POST', body: category ? { category } : {}, skipCache: true });
 export const getCommunitySettings = () => apiFetch('/api/me/community-settings', { skipCache: true });

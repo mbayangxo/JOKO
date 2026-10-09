@@ -2,7 +2,7 @@ import { Animated, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useState } from 'react';
-import { getUnreadNotifications } from '../lib/api-client';
+import { getToday, getUnreadNotifications } from '../lib/api-client';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import ScreenBackground from '../components/ScreenBackground';
@@ -64,10 +64,12 @@ export default function HomeScreen({ navigation }) {
 
   // J10: the bell only signals something real (unread, not muted) — no permanent attention dot.
   const [unread, setUnread] = useState(0);
+  const [todayCount, setTodayCount] = useState(null);
   useFocusEffect(
     useCallback(() => {
       refreshWallet().catch(() => {});
       getUnreadNotifications().then((u) => setUnread(u?.total ?? 0)).catch(() => setUnread(0));
+      getToday().then((t) => setTodayCount(t?.items?.length ?? 0)).catch(() => setTodayCount(null));
     }, [refreshWallet]),
   );
 
@@ -127,6 +129,14 @@ export default function HomeScreen({ navigation }) {
             ))}
           </View>
 
+          <PressScale scaleTo={0.97} onPress={() => open('Today')} style={[styles.walletCard, { marginBottom: spacing.md }]} accessibilityLabel="Aujourd'hui : ce qui t'attend">
+            <Text style={{ fontSize: 22 }}>📋</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.todayTitle}>Aujourd'hui</Text>
+              <Text style={styles.todaySub}>{todayCount == null ? 'Ce qui t’attend' : todayCount === 0 ? 'Rien ne t’attend' : `${todayCount} chose${todayCount > 1 ? 's' : ''} t’attend${todayCount > 1 ? 'ent' : ''}`}</Text>
+            </View>
+          </PressScale>
+
           <PressScale scaleTo={0.97} onPress={() => open('Wallet')} style={styles.walletCard}>
             <Animated.View style={[styles.walletIcon, { opacity: Animated.add(0.75, Animated.multiply(walletPulse, 0.25)) }]}>
               <Text style={{ fontSize: 22 }}>💼</Text>
@@ -144,6 +154,8 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  todayTitle: { fontFamily: fontFamily.bodyBold, color: colors.ink, fontSize: 15 },
+  todaySub: { ...type.caption, marginTop: 2 },
   root: { flex: 1, backgroundColor: colors.appCanvas.base },
 
   hero: { flex: 1, paddingHorizontal: spacing.huge, paddingTop: spacing.giant },

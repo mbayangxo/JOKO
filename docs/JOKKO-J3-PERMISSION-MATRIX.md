@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**660 routes.** Column legend:
+**661 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -720,6 +720,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST me/phone/confirm` | user | profile.phone.confirm | self |  |  | always | sensitive_change | identity |  |
 | `GET me/community-settings` | user | community.settings | self |  |  |  |  |  |  |
 | `PUT me/community-settings` | user | community.settings | self: mutes (money/security never), phone discoverability, neighbourhood opt-in |  |  |  |  |  |  |
+| `GET me/today` | user | community.today | self: own pending requests, orders, deliveries, work, school fees, tickets, tontine dues — read-only |  |  |  |  |  |  |
 | `GET me/distribution-invitations` | user | distribution.invitations.mine | self (assisted onboarding) |  |  |  |  |  |  |
 | `POST me/distribution-invitations/:id/respond` | user | distribution.invitations.respond | invited person; attaches a business they OWN |  |  |  |  |  |  |
 

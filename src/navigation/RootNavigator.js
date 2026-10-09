@@ -54,6 +54,7 @@ import ScheduledPaymentsScreen from '../screens/ScheduledPaymentsScreen';
 import JekkalScreen from '../screens/JekkalScreen';
 import JekkalDetailScreen from '../screens/JekkalDetailScreen';
 import MyTicketsScreen from '../screens/MyTicketsScreen';
+import TodayScreen from '../screens/TodayScreen';
 import EventCreateScreen from '../screens/EventCreateScreen';
 import EventScannerScreen from '../screens/EventScannerScreen';
 import InfoScreen from '../screens/InfoScreen';
@@ -245,6 +246,7 @@ export default function RootNavigator() {
       <Stack.Screen name="Jekkal" component={JekkalScreen} />
       <Stack.Screen name="JekkalDetail" component={JekkalDetailScreen} />
       <Stack.Screen name="MyTickets" component={MyTicketsScreen} />
+      <Stack.Screen name="Today" component={TodayScreen} />
       <Stack.Screen name="EventCreate" component={EventCreateScreen} />
       <Stack.Screen name="EventScanner" component={EventScannerScreen} />
       <Stack.Screen name="GiftReveal" component={GiftRevealScreen} />
