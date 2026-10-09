@@ -1001,7 +1001,12 @@ model SolidarityCampaign {
   contributions SolidarityContribution[]
 
   /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
-  kind String @default("jekkal")
+  kind                 String    @default("jekkal")
+  /// J11: `direct` = each gift goes straight to the beneficiary (no refund; every existing campaign is direct,
+  /// never silently converted). Protected campaigns are a separate product (ProtectedFund kind `campaign`).
+  mode                 String    @default("direct")
+  /// J11: a campaign for someone else waits for that person's consent before it can receive anything.
+  beneficiaryConsentAt DateTime?
 
   @@index([creatorId])
   @@index([beneficiaryUserId])
@@ -4936,4 +4941,117 @@ model CollectiveEvent {
   group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
 
   @@index([groupId, createdAt])
+}
+
+/// J11 model C (protected project, milestone release) and model D-protected (Jekkal protected campaign,
+/// all-or-nothing). Both DORMANT behind their own flags. Money sits in J2 `protected:<id>:escrow`; an
+/// approval never moves money by itself — every release is a separate J3 maker/checker settlement.
+/// draft → funding → funded → completed | failed | cancelled (frozenAt = ops freeze).
+model ProtectedFund {
+  id                   String    @id @default(cuid())
+  kind                 String
+  title                String
+  purpose              String    @db.Text
+  organizerId          String
+  recipientUserId      String?
+  recipientBusinessId  String?
+  recipientConsentAt   DateTime?
+  goalKori             Int
+  deadline             DateTime
+  /// project: independent approvers (never the organizer or the recipient) and how many must approve a milestone.
+  approverIdsJson      String    @default("[]")
+  approverAcceptedJson String    @default("[]")
+  approvalsRequired    Int       @default(0)
+  status               String    @default("draft")
+  raisedKori           Int       @default(0)
+  releasedKori         Int       @default(0)
+  refundedKori         Int       @default(0)
+  frozenAt             DateTime?
+  frozenReason         String?
+  closedAt             DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  milestones    ProtectedMilestone[]
+  contributions ProtectedContribution[]
+
+  @@index([status, deadline])
+  @@index([organizerId])
+  @@index([recipientUserId])
+}
+
+/// pending → approved (approvers; no money) → released (settlement) | cancelled.
+model ProtectedMilestone {
+  id           String    @id @default(cuid())
+  fundId       String
+  seq          Int
+  title        String
+  amountKori   Int
+  status       String    @default("pending")
+  evidenceNote String?
+  approvedAt   DateTime?
+  releasedAt   DateTime?
+  releaseRef   String?   @unique
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  fund      ProtectedFund       @relation(fields: [fundId], references: [id], onDelete: Restrict)
+  approvals ProtectedApproval[]
+
+  @@unique([fundId, seq])
+}
+
+model ProtectedApproval {
+  id          String   @id @default(cuid())
+  milestoneId String
+  approverId  String
+  decision    String
+  note        String?
+  createdAt   DateTime @default(now())
+
+  milestone ProtectedMilestone @relation(fields: [milestoneId], references: [id], onDelete: Restrict)
+
+  @@unique([milestoneId, approverId])
+}
+
+model ProtectedContribution {
+  id             String   @id @default(cuid())
+  fundId         String
+  contributorId  String
+  amountKori     Int
+  refundedKori   Int      @default(0)
+  anonymous      Boolean  @default(false)
+  reference      String   @unique
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+
+  fund ProtectedFund @relation(fields: [fundId], references: [id], onDelete: Restrict)
+
+  @@index([fundId])
+  @@index([contributorId])
+}
+
+/// J11 model E: cooperative member-capital RECORDS ONLY. No money moves, no shares, no securities,
+/// no dividends are computed. Kinds keep wages, gifts, member capital and loans apart; investment
+/// returns are not recordable while model F (regulated investments) is not licensed.
+/// Append-only, except the member's own confirm / dispute stamp.
+model CoopCapitalRecord {
+  id                String    @id @default(cuid())
+  businessId        String
+  memberUserId      String
+  kind              String
+  direction         String
+  amountXof         Int
+  occurredOn        DateTime
+  note              String?
+  evidenceRef       String?
+  recordedBy        String
+  reference         String    @unique
+  memberConfirmedAt DateTime?
+  memberDisputedAt  DateTime?
+  memberNote        String?
+  createdAt         DateTime  @default(now())
+
+  @@index([businessId, memberUserId])
+  @@index([memberUserId])
 }
