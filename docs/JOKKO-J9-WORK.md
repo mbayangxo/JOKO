@@ -65,6 +65,29 @@ opportunity (verified business; worker-fee language → under_review, invisible 
 
   Payroll wages and ownership distributions are not J9 earnings.
 
+## 4a. Settlement policy (A2, after the J9 provisional acceptance)
+
+Five moments are distinct and never conflated. All durations are **test configuration** (P-J9-1); J9 money stays off.
+
+| Moment | Rule | Default |
+|---|---|---|
+| Completion | the worker submits evidence | — |
+| Acceptance | the business accepts — or **deemed acceptance** when it stays silent past the agreed acceptance window (24–168 h). The worker is never held hostage by silence. | terms, default 72 h |
+| Contest window | after acceptance, the payer may dispute false completion only until `contestableUntil` (per earning) | explicit: 24 h · deemed: 72 h · ruling: 0 |
+| Payout eligibility | `releasableAt = max(hold, contestableUntil)`, and never while a dispute or appeal is open | hold 24 h; commissions 168 h |
+| Finality | paid. Never clawed back automatically (P-J9-9); a dispute on a paid earning is refused (`already_paid`) | — |
+
+**Rulings and appeals:**
+- A ruling's money executes only after the **appeal window** (48 h).
+- The party who did not win may **appeal once**. The appeal is decided by a **different** operator.
+- An appeal ruling bumps `rulingVersion`; an approval requested for an earlier version can never execute (`ruling_changed`).
+- A ruled milestone cannot be re-litigated through a new dispute (`already_ruled`).
+- Open disputes past the SLA (72 h) are flagged `overdue` for ops.
+
+**Employee wages are outside this policy:** they are owed by the employer through payroll (J5) and are never held by a contractor dispute.
+
+The policy can be overridden for local or staging use with `WORK_SETTLEMENT_JSON`. Every value is bounded, and out-of-range or malformed values fall back to the defaults (tested).
+
 ## 5. Protections
 
 | Threat | Control | Test |

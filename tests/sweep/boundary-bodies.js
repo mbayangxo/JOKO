@@ -61,6 +61,7 @@ export const VALID_BODIES = {
   'POST admin/work/opportunities/:id/review': () => ({ decision: 'approve', note: 'sweep review' }),
   'POST admin/work/qualifications/:id/review': () => ({ decision: 'verified' }),
   'POST admin/work/disputes/:id/resolve': () => ({ outcome: 'finding_only', note: 'sweep: rule on a dispute' }),
+  'POST admin/work/disputes/:id/appeal/resolve': () => ({ outcome: 'upheld', note: 'sweep: rule on an appeal' }),
   'POST admin/work/feedback/:id/rule': () => ({ decision: 'removed', note: 'sweep: rule on feedback' }),
   'POST businesses/:id/payroll/pay': (ctx) => ({ employeeHandle: ctx.attackerHandle, amount: 100 }),
   'POST businesses/:id/payroll/run': () => ({}),

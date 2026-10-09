@@ -200,6 +200,8 @@ try {
   });
 
   await step('finance (console): a second operator executes the settlement once', async () => {
+    // The ruling's money waits for the appeal window; here it elapses (no party appealed).
+    await prisma.workDispute.updateMany({ where: { assignmentId: assignment.id }, data: { executableAfter: new Date(Date.now() - 1000) } });
     const fin = await operator(api, ['finance_ops']);
     const page = await opsPage(fin, 'finance', []);
     await tap(page, 'Work', { exact: true });

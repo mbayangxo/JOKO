@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**641 routes.** Column legend:
+**644 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -71,6 +71,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST admin/work/qualifications/:id/review` | admin | work.qualifications.verify | operator_scope |  |  |  |  | admin+identity |  |
 | `GET admin/work/disputes` | admin | work.read | operator_scope |  |  |  |  |  |  |
 | `POST admin/work/disputes/:id/resolve` | admin | work.disputes.resolve | operator_scope |  |  |  |  | admin+identity; money via maker/checker (work.disputes.settle) |  |
+| `POST admin/work/disputes/:id/appeal/resolve` | admin | work.disputes.resolve | operator_scope |  |  |  |  | admin+identity; a different operator than the first ruling; money via a new maker/checker approval |  |
 | `GET admin/work/feedback` | admin | work.read | operator_scope |  |  |  |  |  |  |
 | `POST admin/work/feedback/:id/rule` | admin | work.feedback.rule | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/auth/logout` | admin | (authenticated) | operator_scope |  |  |  |  |  | any authenticated operator |
@@ -383,6 +384,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST businesses/:id/work/assignments/:subId/disputes` | user | work.dispute.open | business:business.staffing.manage (false completion within the window; unpaid only) |  |  |  |  | work_evidence |  |
 | `POST businesses/:id/work/assignments/:subId/feedback` | user | work.feedback.leave | business:business.staffing.manage; once; after work |  |  |  |  |  |  |
 | `POST businesses/:id/work/disputes/:subId/evidence` | user | work.dispute.evidence | business:business.staffing.manage; party |  |  |  |  | work_evidence |  |
+| `POST businesses/:id/work/disputes/:subId/appeal` | user | work.dispute.appeal | business:business.staffing.manage; party who did not win; once; within the appeal window |  |  |  |  | work_evidence |  |
 | `GET businesses/:id/work/rules` | user | work.rules.read | business:business.staffing.manage \| business.pay |  |  |  |  |  |  |
 | `POST businesses/:id/work/rules` | user | work.rules.propose | business:business.distribution.manage (rep) \| business.staffing.manage (pickup fee); amount defaults to 0 |  |  |  |  |  |  |
 | `POST businesses/:id/work/rules/:subId/approve` | user | work.rules.approve | business:business.pay; a DIFFERENT member than the proposer |  |  |  |  | identity |  |
@@ -936,6 +938,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST work/assignments/:id/feedback` | user | work.feedback.leave | party: the worker; once; after work |  |  |  |  |  |  |
 | `GET work/disputes/:id` | user | work.dispute.read | party (roles and content only) |  |  |  |  |  |  |
 | `POST work/disputes/:id/evidence` | user | work.dispute.evidence | party; append-only |  |  |  |  | work_evidence |  |
+| `POST work/disputes/:id/appeal` | user | work.dispute.appeal | party who did not win; once; within the appeal window (money waits) |  |  |  |  | work_evidence |  |
 | `GET work/earnings` | user | work.earnings.read | self (J8 courier earnings shown read-only, never duplicated) |  |  |  |  |  |  |
 | `POST work/earnings/payout` | user | work.earnings.payout | self: own releasable earnings, not frozen by a dispute → own wallet |  |  |  |  | ledger+risk |  |
 | `GET work/feedback` | user | work.feedback.read | self: feedback about me |  |  |  |  |  |  |

@@ -1879,3 +1879,5 @@ export const listBizWorkRules = (businessId) => apiFetch(bizWk(businessId, 'rule
 export const proposeBizWorkRule = (businessId, body) => post(bizWk(businessId, 'rules'), body);
 export const approveBizWorkRule = (businessId, ruleId) => post(bizWk(businessId, `rules/${enc(ruleId)}/approve`));
 export const fundBizWorkRule = (businessId, ruleId, amountKori, { stepUpToken, idempotencyKey } = {}) => post(bizWk(businessId, `rules/${enc(ruleId)}/fund`), { amountKori }, { stepUpToken, idempotencyKey });
+export const appealWorkDispute = (disputeId, note) => post(wk(`disputes/${enc(disputeId)}/appeal`), { note });
+export const appealBizWorkDispute = (businessId, disputeId, note) => post(bizWk(businessId, `disputes/${enc(disputeId)}/appeal`), { note });

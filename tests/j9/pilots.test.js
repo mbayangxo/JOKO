@@ -219,6 +219,8 @@ test('pilot — worker disputes nonpayment: auto-accept frozen, ruling by work o
   assert.equal(await prisma.workEarning.count({ where: { assignmentId: assignment.id } }), 0, 'no money on the ruling alone');
   assert.equal((await ops.call('POST', `admin/approvals/${res.approval.id}/approve`, {})).status, 403, 'the ruling operator cannot execute');
   const fin = await operator(api, ['finance_ops']);
+  assert.ok((await fin.call('POST', `admin/approvals/${res.approval.id}/approve`, {})).status >= 400, 'not before the appeal window closes');
+  await prisma.workDispute.update({ where: { id: d.id }, data: { executableAfter: new Date(Date.now() - 1000) } }); // the appeal window elapses
   ok(await fin.call('POST', `admin/approvals/${res.approval.id}/approve`, {}));
   await fin.call('POST', `admin/approvals/${res.approval.id}/approve`, {}); // replay / refusal: either way, no second execution
   const earn = await prisma.workEarning.findMany({ where: { assignmentId: assignment.id } });
@@ -233,6 +235,7 @@ test('pilot — employer disputes false completion: before acceptance → refund
   const fin = await operator(api, ['finance_ops']);
   const settle = async (d, body) => {
     const r = ok(await ops.call('POST', `admin/work/disputes/${d.id}/resolve`, body));
+    await prisma.workDispute.update({ where: { id: d.id }, data: { executableAfter: new Date(Date.now() - 1000) } }); // the appeal window elapses
     ok(await fin.call('POST', `admin/approvals/${r.approval.id}/approve`, {}));
   };
   // (a) before acceptance → business wins → refund.

@@ -6,7 +6,7 @@ import PressScale from '../components/PressScale';
 import GlowButton from '../components/GlowButton';
 import { useToast } from '../components/Toast';
 import {
-  acceptWorkOffer, addWorkQualification, applyToWork, declineWorkOffer, discoverWork, endMyAssignment, getMyAssignments,
+  acceptWorkOffer, addWorkQualification, appealWorkDispute, applyToWork, declineWorkOffer, discoverWork, endMyAssignment, getMyAssignments,
   getMyWorkApplications, getMyWorkOffers, getWorkEarnings, getWorkProfile, openWorkDispute, payoutWorkEarnings, saveWorkProfile,
   submitAttendance, submitMilestone,
 } from '../lib/api-client';
@@ -228,6 +228,10 @@ export default function WorkScreen({ navigation }) {
                     <PressScale onPress={() => act(() => endMyAssignment(a.id, 'Je me retire avant de commencer'), 'Mission arrêtée')} style={styles.ghost}><Text style={styles.ghostText}>Me retirer</Text></PressScale>
                   ) : null}
                   {a.disputes.some((d) => d.status !== 'resolved') ? <Text style={styles.warn}>Litige en cours — paiement gelé jusqu’à la décision</Text> : null}
+                  {a.disputes.filter((d) => d.appealable && d.resolution !== 'worker').map((d) => (
+                    <PressScale key={d.id} onPress={() => act(() => appealWorkDispute(d.id, 'Je conteste la décision : mes preuves de travail sont jointes au dossier.'), 'Appel envoyé — un autre opérateur va revoir la décision')} style={styles.ghost} accessibilityLabel="Faire appel"><Text style={styles.ghostText}>Faire appel de la décision ({d.resolution === 'split' ? 'partage' : 'en faveur de l’entreprise'})</Text></PressScale>
+                  ))}
+                  {a.earnings.filter((e) => e.status === 'accrued' && e.contestableUntil).map((e) => <Text key={e.id} style={styles.meta}>{formatKori(e.amountKori)} disponible au plus tôt le {new Date(e.releasableAt).toLocaleString('fr-SN')} (fin du délai de contestation)</Text>)}
                 </View>
               ))}
             </>
@@ -239,7 +243,7 @@ export default function WorkScreen({ navigation }) {
                 <Text style={styles.meta}>Retenu : {formatKori(earn?.totals?.onHoldKori ?? 0)}</Text>
                 <Text style={styles.cardTitle}>Disponible : {formatKori(earn?.totals?.releasableKori ?? 0)}</Text>
                 <Text style={styles.meta}>Déjà versé : {formatKori(earn?.totals?.paidKori ?? 0)}</Text>
-                <Text style={styles.meta}>Un gain naît d’un travail validé (par l’entreprise, automatiquement après le délai, ou par décision). Il est retenu 24 h (7 jours pour une commission) et gelé pendant un litige.</Text>
+                <Text style={styles.meta}>Un gain naît d’un travail validé (par l’entreprise, automatiquement après le délai, ou par décision). Il devient disponible à la fin du délai de contestation (court si l’entreprise a validé, plus long si la validation est automatique) et reste gelé pendant un litige ou un appel.</Text>
               </View>
               <GlowButton label={busy ? '…' : 'Verser le disponible sur mon portefeuille'} disabled={busy || !(earn?.totals?.releasableKori > 0)} onPress={payout} />
               {(earn?.items ?? []).map((e) => (

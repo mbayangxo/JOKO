@@ -4491,25 +4491,28 @@ model WorkChallenge {
 /// J9: a FUNDED earning (value already sits in worker:<id>:earnings or work_business:<id>:earnings).
 /// accrued → releasable (after hold, no open dispute) → paid; accrued | releasable → reversed (ruling, maker/checker).
 model WorkEarning {
-  id              String    @id @default(cuid())
+  id               String    @id @default(cuid())
   /// deterministic: milestone:<id> | outcome:<id> — one earning per source, ever
-  sourceKey       String    @unique
-  workerUserId    String?
-  payeeBusinessId String?
-  payerBusinessId String
-  assignmentId    String?
-  milestoneId     String?
-  ruleId          String?
+  sourceKey        String    @unique
+  workerUserId     String?
+  payeeBusinessId  String?
+  payerBusinessId  String
+  assignmentId     String?
+  milestoneId      String?
+  ruleId           String?
   /// contractor_payment | apprenticeship_stipend | member_work_payment | commission | service_fee | reimbursement
-  classification  String
-  amountKori      Int
+  classification   String
+  amountKori       Int
   /// accrued | releasable | paid | reversed
-  status          String    @default("accrued")
-  releasableAt    DateTime
-  paidAt          DateTime?
-  payoutReference String?   @unique
-  reversedAt      DateTime?
-  createdAt       DateTime  @default(now())
+  status           String    @default("accrued")
+  /// J9 settlement policy: the payer may contest until then (deemed acceptance gets a longer window)
+  contestableUntil DateTime?
+  /// payout eligibility = max(hold, contest window); never earlier than contestableUntil
+  releasableAt     DateTime
+  paidAt           DateTime?
+  payoutReference  String?   @unique
+  reversedAt       DateTime?
+  createdAt        DateTime  @default(now())
 
   @@index([workerUserId, status])
   @@index([payeeBusinessId, status])
@@ -4517,26 +4520,35 @@ model WorkEarning {
 }
 
 model WorkDispute {
-  id              String    @id @default(cuid())
-  assignmentId    String
-  milestoneId     String?
-  openedBy        String
+  id               String    @id @default(cuid())
+  assignmentId     String
+  milestoneId      String?
+  openedBy         String
   /// worker | business
-  openedByRole    String
+  openedByRole     String
   /// nonpayment | false_completion | terms_breach | harassment | other
-  kind            String
-  reason          String
+  kind             String
+  reason           String
   /// open | awaiting_settlement | resolved
-  status          String    @default("open")
+  status           String    @default("open")
   /// worker | business | split | finding_only
-  resolution      String?
-  splitWorkerKori Int?
-  resolvedBy      String?
-  resolvedAt      DateTime?
-  note            String?
-  settledBy       String?
-  settledAt       DateTime?
-  createdAt       DateTime  @default(now())
+  resolution       String?
+  splitWorkerKori  Int?
+  resolvedBy       String?
+  resolvedAt       DateTime?
+  note             String?
+  settledBy        String?
+  settledAt        DateTime?
+  /// bumped by an appeal ruling; a settlement approval executes only the ruling version it was requested for
+  rulingVersion    Int       @default(1)
+  /// money executes only after the appeal window (or once an appeal is decided)
+  executableAfter  DateTime?
+  appealedBy       String?
+  appealedByRole   String?
+  appealedAt       DateTime?
+  appealNote       String?
+  appealResolvedBy String?
+  createdAt        DateTime  @default(now())
 
   @@index([assignmentId, status])
   @@index([status, createdAt])

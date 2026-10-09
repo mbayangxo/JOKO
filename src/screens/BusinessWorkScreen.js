@@ -7,7 +7,7 @@ import GlowButton from '../components/GlowButton';
 import StepUpOverlay from '../components/StepUpOverlay';
 import { useToast } from '../components/Toast';
 import {
-  acceptBizMilestone, approveBizWorkRule, createBizOffer, createBizOpportunity, decideBizApplication, endBizAssignment, fundBizWorkRule,
+  acceptBizMilestone, appealBizWorkDispute, approveBizWorkRule, createBizOffer, createBizOpportunity, decideBizApplication, endBizAssignment, fundBizWorkRule,
   getMyBusinesses, issueBizAttendanceCode, listBizApplicants, listBizAssignments, listBizOpportunities, listBizWorkRules, openBizWorkDispute,
   proposeBizWorkRule,
 } from '../lib/api-client';
@@ -226,6 +226,9 @@ export default function BusinessWorkScreen({ navigation }) {
                     <View key={m.id} style={styles.milestone}>
                       <Text style={styles.body}>{m.seq}. {m.title} — {formatKori(m.amountKori)}</Text>
                       <Text style={styles.meta}>{MILESTONE_STATUS[m.status] ?? m.status}{m.status === 'submitted' && m.acceptDeadline ? ` · validée automatiquement le ${new Date(m.acceptDeadline).toLocaleString('fr-SN')} sans réponse` : ''}</Text>
+                      {m.status === 'accepted' && a.earnings.some((e) => e.milestoneId === m.id && e.status === 'accrued' && e.contestableUntil && new Date(e.contestableUntil) > new Date()) ? (
+                        <PressScale onPress={() => act(() => openBizWorkDispute(bizId, a.id, { kind: 'false_completion', milestoneSeq: m.seq, reason: 'Validé à tort : le travail n’a pas été réalisé comme convenu.' }), 'Litige ouvert — le paiement est gelé')} style={styles.smallBtn}><Text style={styles.ghostText}>Contester (délai ouvert)</Text></PressScale>
+                      ) : null}
                       {m.status === 'submitted' ? (
                         <View style={styles.row}>
                           <GlowButton label="Valider et payer" disabled={busy} onPress={() => act(() => acceptBizMilestone(bizId, a.id, m.seq), 'Validé — paiement après le délai de retenue')} />
@@ -234,6 +237,10 @@ export default function BusinessWorkScreen({ navigation }) {
                       ) : null}
                     </View>
                   ))}
+                  {a.disputes.filter((d) => d.appealable && d.resolution !== 'business').map((d) => (
+                    <PressScale key={d.id} onPress={() => act(() => appealBizWorkDispute(bizId, d.id, 'Nous contestons la décision : éléments complémentaires au dossier.'), 'Appel envoyé')} style={styles.ghost}><Text style={styles.ghostText}>Faire appel de la décision</Text></PressScale>
+                  ))}
+                  {a.earnings.filter((e) => e.status === 'accrued' && e.contestableUntil && new Date(e.contestableUntil) > new Date()).map((e) => <Text key={e.id} style={styles.meta}>Contestation possible jusqu’au {new Date(e.contestableUntil).toLocaleString('fr-SN')}</Text>)}
                   {a.status === 'active' ? <PressScale onPress={() => act(() => endBizAssignment(bizId, a.id, 'Fin de la mission par l’entreprise'), 'Mission terminée')} style={styles.ghost}><Text style={styles.ghostText}>Terminer (le non-gagné revient à l’entreprise)</Text></PressScale> : null}
                 </View>
               ))}
