@@ -149,3 +149,19 @@ J9 was built on these choices. They are **not accepted decisions** until the own
 | P-J9-8 | **Rep commission:** only on the merchant's first order that was received **and** paid. Ineligible outcomes (self-dealing, unverified receipt) are recorded once and never re-evaluated. An outcome waiting for budget is paid in order once funded. | `lib/work/rules.js`. |
 | P-J9-9 | **No automatic clawback of paid work earnings** (as D38). A ruling against an unpaid earning is reversed under maker/checker. A paid earning is reported unrecoverable and goes to a support / legal path. | `reverseEarningInTx`. |
 | P-J9-10 | **The cooperative double-payout fix (audit F1) ships as its own small patch after the P0 patch is deployed and verified on `7d262de`.** It is never bundled into the P0 patch, and never deployed from `19ac203`. | `lib/cooperative-service.js`, `tests/j9/coop-payout.test.js`. |
+
+## J10: proposed decisions (awaiting acceptance)
+
+J10 (Community & Daily Life) was built on these choices. They are **not accepted decisions** until the owner says so. Nothing is deployed. **The production delivery-dispute P0, F1 and the F4 decision remain open** (separate track).
+
+| # | Proposal | Why / where |
+|---|---|---|
+| P-J10-1 | **Chat text never acts.** A typed money command only opens the normal Send flow, pre-filled (J10-F1). The same rule applies to orders, custody, work and permissions. | `MbooloChatScreen`, `tests/j10/adversarial.test.js` |
+| P-J10-2 | **Defaults keep today's visibility.** Find-by-phone defaults to `everyone`, so J4 P2P search is unchanged. Being listed in the neighbourhood defaults to **off**. Proposed for later: switch phone discoverability to `connections` once contact matching is adopted. | `CommunitySettings` |
+| P-J10-3 | **Phone lookup budget:** 30 per hour per searcher (misses count). Contact matching: 200 hashes per call and 1 000 per day. | `lib/community/discovery.js` |
+| P-J10-4 | **Moderation:** a new `trust_safety` admin role (it can never hold finance or sysadmin roles). Outcomes are no_violation, warn, or restrict_messaging for 1–30 days. One appeal within 14 days, decided by a different operator. **There is no automatic sanction from report counts.** | `lib/community/moderation.js` |
+| P-J10-5 | **A moderation restriction never touches money**, nor group, tontine or business roles. | tested |
+| P-J10-6 | **Partner (Kabu) messages:** always attributed, the recipient's block honoured with no SMS fallback, at most 10 per partner per recipient per day (J10-F2). Needs the partner's agreement on the cap. | `lib/partner-messages-service.js` |
+| P-J10-7 | **Merchant ↔ customer conversation only around a real order** (no cold outreach). | `lib/community/order-chat.js` |
+| P-J10-8 | **Money and security notifications cannot be muted.** The Home bell shows only real unread items. | `lib/community/notify.js` |
+| P-J10-9 | **The legacy demo feeds stay off** (culture, trending and alerts seeds, and their counters). Regional alerts need a real, attributed source before use. | `runtime-safety.js` |

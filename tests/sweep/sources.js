@@ -26,6 +26,8 @@ export function sourceFor(routeKey) {
     [/^tontine\/groups\/:id/, `SELECT "id" FROM "TontineGroup" WHERE "createdBy" <> $ME`],
     [/^mbolo\/threads\/:id/, `SELECT t."id" FROM "MboloThread" t WHERE NOT EXISTS (SELECT 1 FROM "MboloMember" m WHERE m."threadId" = t."id" AND m."userId" = $ME)`],
     [/^mbolo\/messages\/:id/, `SELECT "id" FROM "MboloMessage" WHERE "senderId" <> $ME`],
+    // J10: someone else's moderation decision (appealing it must be refused).
+    [/^me\/moderation\/:id/, `SELECT "id" FROM "ModerationAction" WHERE "userId" <> $ME`],
     [/^mbolo\/vault\/:id/, `SELECT "id" FROM "MbooloMediaAsset" WHERE "ownerId" <> $ME`],
     [/^mbolo\/gifs\/:id/, `SELECT "id" FROM "MbooloGif"`],
     [/^events\/:id/, `SELECT "id" FROM "Event" WHERE "promoterId" <> $ME`],
