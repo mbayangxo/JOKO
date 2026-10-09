@@ -19,6 +19,13 @@
 
 **Re-checked 2026-10-09 (later the same day):** `GET /v9/projects/prj_lOUwSQp2PPi8Bhe1tA1jjrKXdiYt` with `teamId=team_DuHLYw71m5ATHKdtGSur1Diw` still returns **403** ("must re-authenticate to this scope"; not SAML, not SSO-enforced). There is no Vercel CLI in the container. **Production actions remain stopped.** Production configuration (env, cron) is still unverified.
 
+**Owner authorization received 2026-10-09 (deploy containment; read-only forensics). Attempt result: STOPPED at Step 1.**
+- `GET /v2/user` works (user `mbayangxo`, default team `team_DuHLYw71m5ATHKdtGSur1Diw`), so the connector is authenticated, but **every team-scoped read now returns 403**: project, deployment list, and deployment detail (the detail worked earlier the same day).
+- The live commit, active deployment, runtime environment and database identity therefore **cannot be re-verified**. Under the authorization's own rule, nothing was deployed, no branch was pushed as a deployment workaround, and no rollback was attempted.
+- **Forensics not run.** The production database identity cannot be verified without the project's environment, and this container holds no production database credentials. No production database was contacted. Kebu Supabase was not accessed.
+- **To unblock:** reconnect the Vercel connector with access to the `mbayangxos-projects` team at https://claude.ai/customize/connectors, then start a new session. Alternatively, the owner deploys the patch personally (§4) and runs `historical-tontine-exposure.sql` read-only (§6).
+- **Production is NOT protected.** The drain remains live on whatever is deployed.
+
 ## 1. What is wrong
 On `7d262de`, the latest successful production deployment:
 1. **No consent.** `POST /api/tontine/groups` adds **any handle** as a member. There is no invitation and no acceptance step.
