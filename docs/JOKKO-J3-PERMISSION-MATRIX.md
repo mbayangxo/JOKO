@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**661 routes.** Column legend:
+**676 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -56,6 +56,10 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
 |---|---|---|---|---|---|---|---|---|---|
+| `GET admin/moderation/reports` | admin | community.reports.read | operator_scope |  |  |  |  |  |  |
+| `POST admin/moderation/reports/:id/resolve` | admin | community.reports.decide | operator_scope |  |  |  |  | admin+identity; never money; restriction 1–30 days |  |
+| `GET admin/moderation/appeals` | admin | community.reports.read | operator_scope |  |  |  |  |  |  |
+| `POST admin/moderation/actions/:id/appeal/resolve` | admin | community.appeals.decide | operator_scope |  |  |  |  | admin+identity; a different operator than the one who acted |  |
 | `POST admin/logistics/shipments/:id/failure/rule` | admin | logistics.exceptions.resolve | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/logistics/shipments/:id/emergency-reassign` | admin | logistics.dispatch | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/logistics/shipments/:id/handoff-code` | admin | logistics.dispatch | operator_scope |  |  |  |  | custody_challenge |  |
@@ -704,6 +708,14 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET mbolo/stories` | user | stories.read | friends/contacts |  |  |  |  |  |  |
 | `POST mbolo/stories` | user | stories.create | self |  |  |  |  |  |  |
 | `POST mbolo/device-keys` | user | messages.device_keys.register | self |  |  |  |  |  |  |
+| `GET mbolo/threads/:id/roster` | user | community.group.read | active member of the group |  |  |  |  |  |  |
+| `POST mbolo/threads/:id/roles` | user | community.group.manage | group owner only; ownership hand-over makes the old owner an admin |  |  |  |  |  |  |
+| `POST mbolo/threads/:id/remove` | user | community.group.manage | owner/admin; admins act on members only; never the owner; chat membership only (no tontine / money effect) |  |  |  |  |  |  |
+| `POST mbolo/threads/:id/mute` | user | community.group.manage | owner/admin; same rank rules as remove |  |  |  |  |  |  |
+| `POST mbolo/threads/:id/settings` | user | community.group.manage | owner/admin: announcement mode |  |  |  |  |  |  |
+| `POST mbolo/threads/:id/invite/revoke` | user | community.group.manage | owner/admin |  |  |  |  |  |  |
+| `POST mbolo/threads/:id/leave` | user | community.group.leave | self; the owner hands over first unless last |  |  |  |  |  |  |
+| `POST mbolo/messages/:id/report` | user | community.report | a message the reporter can see; snapshot kept; ≤ 20/day; one per message |  |  |  |  |  |  |
 
 ## User — me
 
@@ -721,6 +733,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET me/community-settings` | user | community.settings | self |  |  |  |  |  |  |
 | `PUT me/community-settings` | user | community.settings | self: mutes (money/security never), phone discoverability, neighbourhood opt-in |  |  |  |  |  |  |
 | `GET me/today` | user | community.today | self: own pending requests, orders, deliveries, work, school fees, tickets, tontine dues — read-only |  |  |  |  |  |  |
+| `GET me/reports` | user | community.report | self: handled or not, never the other person’s outcome |  |  |  |  |  |  |
+| `GET me/moderation` | user | community.moderation.self | self: actions on me |  |  |  |  |  |  |
+| `POST me/moderation/:id/appeal` | user | community.moderation.appeal | self: own action, once, within 14 days |  |  |  |  |  |  |
 | `GET me/distribution-invitations` | user | distribution.invitations.mine | self (assisted onboarding) |  |  |  |  |  |  |
 | `POST me/distribution-invitations/:id/respond` | user | distribution.invitations.respond | invited person; attaches a business they OWN |  |  |  |  |  |  |
 
@@ -991,6 +1006,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `finance_approver` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.reports.read`, `finance.adjust.approve`, `finance.agent_float.approve`, `finance.commission.approve`, `finance.refund.approve`, `approvals.read` |
 | `logistics_ops` | `ops.dashboard.read`, `logistics.read`, `logistics.dispatch`, `logistics.exceptions.resolve`, `logistics.disputes.resolve` |
 | `work_ops` | `ops.dashboard.read`, `work.read`, `work.review`, `work.qualifications.verify`, `work.disputes.resolve`, `work.feedback.rule`, `approvals.read` |
+| `trust_safety` | `ops.dashboard.read`, `community.reports.read`, `community.reports.decide`, `community.appeals.decide` |
 | `sysadmin` | `ops.health.read`, `ops.dashboard.read`, `admin.roles.read`, `admin.roles.manage`, `audit.read`, `approvals.read` |
 
 **Separation-of-duty conflicts:** these pairs can never be held by one operator.
@@ -1003,6 +1019,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 - `logistics_ops` × `finance_ops`
 - `work_ops` × `finance_ops`
 - `sysadmin` × `work_ops`
+- `trust_safety` × `finance_ops`
+- `trust_safety` × `finance_approver`
+- `sysadmin` × `trust_safety`
 
 ## Maker-checker actions
 

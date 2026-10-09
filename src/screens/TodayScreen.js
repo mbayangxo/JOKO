@@ -1,11 +1,12 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import PressScale from '../components/PressScale';
 import ScreenBackground from '../components/ScreenBackground';
 import ScreenHeader from '../components/ScreenHeader';
-import { getToday } from '../lib/api-client';
+import { appealModeration, getMyModeration, getToday } from '../lib/api-client';
+import { useToast } from '../components/Toast';
 import { navigateFromRoot } from '../lib/root-navigation';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
 
@@ -22,9 +23,13 @@ const ICON = {
 export default function TodayScreen({ navigation }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [decisions, setDecisions] = useState([]);
+  const [appealText, setAppealText] = useState({});
+  const showToast = useToast();
   const load = useCallback(async () => {
     try {
       setData(await getToday());
+      getMyModeration().then((m) => setDecisions((m.actions ?? []).filter((a) => a.active || a.appealable || (a.appealed && !a.appealOutcome)))).catch(() => {});
       setError(null);
     } catch (e) {
       setError(/Network|fetch/i.test(e?.message ?? '') ? 'Réseau indisponible — réessaie' : e?.message ?? 'Chargement impossible');
@@ -43,7 +48,21 @@ export default function TodayScreen({ navigation }) {
           {error ? (
             <PressScale onPress={load} style={styles.card}><Text style={styles.body}>{error}</Text></PressScale>
           ) : null}
-          {data?.empty ? <Text style={styles.empty}>Rien ne t’attend aujourd’hui.</Text> : null}
+          {decisions.map((a) => (
+            <View key={a.id} style={[styles.card, styles.urgent, { flexDirection: 'column', alignItems: 'stretch' }]}>
+              <Text style={styles.title}>{a.kind === 'warn' ? 'Avertissement de la communauté' : `Messagerie limitée${a.until ? ` jusqu’au ${new Date(a.until).toLocaleDateString('fr-SN')}` : ''}`}</Text>
+              <Text style={styles.detail}>{a.note} · tes paiements ne sont pas touchés</Text>
+              {a.appealable ? (
+                <>
+                  <TextInput value={appealText[a.id] ?? ''} onChangeText={(t) => setAppealText((x) => ({ ...x, [a.id]: t }))} placeholder="Explique pourquoi tu fais appel" style={styles.input} multiline accessibilityLabel="Texte de l’appel" />
+                  <PressScale onPress={async () => { try { await appealModeration(a.id, appealText[a.id] ?? ''); showToast('Appel envoyé — un autre membre de l’équipe K21 va trancher'); load(); } catch (e) { showToast(e.message); } }}>
+                    <Text style={styles.action}>Faire appel</Text>
+                  </PressScale>
+                </>
+              ) : a.appealed && !a.appealOutcome ? <Text style={styles.detail}>Appel en cours d’examen</Text> : null}
+            </View>
+          ))}
+          {data?.empty && decisions.length === 0 ? <Text style={styles.empty}>Rien ne t’attend aujourd’hui.</Text> : null}
           {(data?.items ?? []).map((item) => (
             <PressScale key={`${item.type}:${item.id}`} onPress={() => open(item)} disabled={!item.route} style={[styles.card, item.priority === 1 && styles.urgent]} accessibilityLabel={`${item.title}. ${item.detail}`}>
               <Text style={styles.icon}>{ICON[item.type] ?? '•'}</Text>
@@ -71,5 +90,7 @@ const styles = StyleSheet.create({
   title: { fontFamily: fontFamily.bodyBold, color: colors.ink, fontSize: 15 },
   detail: { ...type.caption, marginTop: 2 },
   body: { ...type.body },
+  input: { borderWidth: 1, borderColor: 'rgba(5,8,5,0.15)', borderRadius: radius.md, padding: spacing.sm, marginTop: spacing.sm, minHeight: 60 },
+  action: { fontFamily: fontFamily.bodyBold, color: colors.green, marginTop: spacing.sm },
   chev: { fontSize: 22, color: 'rgba(5,8,5,0.35)' },
 });

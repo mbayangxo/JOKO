@@ -8,7 +8,9 @@ import StoryAvatar from '../components/StoryAvatar';
 import K21QrCode from '../components/K21QrCode';
 import { colors, fontFamily, radius, spacing } from '../theme';
 import { useToast } from '../components/Toast';
-import { getMboloThreads, addMboloThreadMembers, getMboloThreadInvite } from '../lib/api-client';
+import { getMboloThreads, addMboloThreadMembers, getMboloThreadInvite, getGroupRoster, setGroupRole, removeGroupMember, muteGroupMember, setGroupPostingPolicy, revokeGroupInvite, leaveGroup } from '../lib/api-client';
+
+const ROLE_LABEL = { owner: 'Créateur', admin: 'Admin', member: '' };
 
 /** Group member list + add-member + invite code/QR/link, for one Mboolo group thread. */
 export default function MbooloGroupInfoScreen({ navigation, route }) {
@@ -20,6 +22,7 @@ export default function MbooloGroupInfoScreen({ navigation, route }) {
   const [adding, setAdding] = useState(false);
   const [invite, setInvite] = useState(null);
   const [invitingLoading, setInvitingLoading] = useState(false);
+  const [roster, setRoster] = useState(null);
 
   const load = useCallback(async () => {
     if (!threadId) return;
@@ -27,6 +30,8 @@ export default function MbooloGroupInfoScreen({ navigation, route }) {
       const list = await getMboloThreads();
       const found = (Array.isArray(list) ? list : []).find((t) => t.id === threadId);
       if (found) setThread(found);
+      // J10: roles and moderation state come from the roster (groups only).
+      if (found?.type !== 'direct') setRoster(await getGroupRoster(threadId).catch(() => null));
     } catch (err) {
       showToast(err.message ?? 'Conversation introuvable');
     } finally {
@@ -82,6 +87,16 @@ export default function MbooloGroupInfoScreen({ navigation, route }) {
   };
 
   const members = thread?.members ?? [];
+  const manager = roster && ['owner', 'admin'].includes(roster.myRole);
+  const act = async (fn, done) => {
+    try {
+      await fn();
+      if (done) showToast(done);
+      await load();
+    } catch (err) {
+      showToast(err.message ?? 'Action impossible');
+    }
+  };
 
   return (
     <View style={styles.root}>
@@ -97,14 +112,31 @@ export default function MbooloGroupInfoScreen({ navigation, route }) {
           <ActivityIndicator color={colors.mboolo.terra} style={{ marginTop: 40 }} />
         ) : (
           <ScrollView contentContainerStyle={styles.body}>
-            <Text style={styles.sectionLabel}>Membres · {members.length}</Text>
-            {members.map((m) => (
-              <View key={m.id} style={styles.memberRow}>
-                <StoryAvatar photoUrl={m.user?.avatarUrl} emoji={m.user?.avatarEmoji ?? '🧑🏾'} size={36} spin={false} />
-                <Text style={styles.memberName}>{m.user?.name ?? m.user?.handle}</Text>
+            <Text style={styles.sectionLabel}>Membres · {roster?.members.length ?? members.length}</Text>
+            {(roster?.members ?? members.map((m) => ({ userId: m.userId ?? m.id, name: m.user?.name, handle: m.user?.handle, avatarEmoji: m.user?.avatarEmoji, role: 'member' }))).map((m) => (
+              <View key={m.userId} style={styles.memberRow}>
+                <StoryAvatar emoji={m.avatarEmoji ?? '🧑🏾'} size={36} spin={false} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.memberName}>{m.name ?? (m.handle ? `@${m.handle}` : '—')}{ROLE_LABEL[m.role] ? ` · ${ROLE_LABEL[m.role]}` : ''}{m.muted ? ' · 🔇' : ''}{m.status === 'requested' ? ' · invité' : ''}</Text>
+                  {manager && m.role !== 'owner' && !(roster.myRole === 'admin' && m.role === 'admin') ? (
+                    <View style={styles.memberActions}>
+                      {roster.myRole === 'owner' ? (
+                        <PressScale onPress={() => act(() => setGroupRole(threadId, m.userId, m.role === 'admin' ? 'member' : 'admin'), 'Rôle mis à jour')}><Text style={styles.memberAction}>{m.role === 'admin' ? 'Retirer admin' : 'Nommer admin'}</Text></PressScale>
+                      ) : null}
+                      <PressScale onPress={() => act(() => muteGroupMember(threadId, m.userId, m.muted ? 0 : 24), m.muted ? 'Sourdine levée' : 'En sourdine 24 h')}><Text style={styles.memberAction}>{m.muted ? 'Lever la sourdine' : 'Sourdine 24 h'}</Text></PressScale>
+                      <PressScale onPress={() => act(() => removeGroupMember(threadId, m.userId), 'Retiré du groupe')}><Text style={[styles.memberAction, { color: colors.terracotta }]}>Retirer</Text></PressScale>
+                    </View>
+                  ) : null}
+                </View>
               </View>
             ))}
+            {manager ? (
+              <PressScale onPress={() => act(() => setGroupPostingPolicy(threadId, roster.postingPolicy === 'admins' ? 'all' : 'admins'), 'Réglage enregistré')} style={styles.shareBtn}>
+                <Text style={styles.shareBtnText}>{roster.postingPolicy === 'admins' ? 'Tout le monde peut écrire' : 'Mode annonces (seuls les admins écrivent)'}</Text>
+              </PressScale>
+            ) : roster?.postingPolicy === 'admins' ? <Text style={styles.memberName}>Mode annonces : seuls les admins écrivent.</Text> : null}
 
+            {!roster || manager ? (<>
             <Text style={[styles.sectionLabel, { marginTop: spacing.xl }]}>Ajouter des membres</Text>
             <TextInput
               style={styles.input}
@@ -132,6 +164,15 @@ export default function MbooloGroupInfoScreen({ navigation, route }) {
                 disabled={invitingLoading}
               />
             )}
+            {manager && roster?.inviteActive ? (
+              <PressScale onPress={() => act(async () => { await revokeGroupInvite(threadId); setInvite(null); }, 'Lien désactivé')}><Text style={styles.memberAction}>Désactiver le lien d’invitation</Text></PressScale>
+            ) : null}
+            </>) : null}
+            {roster ? (
+              <PressScale onPress={() => act(async () => { await leaveGroup(threadId); navigation.goBack(); }, 'Tu as quitté le groupe')} style={{ marginTop: spacing.xl }}>
+                <Text style={[styles.memberAction, { color: colors.terracotta }]}>Quitter le groupe</Text>
+              </PressScale>
+            ) : null}
           </ScrollView>
         )}
       </SafeAreaView>
@@ -140,6 +181,8 @@ export default function MbooloGroupInfoScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+  memberActions: { flexDirection: 'row', gap: spacing.md, marginTop: 4, flexWrap: 'wrap' },
+  memberAction: { fontFamily: fontFamily.bodyBold, fontSize: 12, color: colors.mboolo.ink },
   root: { flex: 1, backgroundColor: colors.mboolo.bg },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg, padding: spacing.xl, borderBottomWidth: 1, borderBottomColor: colors.mboolo.border },
   backBtn: { width: 32, height: 32, borderRadius: radius.md, backgroundColor: 'rgba(5,8,5,0.05)', alignItems: 'center', justifyContent: 'center' },

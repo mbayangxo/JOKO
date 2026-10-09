@@ -1281,6 +1281,18 @@ export function getNotificationsFeed({ category, before } = {}) {
   if (before) q.set('before', before);
   return apiFetch(`/api/notifications/feed${q.toString() ? `?${q}` : ''}`, { skipCache: true });
 }
+/** J10 groups + moderation. */
+const thr = (id, path) => `/api/mbolo/threads/${encodeURIComponent(id)}/${path}`;
+export const getGroupRoster = (id) => apiFetch(thr(id, 'roster'), { skipCache: true });
+export const setGroupRole = (id, userId, role) => apiFetch(thr(id, 'roles'), { method: 'POST', body: { userId, role }, skipCache: true });
+export const removeGroupMember = (id, userId) => apiFetch(thr(id, 'remove'), { method: 'POST', body: { userId }, skipCache: true });
+export const muteGroupMember = (id, userId, hours) => apiFetch(thr(id, 'mute'), { method: 'POST', body: { userId, hours }, skipCache: true });
+export const setGroupPostingPolicy = (id, postingPolicy) => apiFetch(thr(id, 'settings'), { method: 'POST', body: { postingPolicy }, skipCache: true });
+export const revokeGroupInvite = (id) => apiFetch(thr(id, 'invite/revoke'), { method: 'POST', body: {}, skipCache: true });
+export const leaveGroup = (id) => apiFetch(thr(id, 'leave'), { method: 'POST', body: {}, skipCache: true });
+export const reportMboloMessage = (messageId, category, reason) => apiFetch(`/api/mbolo/messages/${encodeURIComponent(messageId)}/report`, { method: 'POST', body: { category, reason }, skipCache: true });
+export const getMyModeration = () => apiFetch('/api/me/moderation', { skipCache: true });
+export const appealModeration = (id, note) => apiFetch(`/api/me/moderation/${encodeURIComponent(id)}/appeal`, { method: 'POST', body: { note }, skipCache: true });
 export const getToday = () => apiFetch('/api/me/today', { skipCache: true });
 export const getUnreadNotifications = () => apiFetch('/api/notifications/unread', { skipCache: true });
 export const markAllNotificationsRead = (category) => apiFetch('/api/notifications/read-all', { method: 'POST', body: category ? { category } : {}, skipCache: true });

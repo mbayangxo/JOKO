@@ -483,6 +483,36 @@ async function loadWorkTab() {
   bindWork('work-feedback', 'data-work-fb-remove', (id) => api(`/work/feedback/${encodeURIComponent(id)}/rule`, { method: 'POST', body: { decision: 'removed', note: note('Reason (10+ characters)') } }));
 }
 
+async function loadCommunityTab() {
+  const [q, ap] = await Promise.all([
+    api('/moderation/reports').catch(() => ({ reports: [] })),
+    api('/moderation/appeals').catch(() => ({ appeals: [] })),
+  ]);
+  $('community-reports').innerHTML = tableHtml(['Report', 'Evidence (snapshot)', 'Context', 'Decision'], q.reports ?? [], (r) => `<tr>
+    <td>${esc(r.category)}<br><small>${esc(r.reason)} · ${fmtDate(r.createdAt)}</small></td>
+    <td><small>${r.evidence ? esc(r.evidence.body) : '—'}</small></td>
+    <td><small>${esc(r.reportsAgainstTarget30d)} report(s) in 30 d · ${esc(r.priorActions)} prior action(s)</small></td>
+    <td><button type="button" class="link-btn" data-mod-decide="${esc(r.id)}">Decide…</button></td></tr>`);
+  $('community-appeals').innerHTML = tableHtml(['Action', 'Appeal', 'Decision'], ap.appeals ?? [], (a) => `<tr>
+    <td>${esc(a.kind)}${a.until ? ` until ${fmtDate(a.until)}` : ''}<br><small>${esc(a.note)}</small></td>
+    <td><small>${esc(a.appealNote)}</small></td>
+    <td><button type="button" class="link-btn" data-mod-lift="${esc(a.id)}">Lift</button>
+        <button type="button" class="link-btn danger" data-mod-uphold="${esc(a.id)}">Uphold</button></td></tr>`);
+  const bind = (container, attr, fn) => document.querySelectorAll(`#${container} [${attr}]`).forEach((btn) => btn.addEventListener('click', async () => {
+    try { await fn(btn.getAttribute(attr)); await loadCommunityTab(); } catch (error) { alert(error.message); }
+  }));
+  const reason = (q2) => { const n = prompt(q2); if (!n) throw new Error('A reason is required'); return n; };
+  bind('community-reports', 'data-mod-decide', async (id) => {
+    const outcome = prompt('Outcome: no_violation | warn | restrict_messaging');
+    if (!outcome) return;
+    const body = { outcome: outcome.trim(), note: reason('Reason (10+ characters, recorded in the audit trail)') };
+    if (body.outcome === 'restrict_messaging') body.days = Number(prompt('Days (1–30)'));
+    await api(`/moderation/reports/${encodeURIComponent(id)}/resolve`, { method: 'POST', body });
+  });
+  bind('community-appeals', 'data-mod-lift', (id) => api(`/moderation/actions/${encodeURIComponent(id)}/appeal/resolve`, { method: 'POST', body: { outcome: 'lifted', note: reason('Reason (10+ characters)') } }));
+  bind('community-appeals', 'data-mod-uphold', (id) => api(`/moderation/actions/${encodeURIComponent(id)}/appeal/resolve`, { method: 'POST', body: { outcome: 'upheld', note: reason('Reason (10+ characters)') } }));
+}
+
 async function loadDashboard() {
   const data = await api('/dashboard');
   renderDashboard(data);
@@ -502,6 +532,7 @@ async function loadTabData(name) {
   if (name === 'audit') await loadAuditTab();
   if (name === 'agents') await loadFloatRequestsTab();
   if (name === 'work') await loadWorkTab();
+  if (name === 'community') await loadCommunityTab();
 }
 
 async function enterApp() {

@@ -24,6 +24,7 @@ import {
   sendMboloMessage,
   transferRequest,
   transferSend,
+  reportMboloMessage,
 } from '../lib/api-client';
 import {
   pickMboloImage,
@@ -69,6 +70,7 @@ function MessageBubble({
   onOpenAffiliateProduct,
   onOpenShare,
   onLongPressMedia,
+  onReport,
 }) {
   const time = formatMsgTime(message.createdAt);
   const sender = message.sender;
@@ -240,6 +242,14 @@ function MessageBubble({
         </PressScale>
       );
     }
+    // J10: long-press someone else's message to report it (a snapshot is kept for review).
+    if (!isMe && onReport) {
+      return (
+        <PressScale scaleTo={1} onLongPress={() => onReport(message)} accessibilityHint="Appui long pour signaler">
+          <Text style={styles.themText}>{message.body}</Text>
+        </PressScale>
+      );
+    }
     return <Text style={isMe ? styles.meText : styles.themText}>{message.body}</Text>;
   };
 
@@ -360,6 +370,7 @@ export default function MbooloChatScreen({ navigation, route }) {
   const [requestNote, setRequestNote] = useState('');
   const [requesting, setRequesting] = useState(false);
   const [sendMoneyOpen, setSendMoneyOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState(null);
   const sendIntentKey = useRef(null); // one key per opening of the send sheet: a retry never pays twice
   const [sendAmount, setSendAmount] = useState('2000');
   const [sendNote, setSendNote] = useState('');
@@ -504,6 +515,18 @@ export default function MbooloChatScreen({ navigation, route }) {
       return;
     }
     postMessage({ body, kind: 'text' });
+  };
+
+  const submitReport = async (category) => {
+    const target = reportTarget;
+    setReportTarget(null);
+    if (!target?.id) return;
+    try {
+      await reportMboloMessage(target.id, category, `Signalé depuis la conversation (${category})`);
+      showToast('Merci — l’équipe K21 va examiner ce message');
+    } catch (err) {
+      showToast(err.message ?? 'Signalement impossible');
+    }
   };
 
   const handleLongPressMedia = (message) => {
@@ -945,6 +968,7 @@ export default function MbooloChatScreen({ navigation, route }) {
               isMe={m.senderId === userId}
               lowData={lowDataMode}
               onLongPressMedia={handleLongPressMedia}
+              onReport={(msg) => setReportTarget(msg)}
               onPlayVoice={playVoice}
               onJoinCall={(msg) =>
                 open('Call', {
@@ -1054,6 +1078,21 @@ export default function MbooloChatScreen({ navigation, route }) {
         onSaveVault={() => saveMedia('vault')}
         onSaveProfile={() => saveMedia('profile')}
       />
+
+      <Modal visible={Boolean(reportTarget)} animationType="slide" transparent onRequestClose={() => setReportTarget(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Signaler ce message</Text>
+            <Text style={styles.modalHint}>Le message est conservé pour l’équipe K21. La personne ne sait pas qui l’a signalé.</Text>
+            {[['scam', 'Arnaque / demande de code'], ['spam', 'Spam'], ['harassment', 'Harcèlement'], ['hate', 'Haine'], ['other', 'Autre']].map(([c, label]) => (
+              <PressScale key={c} scaleTo={0.97} onPress={() => submitReport(c)} style={styles.modalSubmit} accessibilityLabel={`Signaler : ${label}`}>
+                <Text style={styles.modalSubmitText}>{label}</Text>
+              </PressScale>
+            ))}
+            <PressScale onPress={() => setReportTarget(null)} style={{ alignItems: 'center', padding: spacing.md }}><Text style={styles.modalHint}>Annuler</Text></PressScale>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={requestOpen} animationType="slide" transparent onRequestClose={() => setRequestOpen(false)}>
         <View style={styles.modalBackdrop}>

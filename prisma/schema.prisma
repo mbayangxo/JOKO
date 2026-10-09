@@ -1034,6 +1034,8 @@ model MboloThread {
   commerceType  String?
   commerceRefId String?
   inviteCode    String?  @unique
+  /// J10 groups: all | admins (announcement mode — only owner/admins post)
+  postingPolicy String   @default("all")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -1057,6 +1059,11 @@ model MboloMember {
   status       String    @default("active")
   invitedById  String?
   respondedAt  DateTime?
+  /// J10 groups: an owner/admin muted this member (cannot post until then)
+  mutedUntil   DateTime?
+  /// J10 groups: removed by (status 'removed') — never rejoins by invite code; 'left' = left on their own
+  removedById  String?
+  removedAt    DateTime?
   lastReadAt   DateTime?
   lastTypingAt DateTime?
   createdAt    DateTime  @default(now())
@@ -2245,6 +2252,14 @@ model ContentReport {
   reason           String
   status           String   @default("open")
   adminNotes       String?
+  /// J10: message / group reports keep a snapshot of the reported content at report time
+  targetThreadId   String?
+  targetMessageId  String?
+  evidenceSnapshot String?
+  /// J10 outcome: no_violation | warn | restrict_messaging (resolvedBy = operator)
+  resolution       String?
+  resolvedBy       String?
+  resolvedAt       DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -2256,6 +2271,31 @@ model ContentReport {
   @@index([reporterId])
   @@index([targetUserId])
   @@index([targetBusinessId])
+}
+
+/// J10: a moderation action on a person (never on money). restrict_messaging stops new conversations and
+/// group posts until `until`; payments, refunds, payouts and receipts are unaffected. One appeal, decided by
+/// a different operator than the one who acted.
+model ModerationAction {
+  id               String    @id @default(cuid())
+  userId           String
+  /// warn | restrict_messaging
+  kind             String
+  until            DateTime?
+  reportId         String?
+  byAdminId        String
+  note             String
+  appealNote       String?
+  appealedAt       DateTime?
+  /// upheld | lifted
+  appealOutcome    String?
+  appealResolvedBy String?
+  appealResolvedAt DateTime?
+  liftedAt         DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([appealedAt])
 }
 
 /**
