@@ -2267,6 +2267,7 @@ model ContentReport {
   targetUser     User?     @relation("ReportedUser", fields: [targetUserId], references: [id], onDelete: SetNull)
   targetBusiness Business? @relation(fields: [targetBusinessId], references: [id], onDelete: SetNull)
 
+  @@unique([reporterId, targetMessageId])
   @@index([status, createdAt])
   @@index([reporterId])
   @@index([targetUserId])

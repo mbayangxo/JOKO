@@ -112,6 +112,9 @@ async function candidatesFor(path, me, myBizIds) {
     'work/assignments/:id': `SELECT "id" FROM "WorkAssignment" WHERE "workerUserId" <> '${me}' ORDER BY random() LIMIT 2`,
     'work/disputes/:id': `SELECT "id" FROM "WorkDispute" ORDER BY random() LIMIT 2`,
     'affiliate/resolve/:code': `SELECT "linkCode" FROM "AffiliateLink" ORDER BY random() LIMIT 1`,
+    // J10: conversations (groups, order chats, partner threads) and evidence files the attacker is not part of.
+    'mbolo/threads/:id': `SELECT t."id" FROM "MboloThread" t WHERE NOT EXISTS (SELECT 1 FROM "MboloMember" m WHERE m."threadId" = t."id" AND m."userId" = '${me}') ORDER BY random() LIMIT 3`,
+    'work/evidence/files/:id': `SELECT "id" FROM "WorkEvidenceFile" ORDER BY random() LIMIT 2`,
   };
   const prefix = Object.keys(table).find((k) => path === k || path.startsWith(`${k}/`));
   if (!prefix) return null;

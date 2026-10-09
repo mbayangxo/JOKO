@@ -9,6 +9,8 @@ ALTER TABLE "ContentReport" ADD COLUMN "evidenceSnapshot" TEXT;
 ALTER TABLE "ContentReport" ADD COLUMN "resolution" TEXT;
 ALTER TABLE "ContentReport" ADD COLUMN "resolvedBy" TEXT;
 ALTER TABLE "ContentReport" ADD COLUMN "resolvedAt" TIMESTAMP(3);
+-- one report per reporter per message (NULL message ids — person reports — are not constrained)
+CREATE UNIQUE INDEX "ContentReport_reporterId_targetMessageId_key" ON "ContentReport"("reporterId", "targetMessageId");
 
 CREATE TABLE "ModerationAction" (
     "id" TEXT NOT NULL,
