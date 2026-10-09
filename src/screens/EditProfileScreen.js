@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import PressScale from '../components/PressScale';
@@ -17,7 +17,7 @@ function countryFromProfilePhone(phone) {
   if (phone?.startsWith('+221')) return COUNTRIES.find((c) => c.code === 'SN') ?? COUNTRIES[0];
   return COUNTRIES.find((c) => c.code === 'SN') ?? COUNTRIES[0];
 }
-import { askProfilePoll, closeProfilePoll, mePhoneConfirm, mePhoneRequest, patchMe } from '../lib/api-client';
+import { askProfilePoll, closeProfilePoll, getCommunitySettings, mePhoneConfirm, mePhoneRequest, patchMe, saveCommunitySettings } from '../lib/api-client';
 import { pickProfilePhoto } from '../lib/profile-photo';
 
 function formatPhoneDisplay(phone) {
@@ -393,6 +393,8 @@ export default function EditProfileScreen({ navigation }) {
             <GlowButton label={loading ? '…' : 'Enregistrer l\'email'} onPress={saveEmail} disabled={loading} />
           </View>
 
+          <PrivacySettings />
+
           <Text style={styles.sectionLabel}>Solde par SMS</Text>
           <View style={styles.card}>
             <Text style={styles.hint}>
@@ -457,3 +459,36 @@ const styles = StyleSheet.create({
   devOtpCode: { fontFamily: fontFamily.displayBlack, fontSize: 24, color: colors.orange, letterSpacing: 4 },
   link: { fontSize: 12, color: colors.greenDark, fontWeight: '700' },
 });
+
+/** J10: who can find me by phone number, and whether I appear in my neighbourhood (off by default). */
+function PrivacySettings() {
+  const showToast = useToast();
+  const [st, setSt] = useState(null);
+  useEffect(() => { getCommunitySettings().then(setSt).catch(() => {}); }, []);
+  if (!st) return null;
+  const save = async (patch) => {
+    try {
+      setSt(await saveCommunitySettings(patch));
+      showToast('Confidentialité mise à jour');
+    } catch (e) {
+      showToast(e.message ?? 'Enregistrement impossible');
+    }
+  };
+  const OPTIONS = [['everyone', 'Tout le monde'], ['connections', 'Mes contacts seulement'], ['nobody', 'Personne']];
+  return (
+    <>
+      <Text style={styles.sectionLabel}>Confidentialité</Text>
+      <View style={styles.card}>
+        <Text style={styles.hint}>Qui peut me trouver avec mon numéro de téléphone ? (La recherche par @pseudo reste possible.)</Text>
+        {OPTIONS.map(([v, label]) => (
+          <PressScale key={v} onPress={() => save({ discoverableByPhone: v })} accessibilityLabel={`Me trouver par numéro : ${label}`}>
+            <Text style={styles.hint}>{st.discoverableByPhone === v ? '● ' : '○ '}{label}</Text>
+          </PressScale>
+        ))}
+        <PressScale onPress={() => save({ neighbourhoodVisible: !st.neighbourhoodVisible })} accessibilityLabel="Apparaître dans mon quartier">
+          <Text style={styles.hint}>{st.neighbourhoodVisible ? '☑' : '☐'} Apparaître dans la liste « Mon quartier » (prénom et @pseudo seulement)</Text>
+        </PressScale>
+      </View>
+    </>
+  );
+}

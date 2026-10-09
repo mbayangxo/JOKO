@@ -1293,6 +1293,8 @@ export const leaveGroup = (id) => apiFetch(thr(id, 'leave'), { method: 'POST', b
 export const reportMboloMessage = (messageId, category, reason) => apiFetch(`/api/mbolo/messages/${encodeURIComponent(messageId)}/report`, { method: 'POST', body: { category, reason }, skipCache: true });
 export const getMyModeration = () => apiFetch('/api/me/moderation', { skipCache: true });
 export const appealModeration = (id, note) => apiFetch(`/api/me/moderation/${encodeURIComponent(id)}/appeal`, { method: 'POST', body: { note }, skipCache: true });
+export const getNeighbourhood = () => apiFetch('/api/community/neighbourhood', { skipCache: true });
+export const openOrderConversation = (orderId) => apiFetch(`/api/marketplace/orders/${encodeURIComponent(orderId)}/conversation`, { method: 'POST', body: {}, skipCache: true });
 export const getToday = () => apiFetch('/api/me/today', { skipCache: true });
 export const getUnreadNotifications = () => apiFetch('/api/notifications/unread', { skipCache: true });
 export const markAllNotificationsRead = (category) => apiFetch('/api/notifications/read-all', { method: 'POST', body: category ? { category } : {}, skipCache: true });

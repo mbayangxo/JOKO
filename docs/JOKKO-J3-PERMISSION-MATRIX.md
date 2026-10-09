@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**676 routes.** Column legend:
+**679 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -486,6 +486,18 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 |---|---|---|---|---|---|---|---|---|---|
 | `GET commerce/capabilities` | user | commerce.capabilities | any user (ACTIVE / DORMANT catalogue) |  |  |  |  |  |  |
 
+## User — community
+
+| Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| `GET community/neighbourhood` | user | community.discover | self: verified active businesses in my area + opted-in people; blocks excluded |  |  |  |  |  |  |
+
+## User — contacts
+
+| Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| `POST contacts/match` | user | community.discover | self: hashed numbers from own contacts; only people discoverable to me; ≤ 200 / call, ≤ 1 000 / day |  |  |  |  |  |  |
+
 ## User — culture
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
@@ -655,6 +667,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
 |---|---|---|---|---|---|---|---|---|---|
+| `POST marketplace/orders/:id/conversation` | user | community.order.chat | the order’s buyer, or that shop’s staff with business.orders.fulfill; blocks close it; never changes the order |  |  |  |  |  |  |
 | `GET marketplace/search` | user | marketplace.read | public |  |  |  |  |  |  |
 | `GET marketplace/shops/nearby` | user | marketplace.read | public |  |  |  |  |  |  |
 | `GET marketplace/shops/:id` | user | marketplace.read | public |  |  |  |  |  |  |

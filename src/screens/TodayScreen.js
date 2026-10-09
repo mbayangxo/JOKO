@@ -5,7 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import PressScale from '../components/PressScale';
 import ScreenBackground from '../components/ScreenBackground';
 import ScreenHeader from '../components/ScreenHeader';
-import { appealModeration, getMyModeration, getToday } from '../lib/api-client';
+import { appealModeration, getMyModeration, getToday, openOrderConversation } from '../lib/api-client';
 import { useToast } from '../components/Toast';
 import { navigateFromRoot } from '../lib/root-navigation';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
@@ -36,7 +36,19 @@ export default function TodayScreen({ navigation }) {
     }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
-  const open = (item) => { if (item.route) navigateFromRoot(navigation, item.route, item.params); };
+  const open = async (item) => {
+    if (item.type === 'order') {
+      // J10: talk to the shop about THIS order (support reference attached); acting on the order stays in the order flow.
+      try {
+        const c = await openOrderConversation(item.id);
+        navigateFromRoot(navigation, 'Main', { screen: 'MbooloTab', params: { screen: 'MbooloChat', params: { threadId: c.threadId, title: item.title } } });
+      } catch (e) {
+        showToast(e.message ?? 'Conversation impossible');
+      }
+      return;
+    }
+    if (item.route) navigateFromRoot(navigation, item.route, item.params);
+  };
 
   return (
     <View style={styles.root}>
@@ -64,15 +76,20 @@ export default function TodayScreen({ navigation }) {
           ))}
           {data?.empty && decisions.length === 0 ? <Text style={styles.empty}>Rien ne t’attend aujourd’hui.</Text> : null}
           {(data?.items ?? []).map((item) => (
-            <PressScale key={`${item.type}:${item.id}`} onPress={() => open(item)} disabled={!item.route} style={[styles.card, item.priority === 1 && styles.urgent]} accessibilityLabel={`${item.title}. ${item.detail}`}>
+            <PressScale key={`${item.type}:${item.id}`} onPress={() => open(item)} disabled={!item.route && item.type !== 'order'} style={[styles.card, item.priority === 1 && styles.urgent]} accessibilityLabel={`${item.title}. ${item.detail}`}>
               <Text style={styles.icon}>{ICON[item.type] ?? '•'}</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.title}>{item.title}</Text>
                 {item.detail ? <Text style={styles.detail}>{item.detail}</Text> : null}
               </View>
-              {item.route ? <Text style={styles.chev}>›</Text> : null}
+              {item.route || item.type === 'order' ? <Text style={styles.chev}>{item.type === 'order' ? '💬' : '›'}</Text> : null}
             </PressScale>
           ))}
+          <PressScale onPress={() => navigateFromRoot(navigation, 'Neighbourhood')} style={styles.card} accessibilityLabel="Mon quartier">
+            <Text style={styles.icon}>🏘️</Text>
+            <View style={{ flex: 1 }}><Text style={styles.title}>Mon quartier</Text><Text style={styles.detail}>Commerces vérifiés et voisins qui ont choisi d’apparaître</Text></View>
+            <Text style={styles.chev}>›</Text>
+          </PressScale>
         </ScrollView>
       </SafeAreaView>
     </View>
