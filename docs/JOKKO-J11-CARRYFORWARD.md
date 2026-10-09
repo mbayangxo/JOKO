@@ -14,4 +14,22 @@
 See `docs/JOKKO-DECISIONS.md` → "P-J10 classification".
 
 ## 3. NEW P0 found at the start of J11.0
-The tontine wallet drain is **live on the production base `7d262de`**: see `docs/incidents/2026-10-p0-tontine-drain-live/`. **STOP.** J11 feature work waits for the owner.
+The tontine wallet drain is **live on the production base `7d262de`**: see `docs/incidents/2026-10-p0-tontine-drain-live/`. J11 stopped there. The owner then ordered production containment (P0-A, blocked at Vercel 403, nothing deployed) and a **local** J11 resume. All new J11 money stays off in production.
+
+## 4. Stale-authorization review (staff removal and permission revocation)
+Question: after the J3 race (§1), does any other money path check a revocable permission with a read that a concurrent revocation can slip past? **The rule now applied:** the permission row is read **inside the money transaction, under a row lock** (`FOR SHARE`). A revocation that is committing either lands first and is seen, or waits until the posting commits.
+
+| Path | Permission | Before | Now | Evidence |
+|---|---|---|---|---|
+| Business wallet out (to personal, to business, payroll, held-transaction execution): 9 callers | business member capability | in-tx `assertBusinessAuthorityInTx` | fixed in §1 (empty re-check refuses) | `tests/j11/authority-race.test.js` |
+| Work funding (`work/money.js`), rule funding (`work/rules.js`), logistics transfers | business capability | in-tx `assertBusinessAuthorityInTx` | covered by the same fix | J9/J8 suites |
+| Logistics fee hold from the J7 outbox (`intake.js`) | none at execution | the debit executes a PO the seller **already accepted** with Jokko Logistics (a business commitment, not a staff session) | **by design**, recorded: removing the accepting staff member does not cancel the business's accepted order; cancelling the PO does | — |
+| **Courier steps and assignment** (`asCourier`, `assignCourier`, `emergencyReassign`) | Jokko `driver` role | **plain read** inside the tx: a suspension committing at that moment was invisible | `courierRoleActiveInTx`: `FOR SHARE` | `tests/j11/courier-role-race.test.js`: old code fails (stale `true`), fixed passes |
+| **Cash agent bind, customer commit, agent completion** (`agents/cash.js`) | agent profile status | **plain read** inside the tx (and `requireOperatingAgent` before the tx) | `agentActiveInTx`: `FOR SHARE` inside the money tx; the pre-tx check stays as a fast refusal | `tests/j11/agent-suspension-race.test.js`: old code fails, fixed passes |
+| Courier earnings payout | none (the courier's own earned money) | — | unchanged on purpose: a suspended courier is still owed earned money; open disputes freeze it | — |
+
+**Severity:** the window is milliseconds and the actor was authorized moments earlier, so these are **P2 hardening fixes, not P0s**. No money is created or lost: each posting stays a balanced J2 move.
+
+**Production (`7d262de`):** not affected by these races, for a different reason. That code has **no member status and no removal or revocation path at all** (`requireBusinessAdmin` / `requireBusinessMember` check membership outside any transaction, and nothing removes a member). Staff revocation is therefore impossible in production, which is the J3 finding that the branch fixes. **Nothing here is deployed**, and none of these branch fixes is to be shipped to production on its own.
+
+**Verification:** J6 + J8 + J11 suites serially: **123 / 123**. These fixes go into the next full local gate together with the J3 fix.
