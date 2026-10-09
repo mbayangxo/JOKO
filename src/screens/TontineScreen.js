@@ -80,7 +80,7 @@ function GroupItem({ item, delay, onPress }) {
   );
 }
 
-function HomeStep({ groups, loading, onOpenGroup, onCreate, onBack }) {
+function HomeStep({ groups, loading, onOpenGroup, onCreate, onBack, onOpenCollective }) {
   const heroEntrance = useEntrance(0, 400, 10);
   const receivedThisMonth = groups.filter((g) => g.isMyTurn).reduce((s, g) => s + (g.expectedPot ?? 0), 0);
   const totalMembers = groups.reduce((s, g) => s + (g.memberCount ?? 0), 0);
@@ -104,6 +104,11 @@ function HomeStep({ groups, loading, onOpenGroup, onCreate, onBack }) {
             <Text style={styles.eyebrow}>NATTA DIGITALE</Text>
             <Text style={styles.title}>Mes groupes</Text>
             <Text style={styles.sub}>Épargne collective · Chacun cotise lui-même</Text>
+            {onOpenCollective ? (
+              <PressScale onPress={onOpenCollective} accessibilityLabel="Groupes d’épargne (nouveau)">
+                <Text style={[styles.sub, { textDecorationLine: 'underline' }]}>Groupes d’épargne (nouveau) : règles approuvées par tous ›</Text>
+              </PressScale>
+            ) : null}
 
             <View style={styles.statsRow}>
               <View style={styles.statBox}>
@@ -758,6 +763,7 @@ export default function TontineScreen({ navigation, route }) {
               }}
               onCreate={() => setStep('create')}
               onBack={() => navigation.goBack()}
+              onOpenCollective={() => navigation.navigate('CollectiveGroups')}
             />
           </StepTransition>
         )}

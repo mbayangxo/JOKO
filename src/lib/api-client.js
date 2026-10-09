@@ -1910,3 +1910,28 @@ export const approveBizWorkRule = (businessId, ruleId) => post(bizWk(businessId,
 export const fundBizWorkRule = (businessId, ruleId, amountKori, { stepUpToken, idempotencyKey } = {}) => post(bizWk(businessId, `rules/${enc(ruleId)}/fund`), { amountKori }, { stepUpToken, idempotencyKey });
 export const appealWorkDispute = (disputeId, note) => post(wk(`disputes/${enc(disputeId)}/appeal`), { note });
 export const appealBizWorkDispute = (businessId, disputeId, note) => post(bizWk(businessId, `disputes/${enc(disputeId)}/appeal`), { note });
+
+/** J11 collective money (rotating tontines + goal savings) — dark unless the server flag is on (503 otherwise). */
+const cg = (id, path = '') => `/api/collective/groups/${encodeURIComponent(id)}${path ? `/${path}` : ''}`;
+export const getCollectiveGroups = () => apiFetch('/api/collective/groups', { skipCache: true });
+export const createCollectiveGroup = (body) => apiFetch('/api/collective/groups', { method: 'POST', body, skipCache: true });
+export const getCollectiveGroup = (id) => apiFetch(cg(id), { skipCache: true });
+export const inviteToCollective = (id, handles) => apiFetch(cg(id, 'invite'), { method: 'POST', body: { handles }, skipCache: true });
+export const respondCollectiveInvite = (id, accept) => apiFetch(cg(id, 'respond'), { method: 'POST', body: { accept }, skipCache: true });
+export const leaveCollective = (id) => apiFetch(cg(id, 'leave'), { method: 'POST', body: {}, skipCache: true });
+export const proposeCollectiveRules = (id, body) => apiFetch(cg(id, 'rules'), { method: 'POST', body, skipCache: true });
+export const acceptCollectiveRules = (id, rulesHash) => apiFetch(cg(id, 'rules/accept'), { method: 'POST', body: { rulesHash }, skipCache: true });
+export const declineCollectiveRules = (id) => apiFetch(cg(id, 'rules/decline'), { method: 'POST', body: {}, skipCache: true });
+export const cancelCollectiveBeforeStart = (id) => apiFetch(cg(id, 'cancel'), { method: 'POST', body: {}, skipCache: true });
+export const contributeCollective = (id, { amountKori, stepUpToken, idempotencyKey } = {}) =>
+  apiFetch(cg(id, 'contribute'), { method: 'POST', body: amountKori ? { amountKori } : {}, stepUpToken, idempotencyKey, skipCache: true });
+export const releaseCollective = (id) => apiFetch(cg(id, 'release'), { method: 'POST', body: {}, skipCache: true });
+export const withdrawCollective = (id, { amountKori, idempotencyKey } = {}) => apiFetch(cg(id, 'withdraw'), { method: 'POST', body: amountKori ? { amountKori } : {}, idempotencyKey, skipCache: true });
+export const openCollectiveVote = (id, topic, days) => apiFetch(cg(id, 'votes'), { method: 'POST', body: days ? { topic, days } : { topic }, skipCache: true });
+export const castCollectiveBallot = (voteId, choice) => apiFetch(`/api/collective/votes/${encodeURIComponent(voteId)}/ballot`, { method: 'POST', body: { choice }, skipCache: true });
+export const openCollectiveDispute = (id, reason) => apiFetch(cg(id, 'disputes'), { method: 'POST', body: { reason }, skipCache: true });
+/** J11 coop capital records (records only). */
+export const getMyCoopCapital = () => apiFetch('/api/coop/capital/mine', { skipCache: true });
+export const respondCoopRecord = (id, confirm, note) => apiFetch(`/api/coop/capital/${encodeURIComponent(id)}/respond`, { method: 'POST', body: note ? { confirm, note } : { confirm }, skipCache: true });
+/** J10/J11 Jekkal direct: the named beneficiary consents. */
+export const respondJekkalBeneficiary = (id, accept) => apiFetch(`/api/jekkal/campaigns/${encodeURIComponent(id)}/beneficiary`, { method: 'POST', body: { accept }, skipCache: true });

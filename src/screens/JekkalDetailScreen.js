@@ -7,7 +7,7 @@ import GlowButton from '../components/GlowButton';
 import ScreenBackground from '../components/ScreenBackground';
 import ScreenHeader from '../components/ScreenHeader';
 import { useToast } from '../components/Toast';
-import { contributeJekkal, getJekkalCampaign } from '../lib/api-client';
+import { contributeJekkal, getJekkalCampaign, respondJekkalBeneficiary } from '../lib/api-client';
 import { formatKori } from '../lib/kori.js';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
 
@@ -87,6 +87,13 @@ export default function JekkalDetailScreen({ navigation, route }) {
         <ScrollView contentContainerStyle={styles.scroll}>
           <Text style={styles.title}>{campaign.title}</Text>
           <Text style={styles.beneficiary}>Pour {campaign.beneficiary?.name ?? campaign.beneficiary?.handle}</Text>
+          <Text style={styles.story}>{campaign.disclosure}</Text>
+          {campaign.awaitingBeneficiary ? (
+            <View>
+              <Text style={styles.beneficiary}>En attente de l’accord du bénéficiaire : aucun don n’est possible avant.</Text>
+              <GlowButton title="J’accepte cette collecte à mon nom" onPress={async () => { try { await respondJekkalBeneficiary(campaign.id, true); load(); } catch (e) { showToast(e.message); } }} />
+            </View>
+          ) : null}
           {campaign.story ? <Text style={styles.story}>{campaign.story}</Text> : null}
 
           <View style={styles.progressTrack}>

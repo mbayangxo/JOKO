@@ -55,6 +55,9 @@ import JekkalScreen from '../screens/JekkalScreen';
 import JekkalDetailScreen from '../screens/JekkalDetailScreen';
 import MyTicketsScreen from '../screens/MyTicketsScreen';
 import TodayScreen from '../screens/TodayScreen';
+import CollectiveGroupsScreen from '../screens/CollectiveGroupsScreen';
+import CollectiveGroupScreen from '../screens/CollectiveGroupScreen';
+import CoopCapitalScreen from '../screens/CoopCapitalScreen';
 import NeighbourhoodScreen from '../screens/NeighbourhoodScreen';
 import EventCreateScreen from '../screens/EventCreateScreen';
 import EventScannerScreen from '../screens/EventScannerScreen';
@@ -248,6 +251,9 @@ export default function RootNavigator() {
       <Stack.Screen name="JekkalDetail" component={JekkalDetailScreen} />
       <Stack.Screen name="MyTickets" component={MyTicketsScreen} />
       <Stack.Screen name="Today" component={TodayScreen} />
+      <Stack.Screen name="CollectiveGroups" component={CollectiveGroupsScreen} />
+      <Stack.Screen name="CollectiveGroup" component={CollectiveGroupScreen} />
+      <Stack.Screen name="CoopCapital" component={CoopCapitalScreen} />
       <Stack.Screen name="Neighbourhood" component={NeighbourhoodScreen} />
       <Stack.Screen name="EventCreate" component={EventCreateScreen} />
       <Stack.Screen name="EventScanner" component={EventScannerScreen} />
