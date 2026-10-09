@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**647 routes.** Column legend:
+**648 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -383,6 +383,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET businesses/:id/work/assignments/:subId` | user | work.business.read | business:business.staffing.manage; own assignment |  |  |  |  |  |  |
 | `POST businesses/:id/work/assignments/:subId/attendance-code` | user | work.attendance.code | business:business.staffing.manage; own active assignment |  |  |  |  | work_challenge |  |
 | `POST businesses/:id/work/assignments/:subId/accept` | user | work.milestone.accept | business:business.staffing.manage; never the worker themself |  |  |  |  | ledger+risk |  |
+| `POST businesses/:id/work/milestones/accept-batch` | user | work.milestone.accept | per item: business:business.staffing.manage on that assignment; never the worker themself; ≤ 50 items; counts once on the account limiter + per item on the work_accept budget (A6/D42) |  |  |  |  | ledger+risk |  |
 | `POST businesses/:id/work/assignments/:subId/end` | user | work.assignment.end | business:business.staffing.manage; no unilateral end once work is attended / submitted |  |  |  |  | ledger+risk |  |
 | `POST businesses/:id/work/assignments/:subId/disputes` | user | work.dispute.open | business:business.staffing.manage (false completion within the window; unpaid only) |  |  |  |  | work_evidence |  |
 | `POST businesses/:id/work/assignments/:subId/feedback` | user | work.feedback.leave | business:business.staffing.manage; once; after work |  |  |  |  |  |  |

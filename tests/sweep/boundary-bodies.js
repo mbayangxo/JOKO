@@ -10,6 +10,7 @@ export const isCriticalAdminRoute = (key, p) => !key.startsWith('GET ') && p.act
 const H64 = 'a'.repeat(64);
 /** Semantically valid adversarial bodies: they pass the route's schema so the handler reaches its authorization decision. */
 export const VALID_BODIES = {
+  'POST businesses/:id/work/milestones/accept-batch': () => ({ items: [{ assignmentId: 'sweep-assignment', seq: 1 }] }),
   'POST money/charges/:id/pay': () => ({ expectedAmountKori: 100 }),
   'POST money/payments/:reference/refund': () => ({ amountKori: 100, reason: 'sweep: refund someone else’s payment' }),
   'POST transfers/:reference/undo': () => ({}),

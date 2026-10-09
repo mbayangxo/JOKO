@@ -1873,6 +1873,7 @@ export const withdrawBizOffer = (businessId, offerId) => post(bizWk(businessId, 
 export const listBizAssignments = (businessId) => apiFetch(bizWk(businessId, 'assignments'), { skipCache: true });
 export const issueBizAttendanceCode = (businessId, assignmentId, purpose) => post(bizWk(businessId, `assignments/${enc(assignmentId)}/attendance-code`), { purpose });
 export const acceptBizMilestone = (businessId, assignmentId, seq) => post(bizWk(businessId, `assignments/${enc(assignmentId)}/accept`), { seq });
+export const acceptBizMilestonesBatch = (businessId, items) => post(bizWk(businessId, 'milestones/accept-batch'), { items });
 export const endBizAssignment = (businessId, assignmentId, reason) => post(bizWk(businessId, `assignments/${enc(assignmentId)}/end`), { reason });
 export const openBizWorkDispute = (businessId, assignmentId, body) => post(bizWk(businessId, `assignments/${enc(assignmentId)}/disputes`), body);
 export const listBizWorkRules = (businessId) => apiFetch(bizWk(businessId, 'rules'), { skipCache: true });

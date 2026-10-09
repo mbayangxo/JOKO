@@ -7,7 +7,7 @@ import GlowButton from '../components/GlowButton';
 import StepUpOverlay from '../components/StepUpOverlay';
 import { useToast } from '../components/Toast';
 import {
-  acceptBizMilestone, appealBizWorkDispute, approveBizWorkRule, createBizOffer, createBizOpportunity, decideBizApplication, endBizAssignment, fundBizWorkRule,
+  acceptBizMilestone, acceptBizMilestonesBatch, appealBizWorkDispute, approveBizWorkRule, createBizOffer, createBizOpportunity, decideBizApplication, endBizAssignment, fundBizWorkRule,
   getMyBusinesses, issueBizAttendanceCode, listBizApplicants, listBizAssignments, listBizOpportunities, listBizWorkRules, openBizWorkDispute,
   proposeBizWorkRule,
 } from '../lib/api-client';
@@ -211,6 +211,22 @@ export default function BusinessWorkScreen({ navigation }) {
           {tab === 'assignments' ? (
             <>
               {assignments.length === 0 ? <Text style={styles.empty}>Aucune mission.</Text> : null}
+              {(() => {
+                // A6: validate every submitted milestone in one request (≤ 50); each item succeeds or fails on its own.
+                const pending = assignments.flatMap((a) => a.milestones.filter((m) => m.status === 'submitted').map((m) => ({ assignmentId: a.id, seq: m.seq, amountKori: m.amountKori })));
+                if (pending.length < 2) return null;
+                const batch = pending.slice(0, 50);
+                return (
+                  <GlowButton
+                    label={`Valider les ${batch.length} travaux reçus (${formatKori(batch.reduce((t, x) => t + x.amountKori, 0))})`}
+                    disabled={busy}
+                    onPress={async () => {
+                      const r = await act(() => acceptBizMilestonesBatch(bizId, batch.map(({ assignmentId, seq }) => ({ assignmentId, seq }))));
+                      if (r) showToast(r.failed ? `${r.accepted} validés, ${r.failed} non validés — vérifie chaque mission` : 'Validés — paiement après le délai de contestation');
+                    }}
+                  />
+                );
+              })()}
               {assignments.map((a) => (
                 <View key={a.id} style={styles.card}>
                   <Text style={styles.cardTitle}>{a.worker?.name ?? a.worker?.handle} · {a.reference}</Text>
