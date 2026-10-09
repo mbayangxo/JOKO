@@ -4735,3 +4735,205 @@ model WorkBlock {
 
   @@unique([userId, businessId])
 }
+
+// ============================================================================
+// J11 — COLLECTIVE MONEY ENGINE (docs/JOKKO-J11-0-AUDIT.md §3). Additive only:
+// never reads or writes the legacy TontineGroup / TontineContribution rows.
+// Money lives in J2 ledger accounts (collective:<id>:pot, collective:<id>:share:<user>);
+// these tables are the rules, obligations and history around it.
+// ============================================================================
+
+/// A collective money group: kind `rotating` (model A tontine) or `goal` (model B group goal savings).
+/// proposed → awaiting_acceptance → active → completed | cancelled. `frozenAt` set = ops freeze (no money moves).
+model CollectiveGroup {
+  id               String    @id @default(cuid())
+  kind             String
+  name             String
+  organizerId      String
+  status           String    @default("proposed")
+  /// Rules version members accept; any change before activation bumps it and clears every acceptance.
+  rulesVersion     Int       @default(0)
+  rulesHash        String?
+  rulesJson        String?   @db.Text
+  contributionKori Int
+  frequency        String
+  graceDays        Int       @default(3)
+  /// rotation: `fixed` (organizer-proposed order, accepted by everyone) | `draw` (random, seed recorded in the rules)
+  rotationMethod   String    @default("draw")
+  /// goal: each member's personal target, and when savings unlock (`anytime` | `end`).
+  targetKori       Int?
+  withdrawPolicy   String?
+  cycleCount       Int?
+  currentCycle     Int       @default(0)
+  startAt          DateTime?
+  activatedAt      DateTime?
+  endedAt          DateTime?
+  frozenAt         DateTime?
+  frozenReason     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  members     CollectiveMember[]
+  obligations CollectiveObligation[]
+  payments    CollectivePayment[]
+  payouts     CollectivePayout[]
+  votes       CollectiveVote[]
+  disputes    CollectiveDispute[]
+  events      CollectiveEvent[]
+
+  @@index([organizerId])
+  @@index([status])
+}
+
+/// invited → joined | declined; joined → left | removed (before activation); joined → exited (by member vote).
+model CollectiveMember {
+  id                   String    @id @default(cuid())
+  groupId              String
+  userId               String
+  status               String    @default("invited")
+  /// rotating: the 1-based cycle in which this member receives the pot (fixed in the accepted rules).
+  position             Int?
+  acceptedRulesVersion Int?
+  acceptedRulesHash    String?
+  acceptedAt           DateTime?
+  invitedById          String?
+  joinedAt             DateTime?
+  leftAt               DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+/// One obligation per member per scheduled cycle, created at activation (the transparent schedule).
+/// open → partial → paid | late_paid; open|partial → missed (after grace; still payable → late_paid);
+/// → cancelled (group cancelled / member exited before the cycle). Never auto-debited.
+model CollectiveObligation {
+  id             String    @id @default(cuid())
+  groupId        String
+  cycle          Int
+  userId         String
+  dueAt          DateTime
+  graceUntil     DateTime
+  amountDueKori  Int
+  amountPaidKori Int       @default(0)
+  status         String    @default("open")
+  paidAt         DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, cycle, userId])
+  @@index([groupId, cycle])
+  @@index([userId, status])
+}
+
+/// Append-only money history of a group: contribution | payout | refund | withdrawal | catch_up.
+/// Each row mirrors exactly one J2 posting (same reference).
+model CollectivePayment {
+  id             String   @id @default(cuid())
+  groupId        String
+  cycle          Int
+  userId         String
+  kind           String
+  amountKori     Int
+  late           Boolean  @default(false)
+  reference      String   @unique
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@index([groupId, cycle])
+  @@index([userId, createdAt])
+}
+
+/// Rotating: exactly one payout per cycle (DB unique). basis: full | partial_vote | dispute_ruling.
+model CollectivePayout {
+  id          String   @id @default(cuid())
+  groupId     String
+  cycle       Int
+  recipientId String
+  amountKori  Int
+  basis       String
+  reference   String   @unique
+  createdAt   DateTime @default(now())
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, cycle])
+}
+
+/// Member votes. topic: extend_grace | partial_release | cancel | exit. Eligibility is frozen at opening.
+model CollectiveVote {
+  id           String    @id @default(cuid())
+  groupId      String
+  cycle        Int?
+  topic        String
+  proposedBy   String
+  subjectUser  String?
+  payloadJson  String    @db.Text
+  eligibleJson String    @db.Text
+  status       String    @default("open")
+  expiresAt    DateTime
+  decidedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  group   CollectiveGroup    @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  ballots CollectiveBallot[]
+
+  @@index([groupId, status])
+}
+
+model CollectiveBallot {
+  id        String   @id @default(cuid())
+  voteId    String
+  userId    String
+  choice    String
+  createdAt DateTime @default(now())
+
+  vote CollectiveVote @relation(fields: [voteId], references: [id], onDelete: Restrict)
+
+  @@unique([voteId, userId])
+}
+
+/// A member's dispute on one cycle. While open, that cycle cannot pay out. An operator rules
+/// (collective_ops); a money outcome executes only on a second operator's approval (finance).
+model CollectiveDispute {
+  id         String    @id @default(cuid())
+  groupId    String
+  cycle      Int
+  openedBy   String
+  reason     String
+  status     String    @default("open")
+  outcome    String?
+  ruledBy    String?
+  ruledAt    DateTime?
+  rulingNote String?
+  settledAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@index([groupId, status])
+  @@index([status, createdAt])
+}
+
+/// Immutable group history (who did what, when). Shown to members; ids only in operator exports.
+model CollectiveEvent {
+  id         String   @id @default(cuid())
+  groupId    String
+  actorType  String
+  actorId    String?
+  action     String
+  detailJson String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@index([groupId, createdAt])
+}
