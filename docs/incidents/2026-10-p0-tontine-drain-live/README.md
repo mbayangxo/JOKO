@@ -17,6 +17,8 @@
 
 **Access blocker:** project list, environment variables, runtime logs (and therefore the cron and production configuration) all return **403** (*"Trying to access resource under scope mbayangxos-projects. You must re-authenticate to this scope"*). This container has no Vercel CLI or token. **Production actions stopped here, per instruction.** To unblock, the owner re-authorizes the Vercel connector for the `mbayangxos-projects` scope, or performs the deploy personally.
 
+**Re-checked 2026-10-09 (later the same day):** `GET /v9/projects/prj_lOUwSQp2PPi8Bhe1tA1jjrKXdiYt` with `teamId=team_DuHLYw71m5ATHKdtGSur1Diw` still returns **403** ("must re-authenticate to this scope"; not SAML, not SSO-enforced). There is no Vercel CLI in the container. **Production actions remain stopped.** Production configuration (env, cron) is still unverified.
+
 ## 1. What is wrong
 On `7d262de`, the latest successful production deployment:
 1. **No consent.** `POST /api/tontine/groups` adds **any handle** as a member. There is no invitation and no acceptance step.
