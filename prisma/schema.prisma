@@ -1325,14 +1325,14 @@ model Notification {
 
 /// J10: per-person community and privacy settings (defaults = today's behaviour; nothing is made more public).
 model CommunitySettings {
-  userId              String   @id
+  userId               String   @id
   /// who can find me by phone number: everyone | connections | nobody (handle search is separate)
-  discoverableByPhone String   @default("everyone")
+  discoverableByPhone  String   @default("everyone")
   /// appear in "people in my neighbourhood" lists (opt-in; off by default)
-  neighbourhoodVisible Boolean @default(false)
+  neighbourhoodVisible Boolean  @default(false)
   /// notification categories the person muted (money and security can never be muted)
-  mutedCategories     String[] @default([])
-  updatedAt           DateTime @updatedAt
+  mutedCategories      String[] @default([])
+  updatedAt            DateTime @updatedAt
 }
 
 model RegionalAlert {
@@ -2244,13 +2244,13 @@ model UserBlock {
  * User report — routed to K21 admin review queue.
  */
 model ContentReport {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   reporterId       String
   targetUserId     String?
   targetBusinessId String?
   category         String
   reason           String
-  status           String   @default("open")
+  status           String    @default("open")
   adminNotes       String?
   /// J10: message / group reports keep a snapshot of the reported content at report time
   targetThreadId   String?
@@ -2260,8 +2260,8 @@ model ContentReport {
   resolution       String?
   resolvedBy       String?
   resolvedAt       DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   reporter       User      @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
   targetUser     User?     @relation("ReportedUser", fields: [targetUserId], references: [id], onDelete: SetNull)
@@ -2733,33 +2733,33 @@ model AffiliateLink {
 }
 
 model AffiliateCommission {
-  id             String   @id @default(cuid())
-  affiliateId    String
-  orderId        String?
-  buyerId        String
-  amount         Int
-  orderTotal     Int
-  commissionBps  Int
-  source         String
-  linkCode       String?
-  productId      String?
-  businessId     String?
-  mboloThreadId  String?
-  mboloMessageId String?
+  id              String    @id @default(cuid())
+  affiliateId     String
+  orderId         String?
+  buyerId         String
+  amount          Int
+  orderTotal      Int
+  commissionBps   Int
+  source          String
+  linkCode        String?
+  productId       String?
+  businessId      String?
+  mboloThreadId   String?
+  mboloMessageId  String?
   /// immediate (legacy: paid at purchase) | deferred: provisional | earned | paid | reversed | review
-  status         String   @default("paid")
-  reference      String   @unique
+  status          String    @default("paid")
+  reference       String    @unique
   /// A4: immediate (legacy, live) | deferred (refund-aware; AFFILIATE_DEFERRED_SETTLEMENT)
-  settlementMode String   @default("immediate")
+  settlementMode  String    @default("immediate")
   completedSeenAt DateTime?
-  eligibleAt     DateTime?
-  earnedKori     Int?
-  reversedKori   Int      @default(0)
-  settledAt      DateTime?
-  paidAt         DateTime?
-  payoutReference String? @unique
-  reviewReason   String?
-  createdAt      DateTime @default(now())
+  eligibleAt      DateTime?
+  earnedKori      Int?
+  reversedKori    Int       @default(0)
+  settledAt       DateTime?
+  paidAt          DateTime?
+  payoutReference String?   @unique
+  reviewReason    String?
+  createdAt       DateTime  @default(now())
 
   affiliate AffiliateProfile @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
 
