@@ -2687,8 +2687,19 @@ model AffiliateCommission {
   businessId     String?
   mboloThreadId  String?
   mboloMessageId String?
+  /// immediate (legacy: paid at purchase) | deferred: provisional | earned | paid | reversed | review
   status         String   @default("paid")
   reference      String   @unique
+  /// A4: immediate (legacy, live) | deferred (refund-aware; AFFILIATE_DEFERRED_SETTLEMENT)
+  settlementMode String   @default("immediate")
+  completedSeenAt DateTime?
+  eligibleAt     DateTime?
+  earnedKori     Int?
+  reversedKori   Int      @default(0)
+  settledAt      DateTime?
+  paidAt         DateTime?
+  payoutReference String? @unique
+  reviewReason   String?
   createdAt      DateTime @default(now())
 
   affiliate AffiliateProfile @relation(fields: [affiliateId], references: [id], onDelete: Restrict)

@@ -19,7 +19,7 @@
 - **F2–F5, reported (owner decisions):**
   - F2: produce payments recorded as wages;
   - F3: "reputation for loans" over-claims;
-  - F4: the live affiliate commission (5 %, at purchase, never reversed on refund);
+  - F4: the affiliate commission (5 %, at purchase, never reversed on refund). It is on the default branch, **not** in the live `7d262de` (§9);
   - F5: gigs as products. Gig listings are now refused (410).
 
 ## 3. What J9 delivers
@@ -111,8 +111,8 @@ All fixes are in `5fb2d02` (and the sweep table in the report commit).
 - **This report and the sweep probe table:** see `git log`
 
 ## 6. Unresolved risks (honest)
-1. **The production P0 is open.** The F1 cooperative double-payout and the F4 affiliate behaviour are live in production until authorized deploys and decisions happen.
-2. **Auto-accept versus the false-completion window.** An auto-accepted milestone becomes payable after the 24 h hold, but the business may contest for 7 days. Once paid, there is no clawback (P-J9-9). For absent businesses this favours the worker by design. Proposal: align the hold with the window for *auto*-accepted work (finance decision under P-J9-1).
+1. **The production P0 is open.** The F1 cooperative double-payout is live in production (`7d262de`) until an authorized deploy. **Correction (§9):** F4 is *not* in `7d262de`. It is latent on the default branch (`19ac203`) and goes live with any deploy containing `494991d`.
+2. ~~Auto-accept versus the false-completion window.~~ **Fixed locally by A2 (§9):** payout eligibility is now never before the contest window closes (72 h for deemed acceptance, 24 h explicit).
 3. **Strict rate limits on J9 business money routes.** They use the default class (80/min, then a 15-minute account block, as in D42). A large employer validating many milestones at once could be blocked. A batch-accept endpoint (D42 pattern) is the follow-up.
 4. **Evidence is weak.** It is text and references only (`photo_ref` / `document_ref`, no file storage). Strong completion proof for gigs still depends on counterparts (attendance codes) and ops judgement.
 5. **Unknown-age workers** self-attest for non-hazardous work. Verified dates of birth exist only from KYC tier 2.
@@ -150,3 +150,39 @@ P-J9-1 … P-J9-10 are in `docs/JOKKO-DECISIONS.md`:
 6. **A controlled internal pilot:** one distributor, a handful of merchants, couriers and workers, with real but capped money, before any public exposure.
 
 J11 (collective capital) should start only when J10 shows that money, custody and work run cleanly in production.
+
+## 9. Provisional acceptance follow-ups (A1–A6)
+J9 is provisionally accepted as a **local engineering milestone only**: no live J9 money and no production deploy.
+
+### A1: gate at the actual latest HEAD
+- **`ec733fa`: run INVALID, discarded.** During the run I regenerated the shared `node_modules` Prisma client for another worktree, so the gate server answered `503 db_schema_outdated`. It validates nothing.
+- **Gate fix:** the gate worktree now gets its **own copied `node_modules`**. The gate refuses a symlinked one and checks `client_matches_schema` at the start and the end.
+- **`f1af16f` (HEAD at the time; contains `ec733fa`), fresh DB `joko_gatej9`:**
+
+| Check | Result |
+|---|---|
+| Client matches schema (start / end) | yes / yes |
+| Full regression | **665 / 665** |
+| J2 money invariants (after suite / after load and sweeps) | OK / OK |
+| Logistics (L1–L9) / work (W1–W7) invariants | OK / OK |
+| Load | 4 / 4 (J9 p95 1.07 s, local) |
+| Sweeps | 5 / 5 |
+| Web build | OK |
+| E2E J8 / J9 | 12 / 12, 11 / 11 |
+| `npm audit` | 0 critical (31 high / 13 moderate; triage in A6) |
+
+These results cover `f1af16f` only. Later commits (A4, A5/A6, J10) get their own fresh-DB gate; the J10 gate covers them.
+
+### A2: settlement policy (`f1af16f`)
+Completion, acceptance (explicit or deemed), contest window, payout eligibility, appeal and finality are separate. Details: `docs/JOKKO-J9-WORK.md` §4a; tests: `tests/j9/settlement.test.js` 5/5.
+
+### A3: F1 hotfix package (`dc6b600`)
+See `docs/incidents/2026-10-f1-coop-double-payout/`. It is an isolated patch on `7d262de`; unpatched code fails 2/3 tests, patched passes 3/3, and the `7d262de` suite passes 125/125 with it. **Not deployed.**
+
+### A4: refund-aware affiliate lifecycle
+See `docs/incidents/2026-10-f4-affiliate-commission/`. It is inactive by default (`AFFILIATE_DEFERRED_SETTLEMENT`), has no clawback, and ships with read-only exposure SQL. Tests: `tests/j9/affiliate-settlement.test.js` 7/7.
+- **Deploy identity correction:** `git grep` shows **no affiliate code in `7d262de`**, the live production deployment. The programme arrived in `494991d`, which is in `19ac203`. F4 is therefore latent, not live, and **it must be decided before any deploy of the default branch**.
+- **Flake to watch:** in one local batch run, 4 J4 P2P journey tests (`tests/j4/journeys-pay.test.js`) failed. Rerun alone and in the same batch, they passed (153/153). The cause is not established. The J10 gate runs them again on a fresh DB; a repeat failure will be root-caused, not dismissed.
+
+### J10 scope (owner decision)
+§8's activation-first recommendation is **superseded**: J10 = **Community & Daily Life**, and the original roadmap is preserved. The production incidents (P0, F1, F4) stay on their own separate track (C) and are not part of J10.

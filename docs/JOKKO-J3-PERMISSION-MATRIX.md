@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**644 routes.** Column legend:
+**647 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -25,6 +25,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 |---|---|---|---|---|---|---|---|---|---|
 | `GET cron/work` | cron | cron.work | cron_secret |  |  |  |  | job |  |
 | `POST cron/work` | cron | cron.work | cron_secret |  |  |  |  | job |  |
+| `GET cron/affiliate-settlement` | cron | cron.affiliate-settlement | cron_secret |  |  |  |  | job |  |
+| `POST cron/affiliate-settlement` | cron | cron.affiliate-settlement | cron_secret |  |  |  |  | job |  |
 | `GET cron/logistics` | cron | cron.logistics | cron_secret |  |  |  |  | job |  |
 | `POST cron/logistics` | cron | cron.logistics | cron_secret |  |  |  |  | job |  |
 | `GET cron/daily` | cron | cron.daily | cron_secret |  |  |  |  | job |  |
@@ -225,6 +227,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET affiliate/resolve/:code` | user | affiliate.resolve | public |  |  |  |  |  |  |
 | `POST affiliate/links/:code/click` | user | affiliate.click | public |  |  |  |  |  |  |
 | `POST affiliate/mbolo-share` | user | affiliate.share | self |  |  |  |  |  |  |
+| `POST affiliate/earnings/payout` | user | affiliate.earnings.payout | self: own earned deferred commissions, not under review → own wallet (inactive unless AFFILIATE_DEFERRED_SETTLEMENT) |  |  |  |  | ledger+risk |  |
 
 ## User — agent
 
