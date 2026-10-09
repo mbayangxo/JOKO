@@ -4,6 +4,19 @@
 
 **Owner action:** authorize, through verified access only, a containment deploy on `7d262de`, sequenced with the open delivery-dispute P0. Then run the read-only exposure queries and decide on restitution.
 
+## 0. Production identity (verified read-only through the Vercel connector, 2026-10-09)
+
+| Item | Value |
+|---|---|
+| Vercel account | user `mbayangxo`; scope / team `mbayangxos-projects` (`team_DuHLYw71m5ATHKdtGSur1Diw`, hobby) |
+| Project | **`joko`** (`prj_lOUwSQp2PPi8Bhe1tA1jjrKXdiYt`). Not `kebu-2455`, which is a separate project in the same scope and was not touched |
+| Active production deployment | **`dpl_B3ucyq653UuuVKoS5aKLNy1Ciw2S`**, READY, created 2026-09-09 04:55 UTC, source "redeploy", region iad1 |
+| Deployed commit | **`7d262ded725964e0117deb21d5caf47feb2ce462`** (repo `mbayangxo/JOKO`, ref `claude/k21-phase-1-scope-wnk8gf`): **same code as the reproduction** |
+| Production domains | `keit-six.vercel.app`, `joko-mbayangxos-projects.vercel.app` (no custom domain) |
+| Deployment protection | **Vercel SSO "Standard" (`all_except_custom_domains`)**. With no custom domain, the production `*.vercel.app` URLs are most likely behind Vercel Authentication, so the public internet (and the mobile app) may not reach the API at all. **This is NOT verified.** The sandbox's egress policy blocks requests to the deployment. The owner should open `https://keit-six.vercel.app/api/health` while logged out of Vercel: a Vercel login page means the drain is currently reachable only by Vercel-authenticated users of this team. |
+
+**Access blocker:** project list, environment variables, runtime logs (and therefore the cron and production configuration) all return **403** (*"Trying to access resource under scope mbayangxos-projects. You must re-authenticate to this scope"*). This container has no Vercel CLI or token. **Production actions stopped here, per instruction.** To unblock, the owner re-authorizes the Vercel connector for the `mbayangxos-projects` scope, or performs the deploy personally.
+
 ## 1. What is wrong
 On `7d262de`, the latest successful production deployment:
 1. **No consent.** `POST /api/tontine/groups` adds **any handle** as a member. There is no invitation and no acceptance step.
@@ -17,6 +30,18 @@ This is finding **P0-15** from the forensic audit, proven on `19ac203` (60 000 �
 `repro-tontine-drain.test.js`, run with the production handlers:
 - A creator with 0 lists two strangers who hold 50 000 each, with `amountPerMember` 20 000, then calls **release**.
 - **Result: each stranger is debited −20 000; the creator gains +40 000.** Status 200, three members "added", no consent step.
+
+## 2b. Every legacy path that can move tontine money (enumerated on `7d262de`)
+
+| Path | Entry | Goes through | Contained |
+|---|---|---|---|
+| Creator / turn-holder release | `POST /api/tontine/groups/:id/release` → `releaseTontinePot` | `processTontineGroup` | yes, 503 before any transaction |
+| Daily cron | `/api/cron/daily` → `runAllDailyCronJobs` → `runTontineProcessor` | `processTontineGroup` | yes, skipped at the job level (and refused again inside the function) |
+| Direct cron handler | `cronTontineProcessor` → `runTontineProcessor` | same | yes |
+| Any other writer of `tontine_contribution` / `tontine_pot_in` / `tontine_payout` / `tontine_receive` | none (`git grep` on `7d262de`; only display shapes and the app UI reference them) | — | n/a |
+| Legacy `server/` Express app | no tontine code | — | n/a |
+
+**Group creation without consent still works** after the patch. It only creates records and can no longer lead to any debit. Refused attempts make **no partial movement**: the check runs before `runMoneyTransaction`.
 
 ## 3. Containment patch (minimal, fail-closed)
 File: `tontine-containment-on-7d262de.patch`. 2 files, +13 / −1, on `7d262de`, with **no schema change, no migration and no environment change**.
@@ -46,7 +71,15 @@ Evidence (local):
 3. Watch the logs for `tontine_suspended`. These are expected user attempts and should be shown with a clear message in the app.
 
 ## 6. Exposure (read-only) and remediation
-Use `scripts/forensics/production-exposure.sql` **§10**. It lists every old auto-collection: who was debited, how much went from others into creators' personal wallets, and the payouts. Run it inside a read-only transaction.
+Use **`historical-tontine-exposure.sql`** (this folder). It lists:
+- groups and the members added without consent;
+- every collection run with the creator and the amounts taken from others;
+- scheduled (cron) vs manual (release) runs;
+- repeat collections per member;
+- creator-wallet credits vs payouts to others (net retained);
+- time periods and totals.
+
+It outputs opaque ids only, inside `BEGIN READ ONLY … ROLLBACK`. It was validated on the local production-shaped database: it detected the reproduced drain (1 manual run, 40 000 from 2 non-consenting members, 40 000 retained by the creator, 6 memberships without consent). The older summary is `scripts/forensics/production-exposure.sql` **§10**. **Run only on the verified Jokko production database, with separate authorization.** User notice and support script: `user-notice.md`. It lists every old auto-collection: who was debited, how much went from others into creators' personal wallets, and the payouts. Run it inside a read-only transaction.
 
 **Restitution is a finance and legal decision.**
 - Never debit a creator automatically.
