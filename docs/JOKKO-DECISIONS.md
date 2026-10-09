@@ -165,3 +165,19 @@ J10 (Community & Daily Life) was built on these choices. They are **not accepted
 | P-J10-7 | **Merchant ↔ customer conversation only around a real order** (no cold outreach). | `lib/community/order-chat.js` |
 | P-J10-8 | **Money and security notifications cannot be muted.** The Home bell shows only real unread items. | `lib/community/notify.js` |
 | P-J10-9 | **The legacy demo feeds stay off** (culture, trending and alerts seeds, and their counters). Regional alerts need a real, attributed source before use. | `runtime-safety.js` |
+
+### P-J10 classification (J11 carry-forward)
+
+| # | Class | Note |
+|---|---|---|
+| P-J10-1 chat text never acts | **Safe default** (already enforced) | Removes a capability; no approval needed to keep it. Reverting it would need owner + security review. |
+| P-J10-2 visibility defaults (phone `everyone`, neighbourhood off) | **Requires owner decision** + **compliance/legal review** (data protection, CDP Loi 2008-12) | Current default preserves J4 behaviour. Tightening to `connections` is a product choice. |
+| P-J10-3 lookup / contact-match budgets | **Safe default** | Tunable by ops; no money. |
+| P-J10-4 trust_safety role, outcomes, appeal by another operator | **Requires owner decision** (staffing, SLA) + **compliance/legal review** (content moderation, due process) | Code is inert without staffed operators. |
+| P-J10-5 restriction never touches money | **Safe default** | Protects users; changing it would need finance + legal review. |
+| P-J10-6 partner messaging caps / attribution | **Requires owner decision** (partner agreement with Kabu) | Safe default in code; the cap value needs the partner's agreement. |
+| P-J10-7 order-anchored merchant chat, no cold outreach | **Safe default** | Anti-spam; owner may later approve opt-in marketing under consent rules (**legal review** then). |
+| P-J10-8 money/security notifications unmutable | **Safe default** | **Finance** should confirm the money category list. |
+| P-J10-9 demo feeds off; regional alerts need a real source | **Safe default** | Any public-alert source needs **legal review** (liability for emergency information). |
+
+None of them requires finance approval to *stay* as implemented; none activates money.
