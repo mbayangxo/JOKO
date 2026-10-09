@@ -34,7 +34,7 @@ if (!/^(localhost|127\.0\.0\.1)$/.test(host)) throw new Error('data-exposure swe
 
 let api;
 let attacker;
-before(async () => { api = await startApiServer({ TONTINE_ESCROW_ENABLED: 'true' }); });
+before(async () => { api = await startApiServer({ TONTINE_ESCROW_ENABLED: 'true', JOKKO_COLLECTIVE_ENABLED: 'true' }); });
 after(async () => { await api?.stop(); await prisma.$disconnect(); });
 
 /** Resources anyone may read by design (public profiles, shops, campaigns...). */
@@ -115,6 +115,8 @@ async function candidatesFor(path, me, myBizIds) {
     // J10: conversations (groups, order chats, partner threads) and evidence files the attacker is not part of.
     'mbolo/threads/:id': `SELECT t."id" FROM "MboloThread" t WHERE NOT EXISTS (SELECT 1 FROM "MboloMember" m WHERE m."threadId" = t."id" AND m."userId" = '${me}') ORDER BY random() LIMIT 3`,
     'work/evidence/files/:id': `SELECT "id" FROM "WorkEvidenceFile" ORDER BY random() LIMIT 2`,
+    // J11: collective groups the attacker is not a member of (private: 404).
+    'collective/groups/:id': `SELECT g."id" FROM "CollectiveGroup" g WHERE NOT EXISTS (SELECT 1 FROM "CollectiveMember" m WHERE m."groupId" = g."id" AND m."userId" = '${me}') ORDER BY random() LIMIT 3`,
   };
   const prefix = Object.keys(table).find((k) => path === k || path.startsWith(`${k}/`));
   if (!prefix) return null;

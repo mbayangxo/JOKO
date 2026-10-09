@@ -23,6 +23,9 @@ export function sourceFor(routeKey) {
     [/^agent-cash\/tx\/:id/, `SELECT "id" FROM "AgentCashTransaction" WHERE "customerId" <> $ME`],
     [/^agent\/cash\/:id/, `SELECT "id" FROM "AgentCashTransaction" WHERE "customerId" <> $ME`],
     [/^agent\/service-points\/:id/, `SELECT sp."id" FROM "AgentServicePoint" sp JOIN "AgentOrganization" o ON o."id" = sp."organizationId" WHERE o."ownerUserId" <> $ME`],
+    // J11: collective groups and votes the attacker is not a member of.
+    [/^collective\/groups\/:id/, `SELECT g."id" FROM "CollectiveGroup" g WHERE NOT EXISTS (SELECT 1 FROM "CollectiveMember" m WHERE m."groupId" = g."id" AND m."userId" = $ME)`],
+    [/^collective\/votes\/:id/, `SELECT v."id" FROM "CollectiveVote" v WHERE NOT EXISTS (SELECT 1 FROM "CollectiveMember" m WHERE m."groupId" = v."groupId" AND m."userId" = $ME)`],
     [/^tontine\/groups\/:id/, `SELECT "id" FROM "TontineGroup" WHERE "createdBy" <> $ME`],
     [/^mbolo\/threads\/:id/, `SELECT t."id" FROM "MboloThread" t WHERE NOT EXISTS (SELECT 1 FROM "MboloMember" m WHERE m."threadId" = t."id" AND m."userId" = $ME)`],
     [/^mbolo\/messages\/:id/, `SELECT "id" FROM "MboloMessage" WHERE "senderId" <> $ME`],

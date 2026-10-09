@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**679 routes.** Column legend:
+**704 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -25,6 +25,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 |---|---|---|---|---|---|---|---|---|---|
 | `GET cron/work` | cron | cron.work | cron_secret |  |  |  |  | job |  |
 | `POST cron/work` | cron | cron.work | cron_secret |  |  |  |  | job |  |
+| `GET cron/collective` | cron | cron.collective | cron_secret |  |  |  |  | job |  |
+| `POST cron/collective` | cron | cron.collective | cron_secret |  |  |  |  | job |  |
 | `GET cron/affiliate-settlement` | cron | cron.affiliate-settlement | cron_secret |  |  |  |  | job |  |
 | `POST cron/affiliate-settlement` | cron | cron.affiliate-settlement | cron_secret |  |  |  |  | job |  |
 | `GET cron/logistics` | cron | cron.logistics | cron_secret |  |  |  |  | job |  |
@@ -60,6 +62,12 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST admin/moderation/reports/:id/resolve` | admin | community.reports.decide | operator_scope |  |  |  |  | admin+identity; never money; restriction 1–30 days |  |
 | `GET admin/moderation/appeals` | admin | community.reports.read | operator_scope |  |  |  |  |  |  |
 | `POST admin/moderation/actions/:id/appeal/resolve` | admin | community.appeals.decide | operator_scope |  |  |  |  | admin+identity; a different operator than the one who acted |  |
+| `GET admin/collective/groups` | admin | collective.read | operator_scope |  |  |  |  |  |  |
+| `GET admin/collective/groups/:id` | admin | collective.read | operator_scope |  |  |  |  |  | ids and amounts only |
+| `POST admin/collective/groups/:id/freeze` | admin | collective.freeze | operator_scope |  |  |  |  | admin; protective: stops every money move |  |
+| `POST admin/collective/groups/:id/unfreeze` | admin | collective.freeze | operator_scope |  |  |  |  | admin; a different operator than the one who froze |  |
+| `GET admin/collective/disputes` | admin | collective.read | operator_scope |  |  |  |  |  |  |
+| `POST admin/collective/disputes/:id/rule` | admin | collective.disputes.resolve | operator_scope |  |  |  |  | admin+identity; money only via maker/checker (collective.disputes.settle) |  |
 | `POST admin/logistics/shipments/:id/failure/rule` | admin | logistics.exceptions.resolve | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/logistics/shipments/:id/emergency-reassign` | admin | logistics.dispatch | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/logistics/shipments/:id/handoff-code` | admin | logistics.dispatch | operator_scope |  |  |  |  | custody_challenge |  |
@@ -479,6 +487,28 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST charts/submit` | user | charts.submit | self |  |  |  |  |  |  |
 | `POST charts/vote` | user | charts.vote | self |  |  |  |  |  |  |
 | `GET charts/search` | user | charts.read | public |  |  |  |  |  |  |
+
+## User — collective
+
+| Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| `GET collective/groups` | user | collective.read | self: groups I am invited to or a member of (J11) |  |  |  |  |  |  |
+| `POST collective/groups` | user | collective.create | self: becomes organizer with NO money power; dark unless JOKKO_COLLECTIVE_ENABLED |  |  |  |  |  |  |
+| `GET collective/groups/:id` | user | collective.read | member or invitee (404 otherwise); invitees never see money history |  |  |  |  |  |  |
+| `POST collective/groups/:id/invite` | user | collective.invite | organizer, before activation; an invitation authorizes nothing |  |  |  |  |  |  |
+| `POST collective/groups/:id/respond` | user | collective.join | the invitee themself |  |  |  |  |  |  |
+| `POST collective/groups/:id/leave` | user | collective.leave | self, before activation only (after: exit vote) |  |  |  |  |  |  |
+| `POST collective/groups/:id/remove` | user | collective.remove | organizer, before activation only |  |  |  |  |  |  |
+| `POST collective/groups/:id/rules` | user | collective.rules.propose | organizer, before activation; voids every prior acceptance |  |  |  |  |  |  |
+| `POST collective/groups/:id/rules/accept` | user | collective.rules.accept | joined member, exact current rulesHash; last acceptance activates (no money) |  |  |  |  |  |  |
+| `POST collective/groups/:id/rules/decline` | user | collective.rules.decline | joined member; leaves and voids the proposal |  |  |  |  |  |  |
+| `POST collective/groups/:id/cancel` | user | collective.cancel | organizer, before activation only (no money exists); after: member vote |  |  |  |  |  |  |
+| `POST collective/groups/:id/contribute` | user | collective.contribute | joined member: own wallet → group pot / own share; oldest due obligation; idempotency key |  |  | amount |  | ledger+risk |  |
+| `POST collective/groups/:id/release` | user | collective.release | joined member asks; rules decide (full cycle, no dispute); destination fixed by the accepted rotation |  |  |  |  | ledger+risk |  |
+| `POST collective/groups/:id/withdraw` | user | collective.withdraw | goal member: own share only, under the accepted unlock rule |  |  |  |  | ledger+risk |  |
+| `POST collective/groups/:id/votes` | user | collective.vote | joined member; eligibility per topic frozen at opening |  |  |  |  | ledger+risk |  |
+| `POST collective/votes/:id/ballot` | user | collective.vote | eligible member of the vote, once |  |  |  |  | ledger+risk |  |
+| `POST collective/groups/:id/disputes` | user | collective.dispute | joined member; blocks the cycle payout until ruled |  |  |  |  | dispute |  |
 
 ## User — commerce
 
@@ -1015,11 +1045,12 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `support` | `ops.dashboard.read`, `support.tickets.read`, `support.tickets.write`, `support.calls`, `users.search`, `users.read`, `users.freeze`, `money.transactions.read`, `agents.read`, `distributors.read`, `businesses.read` |
 | `risk` | `ops.dashboard.read`, `risk.held.read`, `risk.held.decide`, `risk.alerts.read`, `risk.alerts.ack`, `users.search`, `users.read`, `users.read.sensitive`, `users.freeze`, `users.unfreeze.request`, `users.unfreeze.approve`, `users.credentials.invalidate`, `money.transactions.read`, `audit.read`, `agents.read`, `agents.suspend`, `couriers.suspend`, `deliveries.disputes.resolve`, `approvals.read`, `businesses.read`, `businesses.suspend` |
 | `compliance` | `ops.dashboard.read`, `kyc.review`, `users.search`, `users.read`, `users.read.sensitive`, `users.unfreeze.approve`, `agents.read`, `agents.onboard`, `agents.activate`, `agents.manage`, `agents.suspend`, `couriers.onboard`, `couriers.suspend`, `distributors.read`, `distributors.manage`, `audit.read`, `approvals.read`, `businesses.read`, `businesses.suspend`, `merchants.verify`, `pickup_points.approve` |
-| `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `finance.commission.propose`, `risk.held.read`, `agents.read`, `approvals.read`, `logistics.disputes.reverse`, `work.disputes.settle` |
+| `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `finance.commission.propose`, `risk.held.read`, `agents.read`, `approvals.read`, `logistics.disputes.reverse`, `work.disputes.settle`, `collective.disputes.settle` |
 | `finance_approver` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.reports.read`, `finance.adjust.approve`, `finance.agent_float.approve`, `finance.commission.approve`, `finance.refund.approve`, `approvals.read` |
 | `logistics_ops` | `ops.dashboard.read`, `logistics.read`, `logistics.dispatch`, `logistics.exceptions.resolve`, `logistics.disputes.resolve` |
 | `work_ops` | `ops.dashboard.read`, `work.read`, `work.review`, `work.qualifications.verify`, `work.disputes.resolve`, `work.feedback.rule`, `approvals.read` |
 | `trust_safety` | `ops.dashboard.read`, `community.reports.read`, `community.reports.decide`, `community.appeals.decide` |
+| `collective_ops` | `ops.dashboard.read`, `collective.read`, `collective.disputes.resolve`, `collective.freeze`, `approvals.read` |
 | `sysadmin` | `ops.health.read`, `ops.dashboard.read`, `admin.roles.read`, `admin.roles.manage`, `audit.read`, `approvals.read` |
 
 **Separation-of-duty conflicts:** these pairs can never be held by one operator.
@@ -1035,6 +1066,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 - `trust_safety` × `finance_ops`
 - `trust_safety` × `finance_approver`
 - `sysadmin` × `trust_safety`
+- `collective_ops` × `finance_ops`
+- `collective_ops` × `finance_approver`
+- `sysadmin` × `collective_ops`
 
 ## Maker-checker actions
 
@@ -1050,6 +1084,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `agent_commission_clawback` | `risk.held.decide` | `finance.adjust.approve` |
 | `shipment_earning_reverse` | `logistics.disputes.resolve` | `logistics.disputes.reverse` |
 | `work_dispute_settle` | `work.disputes.resolve` | `work.disputes.settle` |
+| `collective_dispute_settle` | `collective.disputes.resolve` | `collective.disputes.settle` |
 | `support_refund` | `finance.refund` | `finance.refund.approve` |
 
 **Single-operator ceilings** (decision D10):

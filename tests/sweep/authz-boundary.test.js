@@ -53,7 +53,7 @@ const host = new URL(process.env.DATABASE_URL.replace(/^postgres(ql)?:/, 'http:'
 const localDb = /^(localhost|127\.0\.0\.1)$/.test(host);
 
 let api;
-before(async () => { if (localDb) api = await startApiServer({ TONTINE_ESCROW_ENABLED: 'true', ADMIN_API_KEY: '' }); });
+before(async () => { if (localDb) api = await startApiServer({ TONTINE_ESCROW_ENABLED: 'true', JOKKO_COLLECTIVE_ENABLED: 'true', ADMIN_API_KEY: '' }); });
 after(async () => { await api?.stop(); await prisma.$disconnect(); });
 
 test('dynamic: critical user routes on someone else’s objects — authorization reached and refused, never validation-only', { timeout: 900_000, skip: !localDb }, async () => {
@@ -77,6 +77,8 @@ test('dynamic: critical user routes on someone else’s objects — authorizatio
     const vb = await prisma.business.create({ data: { ownerId: victim.id, name: `Victim ${k}` } });
     const fr = await prisma.fulfilmentRequest.create({ data: { reference: `FR-BND-${k}`, sourceSystem: 'jokko_po', sourceId: `bnd-${k}`, sourceKey: `bnd:${k}`, fulfilmentOwner: 'MERCHANT_FULFILLED', fulfillerBusinessId: vb.id, originBusinessId: vb.id, createdBy: victim.id } });
     await prisma.shipment.create({ data: { reference: `SH-BND-${k}`, requestId: fr.id, status: 'in_transit', custody: 'courier', custodianUserId: victim.id } });
+    const cg = await prisma.collectiveGroup.create({ data: { kind: 'rotating', name: `Victim ${k}`, organizerId: victim.id, contributionKori: 100, frequency: 'weekly', members: { create: [{ userId: victim.id, status: 'joined' }] } } });
+    await prisma.collectiveVote.create({ data: { groupId: cg.id, topic: 'cancel', proposedBy: victim.id, payloadJson: '{}', eligibleJson: JSON.stringify([victim.id]), expiresAt: exp } });
   }
   const results = [];
   const findings = [];

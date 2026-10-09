@@ -31,6 +31,12 @@ export const VALID_BODIES = {
   'POST deliveries/:id/confirm': () => ({}),
   'POST events/:id/tickets': () => ({ quantity: 1 }),
   'POST jekkal/campaigns/:id/contribute': () => ({ amount: 100 }),
+  // J11: someone else's collective group / vote — must be 404 (private), never validation-only.
+  'POST collective/groups/:id/contribute': () => ({ amountKori: 100 }),
+  'POST collective/groups/:id/release': () => ({}),
+  'POST collective/groups/:id/withdraw': () => ({ amountKori: 100 }),
+  'POST collective/groups/:id/votes': () => ({ topic: 'cancel' }),
+  'POST collective/votes/:id/ballot': () => ({ choice: 'yes' }),
   'POST tontine/groups/:id/contribute': () => ({}),
   'POST tontine/groups/:id/release': () => ({}),
   'POST tontine/groups/:id/cancel': () => ({ reason: 'sweep: cancel someone else’s tontine' }),
