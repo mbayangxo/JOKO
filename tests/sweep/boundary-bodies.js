@@ -32,6 +32,7 @@ export const VALID_BODIES = {
   'POST events/:id/tickets': () => ({ quantity: 1 }),
   'POST jekkal/campaigns/:id/contribute': () => ({ amount: 100 }),
   // J11: someone else's collective group / vote — must be 404 (private), never validation-only.
+  'POST protected/funds/:id/contribute': () => ({ amountKori: 100 }),
   'POST collective/groups/:id/contribute': () => ({ amountKori: 100 }),
   'POST collective/groups/:id/release': () => ({}),
   'POST collective/groups/:id/withdraw': () => ({ amountKori: 100 }),
@@ -83,6 +84,7 @@ export const PUBLIC_BY_DESIGN = new Set([
   'POST money/charges/:id/pay',
   'POST events/:id/tickets',
   'POST jekkal/campaigns/:id/contribute',
+  'POST protected/funds/:id/contribute', // J11.2: a donor pays their own wallet into the fund's escrow (never to a person)
   'POST deliveries/:id/accept',
   'POST deliveries/:id/claim',
   'POST businesses/:id/school/pay', // payer → school (a parent pays a fee from their own wallet)

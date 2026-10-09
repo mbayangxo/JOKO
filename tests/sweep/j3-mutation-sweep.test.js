@@ -27,7 +27,7 @@ const host = new URL(process.env.DATABASE_URL.replace(/^postgres(ql)?:/, 'http:'
 if (!/^(localhost|127\.0\.0\.1)$/.test(host)) throw new Error('mutation sweep only runs on a local database');
 
 let api;
-before(async () => { api = await startApiServer({ TONTINE_ESCROW_ENABLED: 'true', JOKKO_COLLECTIVE_ENABLED: 'true' }); });
+before(async () => { api = await startApiServer({ TONTINE_ESCROW_ENABLED: 'true', JOKKO_COLLECTIVE_ENABLED: 'true', JOKKO_PROTECTED_FUNDS_ENABLED: 'true' }); });
 after(async () => { await api?.stop(); await prisma.$disconnect(); });
 
 /**

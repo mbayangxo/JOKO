@@ -53,7 +53,7 @@ const host = new URL(process.env.DATABASE_URL.replace(/^postgres(ql)?:/, 'http:'
 const localDb = /^(localhost|127\.0\.0\.1)$/.test(host);
 
 let api;
-before(async () => { if (localDb) api = await startApiServer({ TONTINE_ESCROW_ENABLED: 'true', JOKKO_COLLECTIVE_ENABLED: 'true', ADMIN_API_KEY: '' }); });
+before(async () => { if (localDb) api = await startApiServer({ TONTINE_ESCROW_ENABLED: 'true', JOKKO_COLLECTIVE_ENABLED: 'true', JOKKO_PROTECTED_FUNDS_ENABLED: 'true', ADMIN_API_KEY: '' }); });
 after(async () => { await api?.stop(); await prisma.$disconnect(); });
 
 test('dynamic: critical user routes on someone else’s objects — authorization reached and refused, never validation-only', { timeout: 900_000, skip: !localDb }, async () => {

@@ -23,6 +23,9 @@ export function sourceFor(routeKey) {
     [/^agent-cash\/tx\/:id/, `SELECT "id" FROM "AgentCashTransaction" WHERE "customerId" <> $ME`],
     [/^agent\/cash\/:id/, `SELECT "id" FROM "AgentCashTransaction" WHERE "customerId" <> $ME`],
     [/^agent\/service-points\/:id/, `SELECT sp."id" FROM "AgentServicePoint" sp JOIN "AgentOrganization" o ON o."id" = sp."organizationId" WHERE o."ownerUserId" <> $ME`],
+    // J11.2: protected funds the attacker is no party to (organizer / recipient / approver), and coop lines naming someone else.
+    [/^protected\/funds\/:id/, `SELECT f."id" FROM "ProtectedFund" f WHERE f."organizerId" <> $ME AND f."recipientUserId" IS DISTINCT FROM $ME AND f."approverIdsJson" NOT LIKE '%' || $ME || '%'`],
+    [/^coop\/capital\/:id/, `SELECT "id" FROM "CoopCapitalRecord" WHERE "memberUserId" <> $ME`],
     // J11: collective groups and votes the attacker is not a member of.
     [/^collective\/groups\/:id/, `SELECT g."id" FROM "CollectiveGroup" g WHERE NOT EXISTS (SELECT 1 FROM "CollectiveMember" m WHERE m."groupId" = g."id" AND m."userId" = $ME)`],
     [/^collective\/votes\/:id/, `SELECT v."id" FROM "CollectiveVote" v WHERE NOT EXISTS (SELECT 1 FROM "CollectiveMember" m WHERE m."groupId" = v."groupId" AND m."userId" = $ME)`],

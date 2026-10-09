@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**704 routes.** Column legend:
+**723 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -25,6 +25,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 |---|---|---|---|---|---|---|---|---|---|
 | `GET cron/work` | cron | cron.work | cron_secret |  |  |  |  | job |  |
 | `POST cron/work` | cron | cron.work | cron_secret |  |  |  |  | job |  |
+| `GET cron/protected` | cron | cron.protected | cron_secret |  |  |  |  | job |  |
+| `POST cron/protected` | cron | cron.protected | cron_secret |  |  |  |  | job |  |
 | `GET cron/collective` | cron | cron.collective | cron_secret |  |  |  |  | job |  |
 | `POST cron/collective` | cron | cron.collective | cron_secret |  |  |  |  | job |  |
 | `GET cron/affiliate-settlement` | cron | cron.affiliate-settlement | cron_secret |  |  |  |  | job |  |
@@ -68,6 +70,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST admin/collective/groups/:id/unfreeze` | admin | collective.freeze | operator_scope |  |  |  |  | admin; a different operator than the one who froze |  |
 | `GET admin/collective/disputes` | admin | collective.read | operator_scope |  |  |  |  |  |  |
 | `POST admin/collective/disputes/:id/rule` | admin | collective.disputes.resolve | operator_scope |  |  |  |  | admin+identity; money only via maker/checker (collective.disputes.settle) |  |
+| `POST admin/protected/funds/:id/release` | admin | protected.settle.request | operator_scope |  |  |  |  | admin+identity; executes only on a different finance operator approval (protected.settle) |  |
+| `POST admin/protected/funds/:id/cancel` | admin | protected.settle.request | operator_scope |  |  |  |  | admin+identity; pro-rata refund only on a different finance operator approval |  |
+| `POST admin/protected/funds/:id/freeze` | admin | collective.freeze | operator_scope |  |  |  |  | admin; protective; unfreeze by a different operator |  |
 | `POST admin/logistics/shipments/:id/failure/rule` | admin | logistics.exceptions.resolve | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/logistics/shipments/:id/emergency-reassign` | admin | logistics.dispatch | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/logistics/shipments/:id/handoff-code` | admin | logistics.dispatch | operator_scope |  |  |  |  | custody_challenge |  |
@@ -309,6 +314,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
 |---|---|---|---|---|---|---|---|---|---|
+| `GET businesses/:id/coop/capital` | user | coop.capital.register | business:business.admin of a cooperative (in-tx authority) |  |  |  |  |  |  |
+| `POST businesses/:id/coop/capital` | user | coop.capital.record | business:business.admin of a cooperative; records only — no money, shares or dividends |  |  |  |  | record |  |
 | `GET businesses` | user | businesses.read | public |  |  |  |  |  |  |
 | `GET businesses/mine` | user | businesses.mine.read | member |  |  |  |  |  |  |
 | `GET businesses/:id` | user | businesses.read | public (minimal) / member (full) |  |  |  |  |  |  |
@@ -528,6 +535,13 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 |---|---|---|---|---|---|---|---|---|---|
 | `POST contacts/match` | user | community.discover | self: hashed numbers from own contacts; only people discoverable to me; ≤ 200 / call, ≤ 1 000 / day |  |  |  |  |  |  |
 
+## User — coop
+
+| Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| `GET coop/capital/mine` | user | coop.capital.read | self: my own lines in every coop (records only) |  |  |  |  |  |  |
+| `POST coop/capital/:id/respond` | user | coop.capital.confirm | the member named on the line, once |  |  |  |  |  |  |
+
 ## User — culture
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
@@ -640,6 +654,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST jekkal/campaigns` | user | jekkal.create | self |  |  |  |  |  |  |
 | `GET jekkal/campaigns/mine` | user | jekkal.mine.read | creator |  |  |  |  |  |  |
 | `GET jekkal/campaigns/:id` | user | jekkal.read | public (minimal) |  |  |  |  |  |  |
+| `POST jekkal/campaigns/:id/beneficiary` | user | jekkal.beneficiary.consent | the named beneficiary only (J11-F3) |  |  |  |  |  |  |
 | `POST jekkal/campaigns/:id/contribute` | user | jekkal.contribute | payer→counterparty |  | 1 | amount |  | ledger+risk |  |
 
 ## User — kori
@@ -865,6 +880,20 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 |---|---|---|---|---|---|---|---|---|---|
 | `GET profiles/:id` | user | profiles.read | public |  |  |  |  |  |  |
 
+## User — protected
+
+| Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| `GET protected/funds` | user | protected.read | public list of open protected funds (dormant: JOKKO_PROTECTED_FUNDS_ENABLED) |  |  |  |  |  |  |
+| `POST protected/funds` | user | protected.create | self: organizer; verified recipient; independent approvers |  |  |  |  |  |  |
+| `GET protected/funds/:id` | user | protected.read | public once published; drafts only to organizer / recipient / approvers |  |  |  |  |  |  |
+| `POST protected/funds/:id/recipient` | user | protected.recipient.consent | the named recipient (or the recipient business owner) only |  |  |  |  |  |  |
+| `POST protected/funds/:id/approver` | user | protected.approver.accept | a named approver only |  |  |  |  |  |  |
+| `POST protected/funds/:id/publish` | user | protected.publish | organizer; needs recipient consent + every approver |  |  |  |  |  |  |
+| `POST protected/funds/:id/contribute` | user | protected.contribute | any user except the recipient: own wallet → escrow; capped at the goal |  |  | amount |  | ledger+risk |  |
+| `POST protected/funds/:id/decide` | user | protected.milestone.decide | an accepted approver; approval moves NO money |  |  |  |  | governance |  |
+| `POST protected/funds/:id/report` | user | protected.report | any user; 3 distinct reporters freeze the fund |  |  |  |  |  |  |
+
 ## User — roles
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
@@ -1045,12 +1074,12 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `support` | `ops.dashboard.read`, `support.tickets.read`, `support.tickets.write`, `support.calls`, `users.search`, `users.read`, `users.freeze`, `money.transactions.read`, `agents.read`, `distributors.read`, `businesses.read` |
 | `risk` | `ops.dashboard.read`, `risk.held.read`, `risk.held.decide`, `risk.alerts.read`, `risk.alerts.ack`, `users.search`, `users.read`, `users.read.sensitive`, `users.freeze`, `users.unfreeze.request`, `users.unfreeze.approve`, `users.credentials.invalidate`, `money.transactions.read`, `audit.read`, `agents.read`, `agents.suspend`, `couriers.suspend`, `deliveries.disputes.resolve`, `approvals.read`, `businesses.read`, `businesses.suspend` |
 | `compliance` | `ops.dashboard.read`, `kyc.review`, `users.search`, `users.read`, `users.read.sensitive`, `users.unfreeze.approve`, `agents.read`, `agents.onboard`, `agents.activate`, `agents.manage`, `agents.suspend`, `couriers.onboard`, `couriers.suspend`, `distributors.read`, `distributors.manage`, `audit.read`, `approvals.read`, `businesses.read`, `businesses.suspend`, `merchants.verify`, `pickup_points.approve` |
-| `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `finance.commission.propose`, `risk.held.read`, `agents.read`, `approvals.read`, `logistics.disputes.reverse`, `work.disputes.settle`, `collective.disputes.settle` |
+| `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `finance.commission.propose`, `risk.held.read`, `agents.read`, `approvals.read`, `logistics.disputes.reverse`, `work.disputes.settle`, `collective.disputes.settle`, `protected.settle` |
 | `finance_approver` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.reports.read`, `finance.adjust.approve`, `finance.agent_float.approve`, `finance.commission.approve`, `finance.refund.approve`, `approvals.read` |
 | `logistics_ops` | `ops.dashboard.read`, `logistics.read`, `logistics.dispatch`, `logistics.exceptions.resolve`, `logistics.disputes.resolve` |
 | `work_ops` | `ops.dashboard.read`, `work.read`, `work.review`, `work.qualifications.verify`, `work.disputes.resolve`, `work.feedback.rule`, `approvals.read` |
 | `trust_safety` | `ops.dashboard.read`, `community.reports.read`, `community.reports.decide`, `community.appeals.decide` |
-| `collective_ops` | `ops.dashboard.read`, `collective.read`, `collective.disputes.resolve`, `collective.freeze`, `approvals.read` |
+| `collective_ops` | `ops.dashboard.read`, `collective.read`, `collective.disputes.resolve`, `collective.freeze`, `protected.settle.request`, `approvals.read` |
 | `sysadmin` | `ops.health.read`, `ops.dashboard.read`, `admin.roles.read`, `admin.roles.manage`, `audit.read`, `approvals.read` |
 
 **Separation-of-duty conflicts:** these pairs can never be held by one operator.
@@ -1085,6 +1114,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `shipment_earning_reverse` | `logistics.disputes.resolve` | `logistics.disputes.reverse` |
 | `work_dispute_settle` | `work.disputes.resolve` | `work.disputes.settle` |
 | `collective_dispute_settle` | `collective.disputes.resolve` | `collective.disputes.settle` |
+| `protected_release` | `protected.settle.request` | `protected.settle` |
+| `protected_cancel` | `protected.settle.request` | `protected.settle` |
 | `support_refund` | `finance.refund` | `finance.refund.approve` |
 
 **Single-operator ceilings** (decision D10):
