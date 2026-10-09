@@ -360,6 +360,7 @@ export default function MbooloChatScreen({ navigation, route }) {
   const [requestNote, setRequestNote] = useState('');
   const [requesting, setRequesting] = useState(false);
   const [sendMoneyOpen, setSendMoneyOpen] = useState(false);
+  const sendIntentKey = useRef(null); // one key per opening of the send sheet: a retry never pays twice
   const [sendAmount, setSendAmount] = useState('2000');
   const [sendNote, setSendNote] = useState('');
   const [sendPhotoUrl, setSendPhotoUrl] = useState(null);
@@ -486,25 +487,12 @@ export default function MbooloChatScreen({ navigation, route }) {
     }, 400);
   };
 
-  const handleSendMoneyCommand = async (cmd) => {
-    setSendingMoney(true);
-    try {
-      const result = await transferSend({
-        recipientHandle: cmd.handle,
-        amount: cmd.amount,
-        currency: 'national',
-        note: cmd.note,
-        threadId,
-      });
-      if (result.mboloMessage) setMessages((prev) => [...prev, result.mboloMessage]);
-      await refreshWallet();
-      setText('');
-      showToast(`💸 ${cmd.amount} F envoyé à @${cmd.handle}`);
-    } catch (err) {
-      showToast(err.message ?? 'Envoi impossible');
-    } finally {
-      setSendingMoney(false);
-    }
+  // J10: chat text never moves money by itself. A typed "envoie 2000 à @awa" only opens the normal
+  // send flow, pre-filled; the person reviews the recipient and amount there and confirms (step-up when required).
+  const handleSendMoneyCommand = (cmd) => {
+    setText('');
+    showToast('Vérifie le destinataire et le montant, puis confirme');
+    open('SendMoney', { recipientHandle: cmd.handle, prefilledAmount: cmd.amount, note: cmd.note.slice(0, 140) });
   };
 
   const handleSend = () => {
@@ -753,6 +741,7 @@ export default function MbooloChatScreen({ navigation, route }) {
     setSendAmount('2000');
     setSendNote('');
     setSendPhotoUrl(null);
+    sendIntentKey.current = `mbolo-send-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     setSendMoneyOpen(true);
   };
 
@@ -783,6 +772,7 @@ export default function MbooloChatScreen({ navigation, route }) {
         note: sendNote.trim() || undefined,
         photoUrl: sendPhotoUrl ?? undefined,
         threadId,
+        intentKey: sendIntentKey.current ?? undefined,
       });
       if (result.mboloMessage) setMessages((prev) => [...prev, result.mboloMessage]);
       await refreshWallet();
