@@ -45,8 +45,38 @@
 
 **Never in J10:** community text moves money, inventory or custody, assigns jobs or changes permissions (`adversarial`: wallet balances, roles and orders unchanged; a client cannot post a "payment" card). No fake engagement: the demo feeds stay off, there are no counters, and no permanent attention dot.
 
-## 4. Gate at the latest HEAD (fresh database)
-_Filled from the gate run; see §4 below._
+## 4. Gate at the latest code HEAD (fresh database)
+**Commit `b306ae7`**, the latest code commit; later commits are docs only. Database `joko_gatej10`, built from scratch. Isolated worktree with its **own `node_modules`**; the generated client matched the schema at the start and at the end.
+
+| Check | Result |
+|---|---|
+| Full regression (`npm test`, J1–J10) | **696 / 696** |
+| J2 money invariants (after the suite / after load and sweeps) | **OK / OK** (3 994 entries, 8 140 postings) |
+| J8 logistics (L1–L9) and J9 work (W1–W7) invariants, after the suite / after everything | **OK / OK** |
+| Load (J4–J10, incl. J10: 4 groups × 12 members polling, posting, moderating and report storms) | **5 / 5**; J10 244 requests, p95 0.56 s; J9 p95 1.47 s (local) |
+| Authorization-boundary gate, mutation sweep, data-exposure sweep (J10 probes: foreign threads, evidence files, moderation actions), admin sweep | **5 / 5** |
+| Migration rehearsal on the production shape (all migrations including the three J10 ones) | **20 / 20 steps** |
+| Migrations ⇄ `schema.prisma` | **empty diff** |
+| Web build (`expo export`) | **OK** |
+| Browser E2E J8 / J9 / J10 | **12 / 12, 11 / 11, 7 / 7** |
+| `npm audit --omit=dev --audit-level=critical` | **0 critical** (20 high / 8 moderate, all build tooling: `JOKKO-DEPENDENCY-ADVISORIES.md`) |
+| Deploy-inert | No deploy, no env change, money flags off. The J10 cron additions are none; the affiliate cron is not in `vercel.json`. All J10 migrations are additive. |
+
+**How the gate got here (honest record):**
+1. **`e6d3c3f`:** 696/696 and everything else green, **except** the mutation sweep. It reported `POST me/moderation/:id/appeal: no candidate source` (a coverage gap, not a leak). The gate's schema-diff line also falsely said "NONEMPTY" because of a blank line; the diff file was empty. Both were fixed in `b306ae7`.
+2. **First `b306ae7` run: void.** The container's Postgres restarted mid-run (crash recovery at 08:29 UTC), so setup could not reach the database and every DB step failed. The run was discarded, Postgres restarted, and the full gate was rerun; that rerun is the table above.
+3. **The intermittent J4 P2P journey failures seen once in a local batch did not recur** in either full run. The root cause was not established. Related, and established: the 2–4 am Dakar large-transaction risk hold made one coop test time-dependent (fixed in A6).
 
 ## 5. Verdict, risks, next
-_Filled after the gate._
+**Verdict: J10 is COMPLETE as a local engineering milestone.** The ten daily-life slices work end to end in the local pilot (API, UI, ops console, browser E2E), with privacy, abuse and concurrency tests, and the J2/J3/J8/J9 invariants hold. This is **not** production approval.
+
+**Unresolved risks:**
+1. **Production incidents (track C) are unchanged:** P0 open, F1 package ready but not deployed, F4 decision needed before any deploy of the default branch. J10-F1/F2 are also latent on `19ac203`, so a default-branch deploy must include the J10 fixes or must not happen.
+2. **Moderation needs people.** The `trust_safety` role needs staffed operators and an SLA. The queue has no automatic sanctions by design.
+3. **Find-by-phone defaults to `everyone`** (it keeps J4 P2P working). Tightening the default is a product decision (P-J10-2).
+4. **Evidence and attachments are DB-stored** (≤ 1 MB). Move them to private object storage before scale.
+5. **The order conversation is reachable from Aujourd'hui only.** There is still no buyer "my orders" screen (J5/J7 gap).
+6. **Neighbourhood quality depends on arrondissement data** (free-text, mixed case today). A normalized area reference is J12-adjacent.
+7. **Everything was measured locally**, on one node. No production capacity claim.
+
+**Next: J11, Collective Money, Tontines & Community Capital.** See `docs/JOKKO-J11-PLAN.md`. Start with J11.0 (one tontine model vs the live legacy processor; Jekkal escrow, J11-F1) and the P-J11 decisions. J11 money stays off until the owner, finance and compliance approve.
