@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**655 routes.** Column legend:
+**660 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -718,6 +718,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST me/email/confirm` | user | profile.email.confirm | self |  |  | always | sensitive_change | identity |  |
 | `POST me/phone` | user | profile.phone.request | self |  |  | always | sensitive_change | identity |  |
 | `POST me/phone/confirm` | user | profile.phone.confirm | self |  |  | always | sensitive_change | identity |  |
+| `GET me/community-settings` | user | community.settings | self |  |  |  |  |  |  |
+| `PUT me/community-settings` | user | community.settings | self: mutes (money/security never), phone discoverability, neighbourhood opt-in |  |  |  |  |  |  |
 | `GET me/distribution-invitations` | user | distribution.invitations.mine | self (assisted onboarding) |  |  |  |  |  |  |
 | `POST me/distribution-invitations/:id/respond` | user | distribution.invitations.respond | invited person; attaches a business they OWN |  |  |  |  |  |  |
 
@@ -753,6 +755,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
 |---|---|---|---|---|---|---|---|---|---|
+| `GET notifications/feed` | user | notifications.read | self: own notifications; category filter; cursor pagination (J10) |  |  |  |  |  |  |
+| `GET notifications/unread` | user | notifications.read | self: unread counts per category; muted categories not counted |  |  |  |  |  |  |
+| `POST notifications/read-all` | user | notifications.update | self: own notifications only |  |  |  |  |  |  |
 | `GET notifications` | user | notifications.read | self |  |  |  |  |  |  |
 | `POST notifications/:id/read` | user | notifications.update | owner-of notification |  |  |  |  |  |  |
 

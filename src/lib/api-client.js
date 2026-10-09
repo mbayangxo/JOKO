@@ -1274,6 +1274,18 @@ export function getNotifications() {
   return apiFetch('/api/notifications', { skipCache: true });
 }
 
+/** J10: categorized feed (cursor `before`), unread counts per category, mark all read, community settings. */
+export function getNotificationsFeed({ category, before } = {}) {
+  const q = new URLSearchParams();
+  if (category) q.set('category', category);
+  if (before) q.set('before', before);
+  return apiFetch(`/api/notifications/feed${q.toString() ? `?${q}` : ''}`, { skipCache: true });
+}
+export const getUnreadNotifications = () => apiFetch('/api/notifications/unread', { skipCache: true });
+export const markAllNotificationsRead = (category) => apiFetch('/api/notifications/read-all', { method: 'POST', body: category ? { category } : {}, skipCache: true });
+export const getCommunitySettings = () => apiFetch('/api/me/community-settings', { skipCache: true });
+export const saveCommunitySettings = (body) => apiFetch('/api/me/community-settings', { method: 'PUT', body, skipCache: true });
+
 export function markNotificationRead(id) {
   return apiFetch(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'POST', skipCache: true });
 }

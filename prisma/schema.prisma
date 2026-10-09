@@ -1301,13 +1301,31 @@ model Notification {
   refId       String?
   actionLabel String?
   read        Boolean  @default(false)
+  /// J10: money | security | orders | deliveries | work | community | school (null = legacy, derived from kind)
+  category    String?
+  /// J10: one notification per real event (e.g. "shipment:<id>:delivered"); retries never duplicate
+  dedupeKey   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, dedupeKey])
   @@index([userId, createdAt])
   @@index([userId, kind, refId])
+  @@index([userId, read, createdAt])
+}
+
+/// J10: per-person community and privacy settings (defaults = today's behaviour; nothing is made more public).
+model CommunitySettings {
+  userId              String   @id
+  /// who can find me by phone number: everyone | connections | nobody (handle search is separate)
+  discoverableByPhone String   @default("everyone")
+  /// appear in "people in my neighbourhood" lists (opt-in; off by default)
+  neighbourhoodVisible Boolean @default(false)
+  /// notification categories the person muted (money and security can never be muted)
+  mutedCategories     String[] @default([])
+  updatedAt           DateTime @updatedAt
 }
 
 model RegionalAlert {

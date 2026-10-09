@@ -6,11 +6,16 @@ import PressScale from '../components/PressScale';
 import ScreenBackground from '../components/ScreenBackground';
 import { colors, fontFamily, radius, spacing } from '../theme';
 import { useEntrance, useScalePulse } from '../hooks/animations';
-import { getNotifications, markNotificationRead } from '../lib/api-client';
+import { getCommunitySettings, getNotificationsFeed, markAllNotificationsRead, markNotificationRead, saveCommunitySettings } from '../lib/api-client';
+
+/** J10 categories (money and security can never be muted). */
+const CATEGORY_LABELS = { money: 'Argent', orders: 'Commandes', deliveries: 'Livraisons', work: 'Travail', community: 'Communauté', school: 'École', security: 'Sécurité' };
 
 const ACCENT_COLORS = { g: colors.green, o: colors.terracotta, r: colors.terracotta, y: colors.flagGold };
 
 function inferKind(notification) {
+  if (String(notification.kind ?? '').startsWith('shipment_')) return 'delivery';
+  if (String(notification.kind ?? '').startsWith('work_')) return 'work';
   if (notification.kind === 'alert') return 'alert';
   if (notification.kind === 'friend') return 'friend';
   if (notification.kind === 'call') return 'call';
@@ -32,8 +37,8 @@ function inferKind(notification) {
 
 function mapNotification(n) {
   const kind = inferKind(n);
-  const icons = { money: '💸', gift: '🎁', jekkal: '🤝', affiliate: '🛍️', mboolo: '💬', event: '🎉', tontine: '🏦', ngor: '✦', alert: '🌊', friend: '🧑‍🤝‍🧑', call: '📞', generic: '🔔' };
-  const accents = { money: 'g', gift: 'g', jekkal: 'o', mboolo: 'r', event: 'o', tontine: 'y', ngor: 'g', alert: 'o', friend: 'g', call: 'o', generic: 'g' };
+  const icons = { delivery: '📦', work: '🧰', money: '💸', gift: '🎁', jekkal: '🤝', affiliate: '🛍️', mboolo: '💬', event: '🎉', tontine: '🏦', ngor: '✦', alert: '🌊', friend: '🧑‍🤝‍🧑', call: '📞', generic: '🔔' };
+  const accents = { delivery: 'g', work: 'o', money: 'g', gift: 'g', jekkal: 'o', mboolo: 'r', event: 'o', tontine: 'y', ngor: 'g', alert: 'o', friend: 'g', call: 'o', generic: 'g' };
   const time = new Date(n.createdAt).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   return {
     id: n.id,
@@ -46,7 +51,7 @@ function mapNotification(n) {
     iconBg: colors.greenA10,
     text: n.body || n.title,
     time,
-    action: kind === 'money' ? '✓' : kind === 'gift' ? 'Ouvrir' : kind === 'jekkal' ? 'Voir' : kind === 'friend' ? 'Voir' : kind === 'call' ? 'Rejoindre' : kind === 'mboolo' ? 'Répondre' : kind === 'event' || kind === 'alert' ? 'Voir' : null,
+    action: kind === 'delivery' || kind === 'work' ? 'Voir' : kind === 'money' ? '✓' : kind === 'gift' ? 'Ouvrir' : kind === 'jekkal' ? 'Voir' : kind === 'friend' ? 'Voir' : kind === 'call' ? 'Rejoindre' : kind === 'mboolo' ? 'Répondre' : kind === 'event' || kind === 'alert' ? 'Voir' : null,
     actionStyle: kind === 'money' ? 'g' : 'o',
     refId: n.refId ?? null,
     read: n.read,
@@ -85,17 +90,38 @@ export default function NotificationsScreen({ navigation }) {
   const isTabRoot = route.name === 'NotificationsTab';
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState(null);
+  const [muted, setMuted] = useState([]);
 
   const load = useCallback(async () => {
     try {
-      const list = await getNotifications();
-      setItems((Array.isArray(list) ? list : []).map(mapNotification));
+      const feed = await getNotificationsFeed({ category });
+      setItems((feed?.items ?? []).map(mapNotification));
+      getCommunitySettings().then((st) => setMuted(st.mutedCategories ?? [])).catch(() => {});
     } catch {
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [category]);
+
+  const markAll = async () => {
+    try {
+      await markAllNotificationsRead(category ?? undefined);
+      setItems((prev) => prev.map((n) => ({ ...n, unread: false, read: true })));
+    } catch {
+      /* ignore */
+    }
+  };
+  const toggleMute = async (c) => {
+    const next = muted.includes(c) ? muted.filter((x) => x !== c) : [...muted, c];
+    try {
+      const st = await saveCommunitySettings({ mutedCategories: next });
+      setMuted(st.mutedCategories ?? []);
+    } catch {
+      /* ignore */
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -113,6 +139,12 @@ export default function NotificationsScreen({ navigation }) {
     }
 
     switch (item.kind) {
+      case 'delivery':
+        if (item.refId) navigation.navigate('Shipment', { shipmentId: item.refId });
+        break;
+      case 'work':
+        navigation.navigate('Work');
+        break;
       case 'mboolo':
         navigation.navigate('Main', { screen: 'MbooloTab' });
         break;
@@ -195,6 +227,23 @@ export default function NotificationsScreen({ navigation }) {
           </View>
         </View>
 
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+          <PressScale onPress={() => setCategory(null)} style={[styles.chip, !category && styles.chipOn]}><Text style={styles.chipText}>Tout</Text></PressScale>
+          {Object.entries(CATEGORY_LABELS).map(([c, label]) => (
+            <PressScale key={c} onPress={() => setCategory(c)} style={[styles.chip, category === c && styles.chipOn]} accessibilityLabel={`Filtre ${label}`}>
+              <Text style={styles.chipText}>{label}{muted.includes(c) ? ' 🔕' : ''}</Text>
+            </PressScale>
+          ))}
+        </ScrollView>
+        <View style={styles.toolsRow}>
+          <PressScale onPress={markAll} accessibilityLabel="Tout marquer lu"><Text style={styles.toolText}>Tout marquer lu</Text></PressScale>
+          {category && category !== 'money' && category !== 'security' ? (
+            <PressScale onPress={() => toggleMute(category)} accessibilityLabel="Couper ou réactiver cette catégorie">
+              <Text style={styles.toolText}>{muted.includes(category) ? 'Réactiver' : 'Couper'} « {CATEGORY_LABELS[category]} »</Text>
+            </PressScale>
+          ) : null}
+        </View>
+
         {loading && (
           <View style={{ padding: spacing.giant, alignItems: 'center' }}>
             <ActivityIndicator color={colors.green} />
@@ -216,6 +265,12 @@ export default function NotificationsScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  chips: { paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.sm },
+  chip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.round, borderWidth: 1, borderColor: colors.ink },
+  chipOn: { backgroundColor: colors.greenA10 },
+  chipText: { fontFamily: fontFamily.bodySemiBold, fontSize: 12, color: colors.ink },
+  toolsRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+  toolText: { fontFamily: fontFamily.bodySemiBold, fontSize: 12, color: colors.green },
   root: { flex: 1, backgroundColor: '#f2f8ec' },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.xl, paddingHorizontal: spacing.huge, paddingTop: spacing.xxl, paddingBottom: spacing.xl, backgroundColor: colors.greenA08, borderBottomWidth: 1, borderBottomColor: colors.greenA10 },
   backBtn: { width: 36, height: 36, borderRadius: radius.lg, backgroundColor: 'rgba(255,255,255,0.75)', borderWidth: 1, borderColor: 'rgba(5,8,5,0.1)', alignItems: 'center', justifyContent: 'center' },

@@ -1,7 +1,8 @@
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
+import { getUnreadNotifications } from '../lib/api-client';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import ScreenBackground from '../components/ScreenBackground';
@@ -61,9 +62,12 @@ export default function HomeScreen({ navigation }) {
   const { profile, balance, refreshWallet } = useAppState();
   const firstName = profile.name.split(' ')[0];
 
+  // J10: the bell only signals something real (unread, not muted) — no permanent attention dot.
+  const [unread, setUnread] = useState(0);
   useFocusEffect(
     useCallback(() => {
       refreshWallet().catch(() => {});
+      getUnreadNotifications().then((u) => setUnread(u?.total ?? 0)).catch(() => setUnread(0));
     }, [refreshWallet]),
   );
 
@@ -81,7 +85,7 @@ export default function HomeScreen({ navigation }) {
             </View>
             <PressScale scaleTo={0.9} onPress={() => open('Main', { screen: 'NotificationsTab' })} style={styles.notifBtn}>
               <Text style={{ fontSize: 16 }}>🔔</Text>
-              <Animated.View style={[styles.notifDot, { opacity: notifBlink }]} />
+              {unread > 0 ? <Animated.View style={[styles.notifDot, { opacity: notifBlink }]} accessibilityLabel={`${unread} notification${unread > 1 ? 's' : ''} non lue${unread > 1 ? 's' : ''}`} /> : null}
             </PressScale>
           </View>
 
