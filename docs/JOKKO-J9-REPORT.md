@@ -184,5 +184,27 @@ See `docs/incidents/2026-10-f4-affiliate-commission/`. It is inactive by default
 - **Deploy identity correction:** `git grep` shows **no affiliate code in `7d262de`**, the live production deployment. The programme arrived in `494991d`, which is in `19ac203`. F4 is therefore latent, not live, and **it must be decided before any deploy of the default branch**.
 - **Flake to watch:** in one local batch run, 4 J4 P2P journey tests (`tests/j4/journeys-pay.test.js`) failed. Rerun alone and in the same batch, they passed (153/153). The cause is not established. The J10 gate runs them again on a fresh DB; a repeat failure will be root-caused, not dismissed.
 
+### A5: decision review
+`docs/JOKKO-J9-DECISION-REVIEW.md` covers P-J9-1 … P-J9-10: the policy, its implications, the safe default in code, local status and the approvals needed. **None is approved.**
+
+### A6
+- **Batch milestone validation:** `POST businesses/:id/work/milestones/accept-batch`.
+  - At most 50 items; the business is authorized before any item; each item is its own atomic money transaction.
+  - It counts **once** on the strict account-wide limiter and **per item** on a new `work_accept` budget: a targeted 429, no lockout. Abuse protection is not disabled.
+  - Tests: `tests/j9/batch-accept.test.js` 2/2.
+- **Evidence attachments:** `lib/work/evidence-files.js`, alongside text evidence.
+  - Private bytes, served only to the parties (`no-store`, `nosniff`); operators read only on a disputed assignment, with a reason.
+  - Every read is audited (`WorkEvidenceAccess`).
+  - The type is sniffed: JPEG, PNG, WebP or PDF; PDFs with active content are refused; ≤ 1 MB.
+  - EXIF / GPS / text metadata is stripped.
+  - Caps: 20 per assignment (holds under concurrency), 30 per person per day.
+  - Retention: 180 days (bounded 30–730), with a hold while disputed; after that the hash record is kept and reads return 410.
+  - Worker UI: "Joindre une photo".
+  - Tests: `tests/j9/evidence-files.test.js` 4/4, including the new API body cap (413).
+- **Legal review flags:** classification, minors, payroll boundary and evidence retention are flagged for **jurisdiction-specific counsel review** (decision review). A generic threshold is not compliance.
+- **Dependency advisories:** `docs/JOKKO-DEPENDENCY-ADVISORIES.md`.
+  - Highs went from 31 to **20** with no forced or major change; `undici` (server runtime, through `@vercel/blob`) is fixed.
+  - The remaining highs are all Expo / Metro / Prisma-CLI build tooling, with no server-runtime exposure; mitigations are documented.
+
 ### J10 scope (owner decision)
 §8's activation-first recommendation is **superseded**: J10 = **Community & Daily Life**, and the original roadmap is preserved. The production incidents (P0, F1, F4) stay on their own separate track (C) and are not part of J10.

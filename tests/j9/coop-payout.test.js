@@ -24,7 +24,7 @@ async function call(handler, { userId, body, query, method = 'POST', deviceId } 
   return res;
 }
 
-async function coopWithVerifiedDelivery({ tons = 2 } = {}) {
+async function coopWithVerifiedDelivery({ tons = 2, capital = 10_000 } = {}) {
   const owner = await createUserWithWallet({ koriBalance: 30_000, tier: 3 });
   await ensureAfriId(owner.id);
   await prisma.user.update({ where: { id: owner.id }, data: { stepUpVerifiedAt: new Date() } });
@@ -32,7 +32,7 @@ async function coopWithVerifiedDelivery({ tons = 2 } = {}) {
   const farmer = await createUserWithWallet({ koriBalance: 0, tier: 2, handle: `farmer${Date.now()}${Math.floor(Math.random() * 1e4)}` });
   const biz = await call(businessesCreate, { userId: owner.id, deviceId, body: { name: 'Coop Payout', type: 'cooperative', category: 'agriculture' } });
   const businessId = biz.body.id;
-  await call(businessTransferHandler, { userId: owner.id, deviceId, query: { id: businessId }, body: { kind: 'capital_in', amount: 10_000 } });
+  await call(businessTransferHandler, { userId: owner.id, deviceId, query: { id: businessId }, body: { kind: 'capital_in', amount: capital } });
   const now = new Date();
   const log = await call(cooperativeDeliveriesHandler, { userId: owner.id, query: { id: businessId }, body: { farmerHandle: farmer.handle, quantityTons: tons, periodStart: new Date(now - 7 * 86400000).toISOString(), periodEnd: now.toISOString() } });
   assert.equal(log.statusCode, 201, JSON.stringify(log.body));
@@ -79,7 +79,9 @@ test('several verified deliveries are paid together, once (per-log payout refere
 });
 
 test('a failed transfer (insufficient business funds) releases the claim: nothing paid, logs payable again', async () => {
-  const c = await coopWithVerifiedDelivery({ tons: 100 });
+  // 10 t × 5 000 XOF = 50 000 XOF: more than the 1 000 Kori business capital, and below the 2–4 am Dakar
+  // large-transaction risk hold (> 100 000 XOF), so the outcome does not depend on the time of day.
+  const c = await coopWithVerifiedDelivery({ tons: 10, capital: 1_000 });
   const r = await call(cooperativePayoutHandler, { userId: c.owner.id, deviceId: c.deviceId, query: { id: c.businessId }, body: { farmerUserId: c.farmer.id, ratePerTonXof: 5000 } });
   assert.notEqual(r.statusCode, 201);
   assert.equal(await farmerBalance(c.farmer.id), 0);

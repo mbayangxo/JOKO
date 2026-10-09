@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**648 routes.** Column legend:
+**655 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -68,6 +68,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET admin/logistics/disputes` | admin | logistics.read | operator_scope |  |  |  |  |  |  |
 | `POST admin/logistics/disputes/:id/resolve` | admin | logistics.disputes.resolve | operator_scope |  |  |  |  | admin+identity; money reversal via maker/checker (logistics.disputes.reverse) |  |
 | `POST admin/pickup-points/:id/decide` | admin | pickup_points.approve | operator_scope |  |  |  |  | admin+identity |  |
+| `POST admin/work/evidence/files/:id/view` | admin | work.disputes.resolve | operator_scope |  |  |  |  | admin+identity; only files on a disputed assignment; reason required; every read audited |  |
 | `GET admin/work/review` | admin | work.review | operator_scope |  |  |  |  |  |  |
 | `POST admin/work/opportunities/:id/review` | admin | work.review | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/work/qualifications/:id/review` | admin | work.qualifications.verify | operator_scope |  |  |  |  | admin+identity |  |
@@ -384,6 +385,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST businesses/:id/work/assignments/:subId/attendance-code` | user | work.attendance.code | business:business.staffing.manage; own active assignment |  |  |  |  | work_challenge |  |
 | `POST businesses/:id/work/assignments/:subId/accept` | user | work.milestone.accept | business:business.staffing.manage; never the worker themself |  |  |  |  | ledger+risk |  |
 | `POST businesses/:id/work/milestones/accept-batch` | user | work.milestone.accept | per item: business:business.staffing.manage on that assignment; never the worker themself; ≤ 50 items; counts once on the account limiter + per item on the work_accept budget (A6/D42) |  |  |  |  | ledger+risk |  |
+| `POST businesses/:id/work/assignments/:subId/evidence/files` | user | work.evidence.file.upload | business:business.staffing.manage on that assignment (A6) |  |  |  |  | work_evidence |  |
+| `GET businesses/:id/work/assignments/:subId/evidence/files` | user | work.evidence.file.read | business:business.staffing.manage on that assignment; metadata only |  |  |  |  |  |  |
+| `GET businesses/:id/work/evidence/files/:subId` | user | work.evidence.file.read | business:business.staffing.manage on the file’s assignment; every read audited |  |  |  |  | work_evidence_access |  |
 | `POST businesses/:id/work/assignments/:subId/end` | user | work.assignment.end | business:business.staffing.manage; no unilateral end once work is attended / submitted |  |  |  |  | ledger+risk |  |
 | `POST businesses/:id/work/assignments/:subId/disputes` | user | work.dispute.open | business:business.staffing.manage (false completion within the window; unpaid only) |  |  |  |  | work_evidence |  |
 | `POST businesses/:id/work/assignments/:subId/feedback` | user | work.feedback.leave | business:business.staffing.manage; once; after work |  |  |  |  |  |  |
@@ -947,6 +951,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST work/earnings/payout` | user | work.earnings.payout | self: own releasable earnings, not frozen by a dispute → own wallet |  |  |  |  | ledger+risk |  |
 | `GET work/feedback` | user | work.feedback.read | self: feedback about me |  |  |  |  |  |  |
 | `POST work/feedback/:id/contest` | user | work.feedback.contest | subject of the feedback |  |  |  |  |  |  |
+| `POST work/assignments/:id/evidence/files` | user | work.evidence.file.upload | self: the worker of the assignment; sniffed type JPEG/PNG/WebP/PDF ≤ 1 MB; metadata stripped; ≤ 20 per assignment, ≤ 30/day (A6) |  |  |  |  | work_evidence |  |
+| `GET work/assignments/:id/evidence/files` | user | work.evidence.file.read | self: the worker of the assignment; metadata only |  |  |  |  |  |  |
+| `GET work/evidence/files/:id` | user | work.evidence.file.read | self: the worker of the assignment; private, no-store; every read audited (WorkEvidenceAccess) |  |  |  |  | work_evidence_access |  |
 
 ## User — workers
 

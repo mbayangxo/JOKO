@@ -103,7 +103,7 @@ export function makeClient(base) {
     } catch {
       json = text;
     }
-    return { status: res.status, body: json };
+    return { status: res.status, body: json, headers: Object.fromEntries(res.headers) };
   };
 }
 

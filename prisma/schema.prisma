@@ -4483,6 +4483,45 @@ model WorkEvidence {
   @@index([disputeId])
 }
 
+/// A6: a private evidence attachment (photo / document). Bytes live here (≤ 1 MB, metadata stripped),
+/// served only through authorized, audited API reads; never a public URL. Retention purges the bytes
+/// (sha256 + metadata stay as the record) unless a dispute on the assignment is still open.
+model WorkEvidenceFile {
+  id           String    @id @default(cuid())
+  evidenceId   String    @unique
+  assignmentId String
+  milestoneId  String?
+  disputeId    String?
+  uploaderId   String
+  /// worker | business
+  role         String
+  mime         String
+  sizeBytes    Int
+  sha256       String
+  bytes        Bytes?
+  /// metadata segments removed on upload (e.g. "jpeg:app1" = EXIF / GPS)
+  stripped     String?
+  expiresAt    DateTime
+  purgedAt     DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([assignmentId, createdAt])
+  @@index([uploaderId, createdAt])
+  @@index([expiresAt])
+}
+
+/// A6: every read of an evidence file (parties included) — who, in which role, why.
+model WorkEvidenceAccess {
+  id        String   @id @default(cuid())
+  fileId    String
+  actorType String
+  actorId   String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([fileId, createdAt])
+}
+
 /// Counterpart-issued, single-use, bound code (attendance check-in / check-out).
 model WorkChallenge {
   id           String    @id @default(cuid())

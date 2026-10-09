@@ -8,7 +8,7 @@ import { useToast } from '../components/Toast';
 import {
   acceptWorkOffer, addWorkQualification, appealWorkDispute, applyToWork, declineWorkOffer, discoverWork, endMyAssignment, getMyAssignments,
   getMyWorkApplications, getMyWorkOffers, getWorkEarnings, getWorkProfile, openWorkDispute, payoutWorkEarnings, saveWorkProfile,
-  submitAttendance, submitMilestone,
+  submitAttendance, submitMilestone, uploadWorkEvidenceFile,
 } from '../lib/api-client';
 import { formatKori } from '../lib/kori.js';
 import { newActionKey } from '../lib/logistics-ux';
@@ -16,6 +16,21 @@ import {
   APP_STATUS, ARRANGEMENT, ASSIGNMENT_STATUS, CLASSIFICATION, EARNING_STATUS, FUNDING, INELIGIBLE, MILESTONE_STATUS, OFFER_STATUS, PAY_KIND,
 } from '../lib/work-ux';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
+
+/** A6: pick a photo, re-encode it small (≤ 1 MB; re-encoding also drops camera metadata), return base64 JPEG. */
+async function pickEvidencePhoto() {
+  const ImagePicker = await import('expo-image-picker');
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) throw new Error('Autorise l’accès aux photos pour joindre une preuve');
+  const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, exif: false });
+  if (r.canceled || !r.assets?.[0]?.uri) return null;
+  const { manipulateAsync, SaveFormat } = await import('expo-image-manipulator');
+  for (const width of [1280, 960, 720]) {
+    const out = await manipulateAsync(r.assets[0].uri, [{ resize: { width } }], { compress: 0.6, format: SaveFormat.JPEG, base64: true });
+    if (out.base64 && out.base64.length * 0.75 <= 1_000_000) return out.base64;
+  }
+  throw new Error('Photo trop lourde même réduite');
+}
 
 /**
  * J9 — the worker's desk. Discover real, funded work from verified businesses (newest first,
@@ -212,6 +227,12 @@ export default function WorkScreen({ navigation }) {
                       {m.status === 'pending' && a.status === 'active' ? (
                         <>
                           <TextInput value={evidence[m.id] ?? ''} onChangeText={(t) => setEvidence((x) => ({ ...x, [m.id]: t }))} placeholder={m.kind === 'reimbursement' ? 'Référence du justificatif' : 'Ce qui a été fait (preuve)'} style={styles.input} multiline accessibilityLabel="Preuve" />
+                          <PressScale onPress={async () => {
+                            try {
+                              const data = await pickEvidencePhoto();
+                              if (data) await act(() => uploadWorkEvidenceFile(a.id, { mime: 'image/jpeg', dataBase64: data, milestoneSeq: m.seq }), 'Photo jointe (privée : visible par toi, l’entreprise et K21 en cas de litige)');
+                            } catch (e) { showToast(e.message); }
+                          }} style={styles.smallBtn} accessibilityLabel="Joindre une photo"><Text style={styles.ghostText}>Joindre une photo</Text></PressScale>
                           <GlowButton label="Envoyer pour validation" disabled={busy} onPress={() => act(() => submitMilestone(a.id, m.seq, evidence[m.id] ?? '', m.kind === 'reimbursement' ? 'receipt_ref' : a.terms?.evidenceRequired === 'attendance' ? 'attendance' : 'note'), 'Envoyé — l’entreprise a le délai convenu pour valider')} />
                         </>
                       ) : null}
