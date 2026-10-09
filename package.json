@@ -72,7 +72,7 @@
     "test:db:start": "prisma dev --name joko-test --detach",
     "test:db:setup": "prisma db push --skip-generate && prisma db execute --schema prisma/schema.prisma --file prisma/sql/financial-invariants.sql && prisma db execute --schema prisma/schema.prisma --file prisma/sql/money-kernel.sql && prisma db execute --schema prisma/schema.prisma --file prisma/sql/identity-guards.sql && prisma generate",
     "test:db:stop": "prisma dev stop joko-test",
-    "test": "node --test --test-concurrency=1 \"tests/unit/**/*.test.js\" \"tests/integration/**/*.test.js\" \"tests/security/**/*.test.js\" \"tests/http/**/*.test.js\" \"tests/money/**/*.test.js\" \"tests/j3/**/*.test.js\" \"tests/j4/**/*.test.js\" \"tests/j5/**/*.test.js\" \"tests/j6/**/*.test.js\" \"tests/j7/**/*.test.js\" \"tests/j8/**/*.test.js\" \"tests/j9/**/*.test.js\" \"tests/j10/**/*.test.js\"",
+    "test": "node --test --test-concurrency=1 \"tests/unit/**/*.test.js\" \"tests/integration/**/*.test.js\" \"tests/security/**/*.test.js\" \"tests/http/**/*.test.js\" \"tests/money/**/*.test.js\" \"tests/j3/**/*.test.js\" \"tests/j4/**/*.test.js\" \"tests/j5/**/*.test.js\" \"tests/j6/**/*.test.js\" \"tests/j7/**/*.test.js\" \"tests/j8/**/*.test.js\" \"tests/j9/**/*.test.js\" \"tests/j10/**/*.test.js\" \"tests/j11/**/*.test.js\"",
     "test:one": "node --test --test-concurrency=1",
     "test:unit": "node --test --test-concurrency=1 \"tests/unit/**/*.test.js\"",
     "test:integration": "node --test --test-concurrency=1 \"tests/integration/**/*.test.js\"",
