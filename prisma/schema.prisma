@@ -1082,21 +1082,25 @@ model MboloMember {
 }
 
 model MboloMessage {
-  id           String    @id @default(cuid())
-  threadId     String
-  senderId     String
-  body         String    @default("")
-  kind         String    @default("text")
-  mediaUrl     String?   @db.Text
-  mediaAssetId String?   @unique
-  retention    String    @default("thread")
-  expiresAt    DateTime?
-  createdAt    DateTime  @default(now())
+  id              String    @id @default(cuid())
+  threadId        String
+  senderId        String
+  body            String    @default("")
+  kind            String    @default("text")
+  mediaUrl        String?   @db.Text
+  mediaAssetId    String?   @unique
+  retention       String    @default("thread")
+  expiresAt       DateTime?
+  createdAt       DateTime  @default(now())
+  /// J12 (P-J12-3): stable id chosen by the sending device for one message; a retry/reconnect/outbox
+  /// flush with the same id returns the stored message instead of posting it twice. NULL for old clients.
+  clientMessageId String?
 
   thread     MboloThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
   sender     User              @relation(fields: [senderId], references: [id])
   mediaAsset MbooloMediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
 
+  @@unique([senderId, clientMessageId])
   @@index([threadId, createdAt])
   @@index([senderId])
 }

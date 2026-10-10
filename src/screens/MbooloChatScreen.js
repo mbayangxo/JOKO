@@ -34,7 +34,8 @@ import {
   resolveVoicePlaybackSource,
 } from '../lib/mbolo-media';
 import { parseMoneyCommand } from '../lib/mbolo-voice-money';
-import { flushMboloOutbox, enqueueMboloMessage } from '../lib/mbolo-outbox';
+import { flushMboloOutbox, enqueueMboloMessage, newClientMessageId, outboxState, releaseHeld, discardHeld } from '../lib/mbolo-outbox';
+import { OUTBOX_KINDS } from '../lib/offline-policy';
 import { runTerangaGifStudio } from '../lib/mbolo-gif-studio';
 import { formatXof, getDirectPartner } from '../lib/mbolo-social';
 import { useMbooloVoiceRecorder, formatVoiceDuration } from '../hooks/useMbooloVoiceRecorder';
@@ -435,17 +436,27 @@ export default function MbooloChatScreen({ navigation, route }) {
     }
   }, [threadId, searchQuery, showToast]);
 
+  const [sync, setSync] = useState({ pending: 0, held: 0 });
+  const refreshSync = useCallback(() => {
+    if (threadId) outboxState(threadId).then(setSync).catch(() => {});
+  }, [threadId]);
+  const mergeSent = useCallback((sent) => {
+    if (sent?.length) setMessages((prev) => [...prev, ...sent.filter((m) => !prev.some((p) => p.id === m.id))]);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
       flushMboloOutbox(threadId)
-        .then((sent) => {
-          if (sent.length > 0) setMessages((prev) => [...prev, ...sent]);
-        })
-        .finally(() => loadMessages());
+        .then(mergeSent)
+        .catch(() => {})
+        .finally(() => {
+          refreshSync();
+          loadMessages();
+        });
       const timer = setInterval(loadMessages, 3000);
       return () => clearInterval(timer);
-    }, [loadMessages, threadId]),
+    }, [loadMessages, threadId, mergeSent, refreshSync]),
   );
 
   useEffect(() => {
@@ -469,18 +480,24 @@ export default function MbooloChatScreen({ navigation, route }) {
     if (!isReady) readyToastShown.current = false;
   }, [isReady, showToast]);
 
+  // J12 (P-J12-3): every message carries ONE stable client id for all of its attempts; a lost send is
+  // queued under that same id, so the server stores it once whatever the network does.
   const postMessage = async (payload) => {
+    const withId = payload.clientMessageId ? payload : { ...payload, clientMessageId: newClientMessageId() };
     setSending(true);
     try {
-      const msg = await sendMboloMessage(threadId, payload);
-      setMessages((prev) => [...prev, msg]);
+      const msg = await sendMboloMessage(threadId, withId);
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
       setText('');
     } catch (err) {
+      const lost = ['network', 'timeout', 'outcome_unknown'].includes(err?.code) || (typeof navigator !== 'undefined' && navigator.onLine === false);
       if (err?.code === 'verification_required' || err?.status === 403) {
         showToast(err.message ?? 'Vérifie ton profil (nom + téléphone) pour envoyer des messages');
-      } else if (!navigator?.onLine && Platform.OS !== 'web') {
-        await enqueueMboloMessage(threadId, payload);
-        showToast('Hors ligne — message en attente d’envoi');
+      } else if (lost && OUTBOX_KINDS.includes(withId.kind ?? 'text')) {
+        await enqueueMboloMessage(threadId, withId).catch(() => {});
+        setText('');
+        refreshSync();
+        showToast('Hors ligne — message en attente, il partira une seule fois');
       } else {
         showToast(err.message ?? 'Envoi impossible');
       }
@@ -859,6 +876,26 @@ export default function MbooloChatScreen({ navigation, route }) {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
+        {sync.pending > 0 || sync.held > 0 ? (
+          <View style={styles.syncBar} accessibilityRole="alert" accessibilityLiveRegion="polite" testID="chat-sync-state">
+            {sync.pending > 0 ? (
+              <Text style={styles.syncText}>⏳ {sync.pending} message{sync.pending > 1 ? 's' : ''} en attente d’envoi — {sync.pending > 1 ? 'ils partiront' : 'il partira'} une seule fois au retour du réseau.</Text>
+            ) : null}
+            {sync.held > 0 ? (
+              <View>
+                <Text style={styles.syncText}>⚠️ {sync.held} message{sync.held > 1 ? 's' : ''} non envoyé{sync.held > 1 ? 's' : ''} (trop ancien ou refusé).</Text>
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
+                  <PressScale onPress={() => releaseHeld(threadId).then(mergeSent).finally(refreshSync)}>
+                    <Text style={styles.syncAction}>Renvoyer</Text>
+                  </PressScale>
+                  <PressScale onPress={() => discardHeld(threadId).finally(refreshSync)}>
+                    <Text style={styles.syncAction}>Supprimer</Text>
+                  </PressScale>
+                </View>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
         <View style={styles.chatHead}>
           <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.chBack}>
             <Text style={{ fontSize: 15, color: '#fff' }}>←</Text>
@@ -1169,6 +1206,9 @@ export default function MbooloChatScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+  syncBar: { marginHorizontal: 12, marginTop: 6, padding: 10, borderRadius: 10, backgroundColor: 'rgba(245, 180, 40, 0.14)' },
+  syncText: { color: '#fff', fontSize: 13, lineHeight: 18 },
+  syncAction: { color: '#ffd166', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
   root: { flex: 1, backgroundColor: colors.mboolo.bg },
   chatHead: { backgroundColor: colors.mboolo.terra, paddingHorizontal: 14, paddingVertical: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
   chBack: { width: 32, height: 32, borderRadius: radius.md, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },

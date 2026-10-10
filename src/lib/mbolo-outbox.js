@@ -38,16 +38,24 @@ async function writeOutbox(items) {
 
 const currentUser = async () => subjectOf(await getAccessToken());
 
+/** J12 (P-J12-3): one stable id per message, reused by every retry and outbox flush (server dedupes). */
+export function newClientMessageId() {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  return `cm-${uuid ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`}`;
+}
+
 export async function enqueueMboloMessage(threadId, payload) {
   const userId = await currentUser();
   if (!userId) throw new Error('Session expirée — reconnecte-toi pour envoyer');
   if (!OUTBOX_KINDS.includes(payload?.kind ?? 'text')) throw new Error('Ce type de message ne peut pas attendre hors ligne');
   const items = await readOutbox();
+  const withId = payload?.clientMessageId ? payload : { ...payload, clientMessageId: newClientMessageId() };
+  if (items.some((e) => e.userId === userId && e.payload?.clientMessageId === withId.clientMessageId)) return null; // already queued
   const entry = {
     id: `ob-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     userId,
     threadId,
-    payload,
+    payload: withId,
     createdAt: new Date().toISOString(),
     attempts: 0,
   };
@@ -91,13 +99,40 @@ export async function flushMboloOutbox(threadId) {
     } catch (err) {
       entry.attempts += 1;
       entry.lastError = err?.message ?? 'send failed';
-      keep.push(entry);
+      // A definite refusal (no longer a member, blocked, restricted…) is never retried automatically:
+      // the server's permissions win over the device's queue. The user sees it as held.
+      const refused = err?.status >= 400 && err?.status < 500 && ![408, 429].includes(err.status);
+      keep.push(refused ? { ...entry, held: true, refused: true } : entry);
+      if (refused) held += 1;
     }
   }
 
   await writeOutbox(keep);
   sent.held = held;
   return sent;
+}
+
+/** This user's queued messages for a thread, with their sync state (pending | held). */
+export async function outboxState(threadId) {
+  const userId = await currentUser();
+  const mine = (await readOutbox()).filter((e) => e.userId === userId && e.threadId === threadId);
+  return { pending: mine.filter((e) => !e.held).length, held: mine.filter((e) => e.held).length };
+}
+
+/** The user chose to send their held (stale) messages now: same client ids, so never twice. */
+export async function releaseHeld(threadId) {
+  const userId = await currentUser();
+  const items = await readOutbox();
+  const now = new Date().toISOString();
+  await writeOutbox(items.map((e) => (e.userId === userId && e.threadId === threadId && e.held ? { ...e, held: false, createdAt: now } : e)));
+  return flushMboloOutbox(threadId);
+}
+
+/** The user chose to discard their held messages. */
+export async function discardHeld(threadId) {
+  const userId = await currentUser();
+  const items = await readOutbox();
+  await writeOutbox(items.filter((e) => !(e.userId === userId && e.threadId === threadId && e.held)));
 }
 
 export async function outboxCount(threadId) {
