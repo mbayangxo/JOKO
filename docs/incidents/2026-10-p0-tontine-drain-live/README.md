@@ -130,3 +130,33 @@ J11 feature work **stopped** under the stop rule when this was confirmed. It res
 6. Record the deployment ID, time and results here.
 
 **Forensics:** still not run. The production database can only be identified by reading `DATABASE_URL`, which this session must not do. Options: the owner runs `historical-tontine-exposure.sql` read-only, or explicitly authorizes a read-only role and connection string for the verified Jokko database (never Kebu's Supabase).
+
+
+## 10. Deployment record and post-deploy verification (2026-10-10): **VERIFICATION INCOMPLETE**
+
+| Item | Value |
+|---|---|
+| Owner permission | Explicit: push `hotfix/p0a-tontine-containment` and deploy; promote on local evidence (preview HTTP checks impossible). |
+| Branch | `hotfix/p0a-tontine-containment` → `b0318b5d411ae3bf885ff050657dcc6f0f8bc491` (`7d262de` + the reviewed 2-file patch only) |
+| Preview | `dpl_7JndtmGGKBjKMKaJk6SRdcEhm71m` READY. Duplicate preview `dpl_3kNqBkeyKB72fi7fneuVoGb4dcNB` cancelled. Promoting the preview was refused by Vercel (422). |
+| **Production** | **`dpl_CmyTMHWsumXsE3aduWzbcjzUxEoS`**, production build of the same SHA, READY at 2026-10-10 06:17 UTC |
+| Aliases (authoritative alias records) | `keit-six.vercel.app` → `dpl_CmyTMHWsumXsE3aduWzbcjzUxEoS`; `joko-mbayangxos-projects.vercel.app` → `dpl_CmyTMHWsumXsE3aduWzbcjzUxEoS` (both updated 06:17 UTC). The project's latest production deployment is the same. |
+| No other build | None deployed after it. **Never roll back** to `dpl_B3ucyq…` or `dpl_FgomN1…` (vulnerable `7d262de`). |
+
+**Verified (code level, not runtime):**
+- The deployed source is the exact SHA tested locally. Release → 503 `tontine_suspended` before any money transaction, so no partial movement (local exploit regression: every balance unchanged).
+- The daily cron (`/api/cron/daily`, 06:00 UTC) still runs, and in this build it skips the tontine processor (`skipped: legacy_tontine_money_suspended`).
+- The `7d262de` suite passes 122 / 122 on this SHA (P2P, merchant and other money routes).
+
+**NOT verified (blocked):**
+- No HTTP request reached production: the SSO bypass returns 403, and this environment cannot reach `*.vercel.app`.
+- Runtime logs and runtime errors return 403.
+- So these are unconfirmed at runtime: health, a refused release in production, unrelated P2P and merchant routes, and the first post-deploy cron run (2026-10-11 06:00 UTC).
+
+**Owner checks to complete verification (no money moves):**
+1. While logged in to Vercel, open `https://keit-six.vercel.app/api/health` and expect a healthy response.
+2. In the Vercel logs, after 2026-10-11 06:00 UTC: the `/api/cron/daily` result should include `skipped: legacy_tontine_money_suspended`, and there should be no `tontine_contribution` activity.
+3. Read-only on the verified Jokko DB (part of `historical-tontine-exposure.sql` §2): no new `TONTINE-%` ledger references after 2026-10-10 06:17 UTC.
+4. Watch errors on payment routes for 24 h.
+
+**Status: P0-A containment DEPLOYED; runtime verification INCOMPLETE. Do not claim full containment until checks 1–3 are done.** P0-B (delivery dispute) and F1 (coop double payout) remain separate and unresolved. Forensics: the owner runs the read-only SQL (chosen 2026-10-10).
