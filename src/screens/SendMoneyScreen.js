@@ -22,6 +22,7 @@ import { useScreenshotBlock } from '../hooks/useScreenshotBlock';
 import { useToast } from '../components/Toast';
 import ProfileAvatar from '../components/ProfileAvatar';
 import StepUpOverlay from '../components/StepUpOverlay';
+import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
 import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import { useSecurity } from '../context/SecurityContext';
 import { useLocale } from '../context/LocaleContext';
@@ -465,7 +466,7 @@ export default function SendMoneyScreen({ navigation, route }) {
   const [undone, setUndone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [stepUpVisible, setStepUpVisible] = useState(false);
-  const moneySubmit = useMoneySubmit();
+  const moneySubmit = useMoneySubmit('p2p');
   const [attachmentType, setAttachmentType] = useState(null);
   const [attachmentUrl, setAttachmentUrl] = useState(null);
   const [attaching, setAttaching] = useState(false);
@@ -640,6 +641,7 @@ export default function SendMoneyScreen({ navigation, route }) {
           stepUpToken: stepUpToken ?? security.stepUpToken,
           intentKey,
         }),
+        { instruction: { to: recipientProfile.handle, amount, note: reason, ...attachmentParams } },
       );
       if (out.state === 'needs_pin') {
         setStepUpVisible(true);
@@ -692,6 +694,7 @@ export default function SendMoneyScreen({ navigation, route }) {
     <View style={styles.root}>
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <MoneyPhaseBanner phase={moneySubmit.phase} />
         {step === 'amount' && (
           <StepTransition>
             <AmountStep

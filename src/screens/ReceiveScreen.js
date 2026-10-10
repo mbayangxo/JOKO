@@ -16,6 +16,7 @@ import { transferRequest, getTransferRequests, acceptTransferRequest, denyTransf
 import { requestCreateProblem, requestRow } from '../lib/money-ux';
 import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import StepUpOverlay from '../components/StepUpOverlay';
+import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
 import { useSecurity } from '../context/SecurityContext';
 import { formatKori } from '../lib/kori.js';
 import KoriAmount from '../components/KoriAmount';
@@ -228,7 +229,7 @@ export default function ReceiveScreen({ navigation }) {
   const [stepUpFor, setStepUpFor] = useState(null);
   const { profile, refreshWallet } = useAppState();
   const security = useSecurity();
-  const moneySubmit = useMoneySubmit();
+  const moneySubmit = useMoneySubmit('request_pay');
 
   const loadInbox = useCallback(async () => {
     setLoading(true);
@@ -257,6 +258,7 @@ export default function ReceiveScreen({ navigation }) {
     try {
       const out = await moneySubmit.submit((intentKey) =>
         acceptTransferRequest(id, { stepUpToken: stepUpToken ?? security.stepUpToken, intentKey }),
+        { instruction: { requestId: id } },
       );
       if (out.state === 'needs_pin') {
         setStepUpFor(id);
@@ -324,6 +326,7 @@ export default function ReceiveScreen({ navigation }) {
     <View style={styles.root}>
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <MoneyPhaseBanner phase={moneySubmit.phase} />
         <View style={styles.modeRow}>
           <PressScale scaleTo={0.96} onPress={() => { setMode('request'); setStep('request'); }} style={[styles.modePill, mode === 'request' && styles.modePillOn]}>
             <Text style={[styles.modeText, mode === 'request' && styles.modeTextOn]}>Demander</Text>

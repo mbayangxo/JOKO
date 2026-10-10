@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { clearSession, getAccessToken, getRefreshToken, setPinConfigured } from '../lib/secure-storage.js';
-import { authLogout } from '../lib/api-client.js';
+import { authLogout, clearApiCache } from '../lib/api-client.js';
 import { restoreSession } from '../lib/session.js';
 import { useAppState } from '../state/AppState.js';
 
@@ -55,7 +55,11 @@ export function SessionProvider({ children }) {
     bootstrap();
   }, [bootstrap]);
 
-  const markSignedIn = useCallback(() => setHasSession(true), []);
+  // J12: a new sign-in (possibly another account on a shared phone) never sees the previous one's cache.
+  const markSignedIn = useCallback(() => {
+    clearApiCache();
+    setHasSession(true);
+  }, []);
 
   const signOut = useCallback(async () => {
     // Revoke the refresh token server-side; never block sign-out on the network.
@@ -66,6 +70,7 @@ export function SessionProvider({ children }) {
       /* offline: local sign-out still happens */
     }
     await clearSession();
+    clearApiCache();
     resetAppState();
     setHasSession(false);
     setBootstrapError(null);

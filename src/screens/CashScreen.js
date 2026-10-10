@@ -10,6 +10,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import AmountChips from '../components/AmountChips';
 import ReceiptCard from '../components/ReceiptCard';
 import StepUpOverlay from '../components/StepUpOverlay';
+import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
 import { useAppState } from '../state/AppState';
 import { useSecurity } from '../context/SecurityContext';
 import { usePlatformFeatures } from '../lib/platform-features';
@@ -275,7 +276,7 @@ export default function CashScreen({ navigation, route }) {
   useScreenshotBlock(true);
   const showToast = useToast();
   const security = useSecurity();
-  const moneySubmit = useMoneySubmit();
+  const moneySubmit = useMoneySubmit('cash');
   const { feature } = usePlatformFeatures();
   const betaEnabled = feature('cash', 'betaDeposits') || process.env.EXPO_PUBLIC_ALLOW_BETA_DEPOSITS === 'true';
   const agentEnabled = feature('cash', 'agentDeposits');
@@ -342,6 +343,7 @@ export default function CashScreen({ navigation, route }) {
         mode === 'in'
           ? cashIn({ amount, operator, phone, intentKey })
           : cashOut({ amount, operator, phone, stepUpToken: stepUpToken ?? security.stepUpToken, intentKey }),
+        { instruction: { mode, amount, operator, phone } },
       );
       if (out.state === 'needs_pin') {
         setStepUpVisible(true);
@@ -400,6 +402,7 @@ export default function CashScreen({ navigation, route }) {
     <View style={styles.root}>
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <MoneyPhaseBanner phase={moneySubmit.phase} />
         {step === 'amount' && (
           <StepTransition>
             <AmountStep

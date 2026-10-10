@@ -18,6 +18,7 @@ import { useCountUp, useEntrance, usePopIn, useSuccessHaptic } from '../hooks/an
 import { useScreenshotBlock } from '../hooks/useScreenshotBlock';
 import { useToast } from '../components/Toast';
 import StepUpOverlay from '../components/StepUpOverlay';
+import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
 import { useSecurity } from '../context/SecurityContext';
 import { merchantPay, getBusinesses, getMerchantPublic, viewMerchantCharge, payMerchantCharge } from '../lib/api-client';
 import { useMoneySubmit } from '../hooks/useMoneySubmit';
@@ -292,7 +293,7 @@ export default function PayMerchantScreen({ navigation, route }) {
   const [merchant, setMerchant] = useState(DEFAULT_MERCHANT);
   // J4: an amount-bearing QR is an opaque charge code; amount comes from the server.
   const [charge, setCharge] = useState(null);
-  const moneySubmit = useMoneySubmit();
+  const moneySubmit = useMoneySubmit('merchant');
   const { balance, refreshWallet, setPendingMboloShare } = useAppState();
 
   const applyMerchant = (m, params = route.params) => {
@@ -364,6 +365,7 @@ export default function PayMerchantScreen({ navigation, route }) {
         charge
           ? payMerchantCharge(charge.code, { expectedAmountKori: charge.amountKori, stepUpToken: token, intentKey })
           : merchantPay(merchant.businessId, { amount, stepUpToken: token, intentKey }),
+        { instruction: charge ? { charge: charge.code, amountKori: charge.amountKori } : { business: merchant.businessId, amount } },
       );
       if (out.state === 'needs_pin') {
         setStepUpVisible(true);
@@ -414,6 +416,7 @@ export default function PayMerchantScreen({ navigation, route }) {
     <View style={styles.root}>
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <MoneyPhaseBanner phase={moneySubmit.phase} />
         {step === 'scan' && (
           <StepTransition>
             <ScanStep

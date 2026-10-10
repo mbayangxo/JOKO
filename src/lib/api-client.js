@@ -3,13 +3,14 @@ import Constants from 'expo-constants';
 import { getAccessToken, getOrCreateDeviceId, getRefreshToken, saveSessionTokens, clearSession, touchActivity } from './secure-storage.js';
 import { captureApiError } from './sentry.js';
 import { loadPreferences } from './preferences-storage.js';
+import { LOW_DATA_CACHE_TTL_MS, lowDataCacheKey, subjectOf } from './offline-policy.js';
 
 const API_BASE =
   process.env.EXPO_PUBLIC_API_URL ??
   Constants.expoConfig?.extra?.apiUrl ??
   'https://keit-six.vercel.app';
+// J12: low-data cache — allowlisted non-sensitive GETs only, partitioned by user (src/lib/offline-policy.js).
 const GET_CACHE = new Map();
-const CACHE_TTL_MS = 45_000;
 
 let prefsCache = null;
 async function getNetworkPrefs() {
@@ -68,10 +69,6 @@ export function getSslPinConfig() {
   return process.env.EXPO_PUBLIC_SSL_PIN_SHA256 ?? null;
 }
 
-function cacheKey(method, url) {
-  return `${method}:${url}`;
-}
-
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -97,20 +94,18 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
   const prefs = await getNetworkPrefs();
   const timeoutMs = prefs.lowDataMode ? 45_000 : 25_000;
 
-  if (method === 'GET' && prefs.lowDataMode && !skipCache) {
-    const key = cacheKey(method, url);
-    const hit = GET_CACHE.get(key);
-    if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data;
+  const token = auth ? accessTokenOverride ?? (await getAccessToken()) : null;
+  const cacheAs = method === 'GET' && prefs.lowDataMode && !skipCache ? lowDataCacheKey(url, subjectOf(token)) : null;
+  if (cacheAs) {
+    const hit = GET_CACHE.get(cacheAs);
+    if (hit && Date.now() - hit.at < LOW_DATA_CACHE_TTL_MS) return hit.data;
   }
 
   const headers = { 'Content-Type': 'application/json' };
   const deviceId = await getOrCreateDeviceId();
   headers['X-Device-Id'] = deviceId;
   if (prefs.lowDataMode) headers['X-Low-Data'] = '1';
-  if (auth) {
-    const token = accessTokenOverride ?? (await getAccessToken());
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
+  if (token) headers.Authorization = `Bearer ${token}`;
   if (stepUpToken) headers['X-Step-Up-Token'] = stepUpToken;
   if (writeKey) headers['Idempotency-Key'] = writeKey;
 
@@ -177,9 +172,7 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
         throw error;
       }
 
-      if (method === 'GET' && prefs.lowDataMode) {
-        GET_CACHE.set(cacheKey(method, url), { at: Date.now(), data });
-      }
+      if (cacheAs) GET_CACHE.set(cacheAs, { at: Date.now(), data });
       return data;
     } catch (error) {
       lastError = error;
