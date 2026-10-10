@@ -181,3 +181,15 @@ J10 (Community & Daily Life) was built on these choices. They are **not accepted
 | P-J10-9 demo feeds off; regional alerts need a real source | **Safe default** | Any public-alert source needs **legal review** (liability for emergency information). |
 
 None of them requires finance approval to *stay* as implemented; none activates money.
+
+## J11: decisions (recorded 2026-10-10)
+
+**Approved by the owner as LOCAL DESIGN POLICIES only. This is not authorization to activate any money feature in production:** `JOKKO_COLLECTIVE_ENABLED` and `JOKKO_PROTECTED_FUNDS_ENABLED` stay off.
+
+| # | Decision | How the code applies it |
+|---|---|---|
+| **P-J11-7** | The rotation order is explicitly agreed by the members, or set by a recorded, agreed process. It is **never organizer-first by default**. | J11 engine: `draw` (the default; the seed is in the hashed rules, so anyone can recompute the order) or `fixed` (an order every member sees and approves through the rules hash). Escrow-v1 (off, replaced) still put the creator first; its unilateral cancel after a payout is refused (J11-F2). |
+| **P-J11-8** | No unilateral cancellation after a payout. Any exceptional termination requires a **controlled settlement process**. | Before any payout, a cancel vote of the members who have not yet received settles directly: each payer gets their own payment back. After a payout, even a unanimous vote only sets `settlement_pending`. No money moves until `collective_ops` requests `collective_termination_settle` and a **different** finance operator executes it (`POST admin/collective/groups/:id/settle`). The settlement refunds the open pot exactly and records every member's position, with no automatic debit. Escrow-v1 refuses cancellation after any payout. |
+| **P-J11-9** | Direct Jekkal gifts are clearly disclosed as direct transfers. A campaign created on someone's behalf needs that person's consent. **No absolute "no refunds" promise**: fraud, payment reversals or applicable law may require a remedy. | The disclosure says the gift is transferred immediately, is not held, and is not returned *automatically* if the goal is missed. It points to K21 support for fraud or error, and a test forbids absolute no-refund wording. Beneficiary consent is enforced (J11-F3); existing campaigns are untouched. |
+
+**Still pending, exact terms to be reviewed:** P-J11-1 (one tontine model, legacy retirement), P-J11-2 (release threshold), P-J11-3 (default after receiving), P-J11-4 (Jekkal protected), P-J11-5 (caps and AML, compliance), P-J11-6 (wording, counsel).

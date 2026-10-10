@@ -128,3 +128,24 @@ test('large contributions need a fresh PIN step-up', async () => {
   ok(await a.call('POST', `collective/groups/${id}/contribute`, {}, key()));
   assert.ok(org);
 });
+
+test('P-J11-8: ending a group after a payout is a controlled settlement — ruling operator requests, a different finance operator executes', async () => {
+  const us = await members(3);
+  const [org, a, b] = us;
+  const id = await activeGroup(us, { order: [org, a, b] });
+  for (const u of us) ok(await u.call('POST', `collective/groups/${id}/contribute`, {}, key())); // cycle 1 → org
+  ok(await a.call('POST', `collective/groups/${id}/contribute`, {}, key()));
+  const v = ok(await a.call('POST', `collective/groups/${id}/votes`, { topic: 'cancel' }));
+  const r = ok(await b.call('POST', `collective/votes/${v.vote.id}/ballot`, { choice: 'yes' }));
+  assert.equal(r.outcome.applied.settlementPending, true);
+  assert.equal(ok(await a.call('GET', `collective/groups/${id}`)).status, 'settlement_pending');
+  const ops = await operator(on, ['collective_ops']);
+  const fin = await operator(on, ['finance_ops']);
+  assert.equal((await fin.call('POST', `admin/collective/groups/${id}/settle`, { reason: 'Fin votée par les membres' })).status, 403, 'finance does not request');
+  const req = ok(await ops.call('POST', `admin/collective/groups/${id}/settle`, { reason: 'Fin votée par les membres non servis' }));
+  assert.equal((await ops.call('POST', `admin/approvals/${req.approval.id}/approve`)).status, 403, 'the requester cannot execute');
+  const before = await bal(a);
+  ok(await fin.call('POST', `admin/approvals/${req.approval.id}/approve`));
+  assert.equal(await bal(a), before + 1000, 'the open pot went back to its payer, exactly');
+  assert.equal(ok(await a.call('GET', `collective/groups/${id}`)).status, 'cancelled');
+});

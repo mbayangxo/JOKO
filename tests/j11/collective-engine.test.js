@@ -92,18 +92,26 @@ test('J11-F2 regression — a malicious organizer cannot drain: no early release
   assert.equal(await code(C.leaveGroup(g.id, org.id)), 'use_exit_vote');
   await assert.rejects(prisma.collectiveGroup.update({ where: { id: g.id }, data: { contributionKori: 1 } }), /locked after activation/, 'the database refuses a rule change');
   await assert.rejects(prisma.collectivePayment.deleteMany({ where: { groupId: g.id } }), /append-only|append_only|immutable/i, 'history cannot be erased');
-  // If the members who have NOT received cancel, only the current pot is refunded and the organizer's debt is on record.
+  // P-J11-8: the members who have NOT received vote to end it — that only requests termination. No money
+  // moves until a controlled settlement (operator request, executed by a different finance operator).
   await C.contribute(g.id, a.id, { idempotencyKey: key() });
   const v = await C.openVote(g.id, a.id, { topic: 'cancel' });
   const done = await C.castBallot(v.vote.id, b.id, 'yes');
   assert.equal(done.outcome.passed, true);
-  const st = done.outcome.applied.statement;
+  assert.deepEqual(done.outcome.applied, { settlementPending: true });
+  assert.equal(await pot(g.id), 1000, 'no money moved by the vote itself');
+  assert.equal(await code(C.contribute(g.id, b.id, { idempotencyKey: key() })), 'not_active', 'a group awaiting settlement takes no money');
+  const { executeTerminationSettlement } = await import('../../lib/collective/ops.js');
+  const settled = await executeTerminationSettlement(prisma, { groupId: g.id }, { id: `t-${key()}`, requestedBy: 'op-a', approvedBy: 'op-b' });
+  const st = settled.statement;
   const orgLine = st.find((s) => s.userId === org.id);
   assert.equal(orgLine.netKori, 2000, 'the organizer received 3000 having paid 1000: recorded, not hidden');
   assert.equal(st.find((s) => s.userId === a.id).netKori, -1000, 'a paid cycle 1 and got the cycle-2 payment refunded');
   assert.equal(await pot(g.id), 0, 'nothing left in the pot');
   const obs = await prisma.collectiveObligation.findMany({ where: { groupId: g.id, userId: org.id, cycle: { gte: 2 } } });
   assert.ok(obs.every((o) => o.status === 'cancelled'), 'future cycles cancelled — no automatic debit of anyone');
+  const again = await executeTerminationSettlement(prisma, { groupId: g.id }, { id: `t-${key()}`, requestedBy: 'op-a', approvedBy: 'op-b' });
+  assert.equal(again.replayed, true, 'settles once');
 });
 
 test('missed payment: recorded, never auto-debited; partial release only by unanimous paid members incl. the recipient; late payment catches up', async () => {

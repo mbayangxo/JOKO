@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**723 routes.** Column legend:
+**724 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -73,6 +73,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST admin/protected/funds/:id/release` | admin | protected.settle.request | operator_scope |  |  |  |  | admin+identity; executes only on a different finance operator approval (protected.settle) |  |
 | `POST admin/protected/funds/:id/cancel` | admin | protected.settle.request | operator_scope |  |  |  |  | admin+identity; pro-rata refund only on a different finance operator approval |  |
 | `POST admin/protected/funds/:id/freeze` | admin | collective.freeze | operator_scope |  |  |  |  | admin; protective; unfreeze by a different operator |  |
+| `POST admin/collective/groups/:id/settle` | admin | collective.disputes.resolve | operator_scope |  |  |  |  | admin+identity; P-J11-8 termination settlement executes only on a different finance operator approval |  |
 | `POST admin/logistics/shipments/:id/failure/rule` | admin | logistics.exceptions.resolve | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/logistics/shipments/:id/emergency-reassign` | admin | logistics.dispatch | operator_scope |  |  |  |  | admin+identity |  |
 | `POST admin/logistics/shipments/:id/handoff-code` | admin | logistics.dispatch | operator_scope |  |  |  |  | custody_challenge |  |
@@ -1114,6 +1115,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `shipment_earning_reverse` | `logistics.disputes.resolve` | `logistics.disputes.reverse` |
 | `work_dispute_settle` | `work.disputes.resolve` | `work.disputes.settle` |
 | `collective_dispute_settle` | `collective.disputes.resolve` | `collective.disputes.settle` |
+| `collective_termination_settle` | `collective.disputes.resolve` | `collective.disputes.settle` |
 | `protected_release` | `protected.settle.request` | `protected.settle` |
 | `protected_cancel` | `protected.settle.request` | `protected.settle` |
 | `support_refund` | `finance.refund` | `finance.refund.approve` |

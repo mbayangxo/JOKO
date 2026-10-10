@@ -15,7 +15,7 @@ import { colors, fontFamily, radius, spacing, type } from '../theme';
  */
 const KIND = { rotating: 'Tontine tournante', goal: 'Épargne objectif' };
 const FREQ = { weekly: 'chaque semaine', biweekly: 'toutes les 2 semaines', monthly: 'chaque mois' };
-const STATUS = { proposed: 'En préparation', awaiting_acceptance: 'Règles à approuver', active: 'En cours', completed: 'Terminé', cancelled: 'Annulé' };
+const STATUS = { proposed: 'En préparation', awaiting_acceptance: 'Règles à approuver', active: 'En cours', completed: 'Terminé', cancelled: 'Annulé', settlement_pending: 'Fin votée : règlement K21 en cours' };
 
 export default function CollectiveGroupsScreen({ navigation }) {
   const [data, setData] = useState(null);

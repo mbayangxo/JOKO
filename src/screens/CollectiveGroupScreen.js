@@ -78,7 +78,7 @@ export default function CollectiveGroupScreen({ navigation, route }) {
         <ScrollView contentContainerStyle={styles.scroll}>
           <View style={[styles.card, styles.column]}>
             <Text style={styles.title}>{g.kind === 'rotating' ? 'Tontine tournante' : 'Épargne objectif'} · {g.contributionKori} ₭ par cycle</Text>
-            <Text style={styles.detail}>{g.status === 'active' ? `Cycle ${g.currentCycle} sur ${g.cycleCount}` : g.status}{g.frozen ? ' · gelé par K21 : aucun mouvement d’argent' : ''}</Text>
+            <Text style={styles.detail}>{g.status === 'active' ? `Cycle ${g.currentCycle} sur ${g.cycleCount}` : g.status === 'settlement_pending' ? 'Fin votée par les membres : aucun mouvement d’argent jusqu’au règlement contrôlé par K21' : g.status}{g.frozen ? ' · gelé par K21 : aucun mouvement d’argent' : ''}</Text>
             {g.kind === 'rotating' && active ? <Text style={styles.detail}>Pot en cours : {g.potKori} ₭</Text> : null}
             {g.kind === 'goal' && g.myShareKori != null ? <Text style={styles.detail}>Mon épargne : {g.myShareKori} ₭ · Groupe : {g.groupSavedKori} ₭</Text> : null}
             {g.myStatement ? <Text style={styles.detail}>Mon bilan : payé {g.myStatement.paidKori} ₭ · reçu {g.myStatement.receivedKori} ₭</Text> : null}

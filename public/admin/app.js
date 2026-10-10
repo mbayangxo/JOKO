@@ -519,7 +519,7 @@ async function loadCollectiveTab() {
     api('/collective/groups').catch(() => ({ groups: [] })),
     api('/approvals').catch(() => ({ approvals: [] })),
   ]);
-  const MONEY = ['collective_dispute_settle', 'protected_release', 'protected_cancel'];
+  const MONEY = ['collective_dispute_settle', 'collective_termination_settle', 'protected_release', 'protected_cancel'];
   const pending = (ap.approvals ?? []).filter((a) => MONEY.includes(a.action) && a.status === 'requested');
   $('collective-disputes').innerHTML = tableHtml(['Dispute', 'Group / cycle', 'Ruling'], d.disputes ?? [], (x) => `<tr>
     <td><small>${esc(x.reason)} · ${fmtDate(x.createdAt)}</small></td>
@@ -531,7 +531,7 @@ async function loadCollectiveTab() {
   $('collective-groups').innerHTML = tableHtml(['Group', 'Kind / status', 'Cycle', 'Members', 'Freeze'], g.groups ?? [], (x) => `<tr>
     <td><small>${esc(x.id)}</small></td><td>${esc(x.kind)} · ${esc(x.status)}${x.frozen ? ' · <b>FROZEN</b>' : ''}</td>
     <td>${esc(x.currentCycle)} / ${esc(x.cycleCount ?? '—')}</td><td>${esc(x.members)}</td>
-    <td>${x.frozen ? `<button type="button" class="link-btn" data-col-unfreeze="${esc(x.id)}">Unfreeze</button>` : `<button type="button" class="link-btn danger" data-col-freeze="${esc(x.id)}">Freeze</button>`}</td></tr>`);
+    <td>${x.frozen ? `<button type="button" class="link-btn" data-col-unfreeze="${esc(x.id)}">Unfreeze</button>` : `<button type="button" class="link-btn danger" data-col-freeze="${esc(x.id)}">Freeze</button>`}${x.status === 'settlement_pending' ? ` <button type="button" class="link-btn" data-col-settle="${esc(x.id)}">Request settlement…</button>` : ''}</td></tr>`);
   const bind = (container, attr, fn) => document.querySelectorAll(`#${container} [${attr}]`).forEach((btn) => btn.addEventListener('click', async () => {
     try { await fn(btn.getAttribute(attr)); await loadCollectiveTab(); } catch (error) { alert(error.message); }
   }));
@@ -542,6 +542,7 @@ async function loadCollectiveTab() {
     await api(`/collective/disputes/${encodeURIComponent(id)}/rule`, { method: 'POST', body: { outcome: outcome.trim(), note: reason('Reason (10+ characters, recorded in the audit trail)') } });
   });
   bind('collective-approvals', 'data-col-approve', (id) => api(`/approvals/${encodeURIComponent(id)}/approve`, { method: 'POST', body: {} }));
+  bind('collective-groups', 'data-col-settle', (id) => api(`/collective/groups/${encodeURIComponent(id)}/settle`, { method: 'POST', body: { reason: reason('Settlement reason (10+ characters)') } }));
   bind('collective-groups', 'data-col-freeze', (id) => api(`/collective/groups/${encodeURIComponent(id)}/freeze`, { method: 'POST', body: { reason: reason('Why freeze (10+ characters)') } }));
   bind('collective-groups', 'data-col-unfreeze', (id) => api(`/collective/groups/${encodeURIComponent(id)}/unfreeze`, { method: 'POST', body: { reason: reason('Why unfreeze (10+ characters)') } }));
 }

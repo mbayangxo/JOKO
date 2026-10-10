@@ -19,7 +19,7 @@
 | # | Severity | Finding | Status |
 |---|---|---|---|
 | P0-A | **P0, live** | Legacy tontine drain on `7d262de` | containment ready, **blocked** (§1) |
-| J11-F1 | P1, latent | Jekkal gifts go straight to the beneficiary (no escrow) | kept as **DIRECT** (labelled no-refund); protected campaigns are a separate dormant product |
+| J11-F1 | P1, latent | Jekkal gifts go straight to the beneficiary (no escrow) | kept as **DIRECT** (disclosed as a direct transfer, P-J11-9); protected campaigns are a separate dormant product |
 | **J11-F2** | P0-class, latent (branch, flag off, never deployed) | Escrow-v1: organizer forced first in rotation + unilateral cancel after collecting → keeps members' money (reproduced: +2 000 / −1 000 / −1 000) | **fixed** in v1 (cancel refused after any payout) and **replaced** by the J11 engine; regression in the engine suite |
 | J11-F3 | P2, latent | Jekkal: any user named as beneficiary without consent | **fixed**: a campaign for someone else opens only on their consent; existing campaigns untouched |
 | J11-F4 | P2, latent | v1: members accepted before the rotation was known; one non-payer blocked a cycle forever | replaced by hashed rules + grace/missed/partial/votes |
@@ -32,7 +32,7 @@ Full audit: `docs/JOKKO-J11-0-AUDIT.md` (inventory, sources of truth, ledger acc
 ### Model A — rotating tontine, Model B — group goal savings (`lib/collective/engine.js`)
 - **Lifecycle:** create → invite (authorizes nothing) → join → organizer proposes rules for the joined members → **every member approves the exact SHA-256 of the rules** (rotation by recorded draw or an order everyone sees; schedule; grace; policies) → active (obligations created; **no money moved**) → contributions → payout by the rules → completed / cancelled.
 - **Consent per payment:** each contribution is the member's own action, idempotent on their key, step-up by amount. **Missed payments are recorded, never auto-debited**; reminders are private.
-- **Payout eligibility is the members', not a person's:** a cycle pays the accepted recipient only when every live obligation is settled and no dispute is open. Exceptions only by vote: grace extension (majority), partial release (unanimous paid members incl. the recipient), cancel (unanimous members who have not yet received), exit (others unanimous; never after receiving).
+- **Payout eligibility is the members', not a person's:** a cycle pays the accepted recipient only when every live obligation is settled and no dispute is open. Exceptions only by vote: grace extension (majority), partial release (unanimous paid members incl. the recipient), cancel (unanimous members who have not yet received; after any payout it only opens a controlled settlement executed by a second, finance operator, P-J11-8), exit (others unanimous; never after receiving).
 - **Organizer has no money power**; rules are **locked by a database trigger** after activation; money history, payouts, ballots and events are **append-only** in the database.
 - **Late payments catch up** to the short-paid recipient through the pot; cancellations refund the current pot exactly and record every member's net position (no automatic debit of anyone).
 - **Goal savings:** each member's money sits in their **own** J2 account (`collective:<g>:share:<user>`); only they can withdraw it, under the accepted unlock rule; completion/cancel returns every share to its owner.
@@ -44,7 +44,7 @@ Full audit: `docs/JOKKO-J11-0-AUDIT.md` (inventory, sources of truth, ledger acc
 - Missed deadline → full automatic refund; cancellation → pro-rata refund of what remains (largest remainder, exact to the unit); 3 independent reports freeze; one protected campaign per beneficiary.
 
 ### Model D-direct — Jekkal; Model E — coop capital (records only); Model F — not built
-- Jekkal stays **direct**, labelled "pas remboursé", beneficiary consent required for new campaigns about someone else.
+- Jekkal stays **direct**: disclosed as an immediate transfer that is not held or returned automatically, with a K21 support route for fraud or error (no absolute no-refund promise, P-J11-9); beneficiary consent required for new campaigns about someone else.
 - Coop register: member capital / gift / loan / wage reference kept apart; **investment returns refused** (no licence); member confirms or disputes; DB-enforced append-only; **no money, shares or dividends**.
 
 ### UI (web app + ops console)
@@ -100,7 +100,7 @@ Malicious organizer (early release, unilateral cancel, exit after receiving, rul
 7. **Unexplained J4 P2P failures** (four, one historical batch, logs lost): still unresolved, kept in the risk register; not reproduced in any later run, including both J11 gates.
 8. Everything was measured locally on one node; J11 has no dedicated load scenario yet.
 
-**Decisions needed** (proposed, not approved): P-J11-1 (one tontine model; legacy retired after forensics), P-J11-3, P-J11-5 (caps / AML triggers — compliance), P-J11-6 (wording — counsel), P-J11-7 (rotation chosen at creation, never organizer-first), P-J11-8 (no single-person cancel after the first payout), P-J11-9 (Jekkal direct labelled no-refund + beneficiary consent). See `docs/JOKKO-J11-0-AUDIT.md` §5.
+**Decisions:** P-J11-7, P-J11-8 and P-J11-9 were **approved on 2026-10-10 as local design policies only** (no production activation) and are applied in code (`docs/JOKKO-DECISIONS.md`). Still pending, exact terms to be reviewed: P-J11-1, P-J11-2, P-J11-3, P-J11-4, P-J11-5 (compliance), P-J11-6 (counsel).
 
 **J12 recommendation: Production readiness & offline/low-bandwidth, gated on the emergency track.**
 1. **First, before any J12 feature:** restore Vercel team access; deploy and verify P0-A; run the read-only forensics; decide P0-B and F1 deploys. Then define a **reviewed release path** from the branch (no wholesale default-branch deploy: F4, J10-F1/F2 and the J11 findings must ship together or not at all).
