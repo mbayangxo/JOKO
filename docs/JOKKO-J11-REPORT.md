@@ -68,8 +68,41 @@ Malicious organizer (early release, unilateral cancel, exit after receiving, rul
 
 ## 6. Gate at the latest code HEAD (fresh database)
 
-_Filled from the gate run — see below._
+**Commit `6a4c0fa`.** Database `joko_gatej11`, built from scratch; isolated worktree with its own `node_modules`; the generated client matched the schema at the start and the end.
+
+| Check | Result |
+|---|---|
+| Full regression (`npm test`, J1–J11, incl. the J3 race fix and the stale-authorization tests) | **727 / 727** |
+| J2 money invariants (after the suite / after load and sweeps) | **OK / OK** (4 149 entries, 8 450 postings) |
+| J8 logistics, J9 work, **J11 collective (C1–C7, P1–P4)** invariants, after the suite / after everything | **OK / OK** for all three |
+| Load (J4–J10 suites) | **5 / 5**; J10 p95 0.56 s, J9 p95 1.32 s (local) |
+| Authorization-boundary gate, mutation sweep, data-exposure sweep, admin sweep (all J11 routes covered) | **5 / 5** |
+| Migration rehearsal on the production shape (incl. both J11 migrations) | **20 / 20 steps** |
+| Migrations ⇄ `schema.prisma` | **empty diff** |
+| Web build | **OK** |
+| Browser E2E J8 / J9 / J10 / **J11** | **12 / 12, 11 / 11, 7 / 7, 8 / 8** |
+| `npm audit --omit=dev --audit-level=critical` | **0 critical** (20 high / 8 moderate, build tooling, unchanged) |
+| Deploy-inert | No deploy, no env change. J11 flags default off; `cron/collective` and `cron/protected` are not in `vercel.json`; both migrations are additive. |
+
+**Honest record:** the first run at `9de9c47` failed **2 / 727**. On a fresh test database (built with `db push` + `prisma/sql/*.sql`, not migrations) the J11 rules-lock and coop append-only triggers were absent, so the database did not refuse the change. The migrations (the production path) already had them. The guards were mirrored into `financial-invariants.sql` (`6a4c0fa`), and the full gate was rerun from scratch: the table above.
 
 ## 7. Verdict, risks, J12
 
-_Filled after the gate._
+**Verdict: J11 is COMPLETE as a local engineering milestone.** Rotating tontines and goal savings work end to end (API, member/organizer UI, ops console, browser E2E) with consent per member, locked rules, member-controlled exceptions, no organizer money power, atomic idempotent J2 money, and database-enforced history. Protected funds exist and are tested but **dormant**. This is **not** production approval, and **production remains exposed to P0-A** until the containment is deployed.
+
+**Unresolved risks**
+1. **P0-A live and uncontained** (Vercel 403). Highest priority, ahead of anything in J11.
+2. **P0-B and F1** packages not deployed (separate authorizations).
+3. **Legacy tontine groups in production** are frozen only once P0-A is deployed; any migration to the J11 engine needs a separately approved plan after the forensics.
+4. **Default after receiving** (rotating): a member who received and then stops paying leaves a recorded debt; the members who have not yet received bear it. Disclosed in the rules; Jokko does not guarantee it (P-J11-3).
+5. **Disputes and freezes need staffed operators** (`collective_ops` + finance) and an SLA.
+6. **Protected funds**: the word "protégé" must pass counsel review (closed-loop Kori, not escrow or insurance); recipient verification relies on KYC tier ≥ 2.
+7. **Unexplained J4 P2P failures** (four, one historical batch, logs lost): still unresolved, kept in the risk register; not reproduced in any later run, including both J11 gates.
+8. Everything was measured locally on one node; J11 has no dedicated load scenario yet.
+
+**Decisions needed** (proposed, not approved): P-J11-1 (one tontine model; legacy retired after forensics), P-J11-3, P-J11-5 (caps / AML triggers — compliance), P-J11-6 (wording — counsel), P-J11-7 (rotation chosen at creation, never organizer-first), P-J11-8 (no single-person cancel after the first payout), P-J11-9 (Jekkal direct labelled no-refund + beneficiary consent). See `docs/JOKKO-J11-0-AUDIT.md` §5.
+
+**J12 recommendation: Production readiness & offline/low-bandwidth, gated on the emergency track.**
+1. **First, before any J12 feature:** restore Vercel team access; deploy and verify P0-A; run the read-only forensics; decide P0-B and F1 deploys. Then define a **reviewed release path** from the branch (no wholesale default-branch deploy: F4, J10-F1/F2 and the J11 findings must ship together or not at all).
+2. **Controlled J11 pilot** behind the flags for a small invited cohort, after P-J11 decisions, counsel wording and operator staffing; legacy-tontine migration plan from the forensics.
+3. **J12 scope:** offline-tolerant money journeys (queued intents with server idempotency), low-data UI, SMS/USSD fallbacks for dues and receipts, a J11 load scenario, and a production observability baseline (Sentry, uptime, the morning admin checklist from `K21-QUALITY-CONTROL.md`).
