@@ -147,3 +147,39 @@ test('J12-F7: a PIN challenge (403 step_up_required) is not a final answer — t
   assert.equal(r3.headers['Idempotent-Replay'], 'true');
   assert.equal((await prisma.wallet.findUnique({ where: { userId: u.id } })).koriBalance, 10, 'credited exactly once');
 });
+
+test('J12: the reply is sent only after the idempotency row is final (no spurious 409 for an instant retry)', async () => {
+  const u = await createUserWithWallet({ koriBalance: 0 });
+  const log = [];
+  const delegate = prisma.apiIdempotency;
+  const wrap = (name) => {
+    const orig = delegate[name].bind(delegate);
+    delegate[name] = (...a) => orig(...a).then((r) => { log.push(`final:${name}`); return r; });
+    return () => { delegate[name] = orig; };
+  };
+  const restore = [wrap('delete'), wrap('update')];
+  const res = () => {
+    const r = fakeRes();
+    const json = r.json.bind(r);
+    r.json = (b) => { log.push('send'); return json(b); };
+    return r;
+  };
+  try {
+    const r1 = res();
+    await withIdempotency(req(key()), r1, { userId: u.id, routeKey: 'test.pay' }, async () => {
+      r1.status(403).json({ error: 'pin', code: 'step_up_required' });
+    });
+    assert.deepEqual(log, ['final:delete', 'send'], 'a challenge releases the key BEFORE the client sees the 403');
+    log.length = 0;
+    const r2 = res();
+    await withIdempotency(req(key()), r2, { userId: u.id, routeKey: 'test.pay' }, async () => {
+      await fundUser(u.id, 5);
+      r2.status(200).json({ status: 'completed' });
+    });
+    assert.deepEqual(log, ['final:update', 'send'], 'a success is stored BEFORE the client sees the 200');
+    assert.equal(r2.statusCode, 200);
+    assert.deepEqual(r2.body, { status: 'completed' });
+  } finally {
+    restore.forEach((f) => f());
+  }
+});
