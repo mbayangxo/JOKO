@@ -1,6 +1,6 @@
 # J12: Offline, low-bandwidth, Senegal-first (local only)
 
-**Status:** first slice built locally. Nothing has been deployed, and no production schema, data or flag has changed. J12 adds **no** schema change, migration, cron or server money path. The changes are client-side safety rules, one UI banner, tests and this document.
+**Status:** first slice built locally. The J12 browser E2E passes **5 / 5** (lost response, restart, airplane mode, account switch, no page errors), with J2 invariants OK. Nothing has been deployed, and no production schema, data or flag has changed. J12 adds **no** schema change, migration, cron or server money path. The changes are client-side safety rules, one UI banner, tests and this document.
 
 Rules applied throughout (from the J12 brief):
 - An offline payment is never displayed as completed before authoritative server confirmation.
@@ -29,6 +29,7 @@ Rules applied throughout (from the J12 brief):
 | **J12-F2** | The Mbolo offline outbox was not tied to the account that wrote each message. After an account switch, B opening the same thread (e.g. a group both belong to) would send **A's queued messages as B**. Stale messages were also sent with no age limit. | Impersonation on a shared device. Not money. | **Fixed locally.** Entries carry their owner. Only text and stickers can be queued. Stale (>24 h) or clock-ambiguous entries are held, never auto-sent. Ownerless legacy entries are never sent. |
 | **J12-F3** | An unknown-outcome intent key lived in React memory. If the app was killed or reloaded during "vérification", the user lost the handle and could pay again by hand, because the first payment's status was invisible. | Double-payment risk from user retry. The server cannot prevent it, because a new tap carries a new key. | **Fixed locally.** The key alone is remembered (no amount, recipient or balance), per user, for lookup only. It is resumed on screen mount and never re-submitted. |
 | **J12-F4** | Same-key retry had no time or instruction bound on the client. The server's body fingerprint already refuses a changed body, but an old "nothing received" key could be retried hours later with the same body. | Stale-instruction replay (no double-spend). | **Fixed locally.** Same-key retry requires the same user, an identical instruction fingerprint, ≤10 min and a sane clock. Anything else gets a new key and a fresh confirmation. |
+| **J12-F7** | **Found by the new J12 browser test.** The router-level idempotency wrapper (J4, `lib/api-idempotency.js`) stored the **403 `step_up_required`** PIN challenge as the final answer for the intent key. When the user entered the PIN, the client correctly retried with the **same** key, and the server **replayed the 403 instead of executing**. In-app payments above the step-up threshold, or from an untrusted session, could never complete with that key. | Fails closed: no money moves and nothing is double-paid. Functional blocker for high-value payments. **Production is not affected:** the deployed `b0318b5` predates the J4 wrapper (verified read-only with `git show`). | **Fixed locally.** A PIN challenge is treated as non-final. If nothing moved, the key is released (the existing J4 5xx path), so the PIN-confirmed retry executes once. If anything moved, it is recorded as completed. Regression test in `tests/j4/intents.test.js` (fails before, passes after). |
 | **J12-F5** | Mbolo message sends carry no stable client id, so a lost response followed by an outbox flush can post a message twice. | Cosmetic duplication, no money. | Open. Proposal: a per-entry client id and server dedupe (P-J12-3). |
 | **J12-F6** | Money-safety status texts ("ne le renouvelle pas", "aucun argent n'a été débité") exist only in French. | Comprehension risk for Wolof-first users. | Open. Needs native-speaker-reviewed copy (P-J12-2). **Not machine-written.** |
 
@@ -52,6 +53,7 @@ Rules applied throughout (from the J12 brief):
   - rotates the key for changed or old instructions.
 - **`src/components/MoneyPhaseBanner.js`:** shows only the server's verdict for attempts that went through a check. It never says "effectué" before `state === 'done'`.
   - Mounted on Send, Cash, Merchant pay and Request-pay screens.
+- **`lib/api-idempotency.js`:** J12-F7 fix, a PIN challenge is never stored as the intent's answer.
 - **Tests:**
   - `tests/j12/offline-policy.test.js` (5): account switch, clock moved backwards, stale entries, duplicate retry, changed amount or recipient, expired instruction, lost response and restart, lookup-only storage shape.
   - `tests/e2e/j12-ui.mjs` (Chromium, real API and DB):

@@ -117,3 +117,33 @@ test('intent states: refused (4xx), accepted_pending (202), in_progress, invalid
   assert.equal((await intentOutcome(u.id, 'bad key!')).state, 'invalid');
   assert.equal((await intentOutcome(other.id, refused)).state, 'not_found', 'intents are per user');
 });
+
+test('J12-F7: a PIN challenge (403 step_up_required) is not a final answer — the same key runs once the PIN is proven', async () => {
+  const u = await createUserWithWallet({ koriBalance: 0 });
+  const k = key();
+  let runs = 0;
+  const run = (res, pinProven) => async () => {
+    runs += 1;
+    if (!pinProven) {
+      res.status(403).json({ error: 'Re-authentication required for this transaction', code: 'step_up_required' });
+      return;
+    }
+    await fundUser(u.id, 10);
+    res.status(200).json({ status: 'completed' });
+  };
+  const r1 = fakeRes();
+  await withIdempotency(req(k), r1, { userId: u.id, routeKey: 'test.pay' }, run(r1, false));
+  assert.equal(r1.statusCode, 403);
+  assert.equal((await intentOutcome(u.id, k)).state, 'not_found', 'nothing executed: the intent is still open');
+
+  const r2 = fakeRes();
+  await withIdempotency(req(k), r2, { userId: u.id, routeKey: 'test.pay' }, run(r2, true));
+  assert.equal(r2.statusCode, 200, 'the PIN-confirmed retry executes (the 403 is never replayed)');
+  assert.equal(runs, 2);
+
+  const r3 = fakeRes();
+  await withIdempotency(req(k), r3, { userId: u.id, routeKey: 'test.pay' }, run(r3, true));
+  assert.equal(runs, 2, 'and after it executed, a duplicate never runs again');
+  assert.equal(r3.headers['Idempotent-Replay'], 'true');
+  assert.equal((await prisma.wallet.findUnique({ where: { userId: u.id } })).koriBalance, 10, 'credited exactly once');
+});

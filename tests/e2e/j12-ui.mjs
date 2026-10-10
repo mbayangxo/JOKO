@@ -86,9 +86,9 @@ async function openSend(page, toHandle) {
   await see(page, 'Oui — Envoyer');
 }
 async function pinIfAsked(page) {
-  if (await page.getByText('Confirme ton PIN').filter({ visible: true }).count()) {
-    for (const d of PIN) await tap(page, d, { exact: true, last: true });
-  }
+  const asked = await page.getByText('Confirme ton PIN').filter({ visible: true }).first().waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);
+  if (asked) for (const d of PIN) await tap(page, d, { exact: true, last: true });
+  return asked;
 }
 
 try {
@@ -106,13 +106,18 @@ try {
   let sendHits = 0;
   let executed = 0;
   let intentsCut = true;
+  let serverAnswer = null;
 
   await step('lost response: the server executes, the reply is lost → "en vérification", never "Envoyé !", no second payment', async () => {
     await page.route('**/api/transfers/send', async (route) => {
+      // The PIN challenge (403 step_up_required, nothing executed) passes through untouched; the
+      // PIN-confirmed request is the one that executes — and its answer is lost.
+      if (!route.request().headers()['x-step-up-token']) return route.continue();
       sendHits += 1;
       if (sendHits === 1) {
-        await route.fetch(); // reaches the server and executes …
+        const r = await route.fetch(); // reaches the server and executes …
         executed += 1;
+        serverAnswer = `${r.status()} ${(await r.text()).slice(0, 300)}`;
       }
       await route.abort('failed'); // … but the client never gets the answer (and its auto-retry is cut too)
     });
@@ -126,7 +131,7 @@ try {
     await page.getByText('Oui — Envoyer').filter({ visible: true }).first().click({ timeout: 2000 }).catch(() => {});
     await page.waitForTimeout(1500);
     assert.equal(executed, 1);
-    assert.equal(await bal(A.id), a0 - 5000, 'debited exactly once on the server');
+    assert.equal(await bal(A.id), a0 - 5000, `debited exactly once on the server (server said: ${serverAnswer})`);
     assert.equal(await bal(bC.id), b0 + 5000);
     const pending = await page.evaluate(() => JSON.parse(localStorage.getItem('k21_pending_intents_v1') ?? '[]'));
     assert.equal(pending.length, 1, 'the unknown outcome is remembered for lookup');
