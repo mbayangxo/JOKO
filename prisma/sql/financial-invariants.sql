@@ -316,3 +316,76 @@ ALTER TABLE "WorkRule" DROP CONSTRAINT IF EXISTS "WorkRule_amounts_check";
 ALTER TABLE "WorkRule" ADD CONSTRAINT "WorkRule_amounts_check" CHECK ("amountKori" >= 0 AND "minOrderKori" >= 0);
 ALTER TABLE "WorkFeedback" DROP CONSTRAINT IF EXISTS "WorkFeedback_rating_check";
 ALTER TABLE "WorkFeedback" ADD CONSTRAINT "WorkFeedback_rating_check" CHECK (rating BETWEEN 1 AND 5);
+
+-- J11 (mirrors migrations 20261022000000_j11_collective_engine and 20261023000000_j11_protected_jekkal_coop).
+-- J11: group money history, payouts and ballots are append-only.
+DROP TRIGGER IF EXISTS "CollectivePayment_append_only" ON "CollectivePayment";
+CREATE TRIGGER "CollectivePayment_append_only" BEFORE UPDATE OR DELETE ON "CollectivePayment"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+DROP TRIGGER IF EXISTS "CollectivePayout_append_only" ON "CollectivePayout";
+CREATE TRIGGER "CollectivePayout_append_only" BEFORE UPDATE OR DELETE ON "CollectivePayout"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+DROP TRIGGER IF EXISTS "CollectiveEvent_append_only" ON "CollectiveEvent";
+CREATE TRIGGER "CollectiveEvent_append_only" BEFORE UPDATE OR DELETE ON "CollectiveEvent"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+DROP TRIGGER IF EXISTS "CollectiveBallot_append_only" ON "CollectiveBallot";
+CREATE TRIGGER "CollectiveBallot_append_only" BEFORE UPDATE OR DELETE ON "CollectiveBallot"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+
+-- J11: rules are locked once a group is active. Nobody (organizer, code bug or operator) can change
+-- the accepted terms, rotation, amount or schedule afterwards; groups are never deleted.
+CREATE OR REPLACE FUNCTION joko_collective_rules_locked() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'collective groups are never deleted' USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.status IN ('active', 'completed', 'cancelled') AND (
+       NEW."rulesHash" IS DISTINCT FROM OLD."rulesHash" OR NEW."rulesJson" IS DISTINCT FROM OLD."rulesJson"
+    OR NEW."rulesVersion" IS DISTINCT FROM OLD."rulesVersion" OR NEW."contributionKori" IS DISTINCT FROM OLD."contributionKori"
+    OR NEW.frequency IS DISTINCT FROM OLD.frequency OR NEW."cycleCount" IS DISTINCT FROM OLD."cycleCount"
+    OR NEW."targetKori" IS DISTINCT FROM OLD."targetKori" OR NEW."withdrawPolicy" IS DISTINCT FROM OLD."withdrawPolicy"
+    OR NEW."organizerId" IS DISTINCT FROM OLD."organizerId" OR NEW.kind IS DISTINCT FROM OLD.kind) THEN
+    RAISE EXCEPTION 'collective rules are locked after activation' USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.status IN ('completed', 'cancelled') AND NEW.status IS DISTINCT FROM OLD.status THEN
+    RAISE EXCEPTION 'a closed collective group cannot reopen' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "CollectiveGroup_rules_locked" ON "CollectiveGroup";
+CREATE TRIGGER "CollectiveGroup_rules_locked" BEFORE UPDATE OR DELETE ON "CollectiveGroup"
+  FOR EACH ROW EXECUTE FUNCTION joko_collective_rules_locked();
+
+-- A member's position in the rotation is unique within a group.
+CREATE UNIQUE INDEX IF NOT EXISTS "CollectiveMember_group_position_key" ON "CollectiveMember"("groupId", "position") WHERE "position" IS NOT NULL;
+
+-- Approvals are an immutable record.
+DROP TRIGGER IF EXISTS "ProtectedApproval_append_only" ON "ProtectedApproval";
+CREATE TRIGGER "ProtectedApproval_append_only" BEFORE UPDATE OR DELETE ON "ProtectedApproval"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+
+-- Coop capital records: never deleted, never edited — only the member's own confirm / dispute stamp may be set.
+CREATE OR REPLACE FUNCTION joko_coop_record_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'coop capital records are never deleted' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW."businessId" IS DISTINCT FROM OLD."businessId" OR NEW."memberUserId" IS DISTINCT FROM OLD."memberUserId"
+     OR NEW.kind IS DISTINCT FROM OLD.kind OR NEW.direction IS DISTINCT FROM OLD.direction OR NEW."amountXof" IS DISTINCT FROM OLD."amountXof"
+     OR NEW."occurredOn" IS DISTINCT FROM OLD."occurredOn" OR NEW.note IS DISTINCT FROM OLD.note OR NEW."evidenceRef" IS DISTINCT FROM OLD."evidenceRef"
+     OR NEW."recordedBy" IS DISTINCT FROM OLD."recordedBy" OR NEW.reference IS DISTINCT FROM OLD.reference OR NEW."createdAt" IS DISTINCT FROM OLD."createdAt"
+     OR (OLD."memberConfirmedAt" IS NOT NULL AND NEW."memberConfirmedAt" IS DISTINCT FROM OLD."memberConfirmedAt")
+     OR (OLD."memberDisputedAt" IS NOT NULL AND NEW."memberDisputedAt" IS DISTINCT FROM OLD."memberDisputedAt") THEN
+    RAISE EXCEPTION 'coop capital records are append-only (a correction is a new record)' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "CoopCapitalRecord_guard" ON "CoopCapitalRecord";
+CREATE TRIGGER "CoopCapitalRecord_guard" BEFORE UPDATE OR DELETE ON "CoopCapitalRecord"
+  FOR EACH ROW EXECUTE FUNCTION joko_coop_record_guard();
+
+-- A protected fund never releases or refunds more than it raised.
+ALTER TABLE "ProtectedFund" DROP CONSTRAINT IF EXISTS "ProtectedFund_money_bounds";
+ALTER TABLE "ProtectedFund" ADD CONSTRAINT "ProtectedFund_money_bounds" CHECK ("raisedKori" >= 0 AND "releasedKori" >= 0 AND "refundedKori" >= 0 AND "releasedKori" + "refundedKori" <= "raisedKori" AND "raisedKori" <= "goalKori");
+ALTER TABLE "ProtectedContribution" DROP CONSTRAINT IF EXISTS "ProtectedContribution_refund_bounds";
+ALTER TABLE "ProtectedContribution" ADD CONSTRAINT "ProtectedContribution_refund_bounds" CHECK ("amountKori" > 0 AND "refundedKori" >= 0 AND "refundedKori" <= "amountKori");
