@@ -86,6 +86,28 @@ Malicious organizer (early release, unilateral cancel, exit after receiving, rul
 
 **Honest record:** the first run at `9de9c47` failed **2 / 727**. On a fresh test database (built with `db push` + `prisma/sql/*.sql`, not migrations) the J11 rules-lock and coop append-only triggers were absent, so the database did not refuse the change. The migrations (the production path) already had them. The guards were mirrored into `financial-invariants.sql` (`6a4c0fa`), and the full gate was rerun from scratch: the table above.
 
+### 6.1 Final J1–J11 gate at the latest J11 commit: `da5d0ae` (fresh database, 2026-10-10)
+
+Script: `scripts/dev/gate.sh`. Database health was checked around every step; Postgres did not restart during the run. **All steps exit 0.**
+
+| Check | Result |
+|---|---|
+| `npm test` (J1–J11) | **736 / 736** |
+| Money / logistics / work / collective invariants, after the suite and after everything | **OK** (all eight checks) |
+| Load, sweeps | **OK / OK** |
+| Web build | **OK** |
+| Browser E2E J8 / J9 / J10 / J11 | **all pass** |
+| Migration rehearsal | **OK** |
+| Migrations ⇄ schema | **empty diff** |
+| `npm audit` critical | **0** |
+| Deploy-inert | **yes**. Crons are only `/api/cron/daily` and `/api/cron/scheduled-payments`. |
+
+**Honest record:** the previous attempt at `7521d37` failed two browser steps.
+- **E2E J10:** the moderation queue's 50-row limit let a storm of spam reports push a newer scam report out of the operators' view. This was a real product bug. Fix: the queue is ordered by severity first, with a regression test.
+- **E2E J9:** a transient toast (about 4.6 s) could vanish before the test started looking for it while the database was under concurrent load. The offer itself was created correctly. Fix: the watcher is armed before the submitting tap, and the assertion is unchanged.
+
+Both fixes are in `da5d0ae`.
+
 ## 7. Verdict, risks, J12
 
 **Verdict: J11 is COMPLETE as a local engineering milestone.** Rotating tontines and goal savings work end to end (API, member/organizer UI, ops console, browser E2E) with consent per member, locked rules, member-controlled exceptions, no organizer money power, atomic idempotent J2 money, and database-enforced history. Protected funds exist and are tested but **dormant**. This is **not** production approval, and **production remains exposed to P0-A** until the containment is deployed.
