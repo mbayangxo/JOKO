@@ -101,3 +101,32 @@ It outputs opaque ids only, inside `BEGIN READ ONLY … ROLLBACK`. It was valida
 
 ## 8. Effect on J11
 J11 feature work **stopped** under the stop rule when this was confirmed. It resumes only on the owner's instruction. The legacy model's live state must be settled first anyway (J11.0, one tontine model).
+
+
+## 9. Status 2026-10-10: identity verified, hotfix ready, waiting on explicit permission to push the branch and deploy
+
+**Production identity (re-verified read-only, 2026-10-10 ~06:50 UTC; default connector scope now works):**
+
+| Item | Value |
+|---|---|
+| Project | `joko`, `prj_lOUwSQp2PPi8Bhe1tA1jjrKXdiYt`, account `team_DuHLYw71m5ATHKdtGSur1Diw`. "keit" deployments are the **same project before a rename**; there is no second project. |
+| Active production deployment | `dpl_B3ucyq653UuuVKoS5aKLNy1Ciw2S`, READY, Node 24.x |
+| Deployed commit | `7d262ded725964e0117deb21d5caf47feb2ce462` (repo `mbayangxo/JOKO`, ref `claude/k21-phase-1-scope-wnk8gf`), per Vercel's deployment record = **the tested base** |
+| Domains | `keit-six.vercel.app`, `joko-mbayangxos-projects.vercel.app` (+ the branch alias). SSO protection `all_except_custom_domains`. |
+| Cron | `/api/cron/daily` at **06:00 UTC every day**. Vercel invokes it internally, so URL protection does not stop it, and the legacy collection runs daily while unpatched. |
+| Production config (names only, nothing decrypted) | `DATABASE_URL` (secret); also `SUPABASE_URL` and a Supabase service-role key (added 2026-09-09). The database identity **cannot be verified without reading secrets**, which was not done. |
+| Vulnerable rollback candidates | `dpl_B3ucyq…` (current) and `dpl_FgomN1BTUqFHgfSwFTcvukdtTniN` (older, same commit): **never roll back to either.** |
+
+**Hotfix (local only, not pushed):** commit `b0318b5` = `7d262de` + exactly the reviewed patch (2 files, +13 / −1; the code diff was checked against `tontine-containment-on-7d262de.patch`).
+- Exploit regression: patched release → **503**, all balances unchanged; the same test on unpatched `7d262de` → victims −20 000 each, creator +40 000.
+- `7d262de` suite on the hotfix: **122 / 122**.
+
+**Not done, and why:** deploying requires pushing `hotfix/p0a-tontine-containment` (`b0318b5`) to `mbayangxo/JOKO` so that Vercel can build it. This session may push only its own J11 branch, and the owner's instruction forbids deploying through an unverified branch without that explicit step. **Waiting for explicit permission.** Planned sequence once given:
+1. Push the branch (contents verified identical to `b0318b5`).
+2. Preview deployment from that exact SHA.
+3. Preview checks: health; release → 503; P2P and merchant routes respond.
+4. Promote that same deployment to production.
+5. Post-deploy verification per §5.
+6. Record the deployment ID, time and results here.
+
+**Forensics:** still not run. The production database can only be identified by reading `DATABASE_URL`, which this session must not do. Options: the owner runs `historical-tontine-exposure.sql` read-only, or explicitly authorizes a read-only role and connection string for the verified Jokko database (never Kebu's Supabase).
