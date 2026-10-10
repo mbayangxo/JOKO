@@ -107,3 +107,21 @@ Recommendation: start with SMS **receipts and status only**, behind a flag, afte
 - Server-side `X-Low-Data` response trimming.
 - Real-device 2G profiling.
 - Applying the same banner to J9 offers and J11 contributions. Those flows use their own idempotency keys, but no lookup resume yet.
+
+## 8. Gate at `38ac220` (fresh database, J1–J12, 2026-10-10)
+
+Script: `scripts/dev/gate.sh`. Postgres did not restart during the run, and **every step exited 0**.
+
+| Check | Result |
+|---|---|
+| `npm test` (J1–J12) | **742 / 742** |
+| Money, logistics, work and collective invariants (after the suite and after everything) | **OK** |
+| Load and sweeps | **OK** |
+| Web build | **OK** |
+| Browser E2E J8 / J9 / J10 / J11 / **J12** | **12/12, 11/11, 7/7, 8/8, 5/5** |
+| Migration rehearsal | **OK** |
+| Migrations ⇄ schema | **empty diff** |
+| `npm audit` critical | **0** |
+| Deploy-inert | **yes**: crons are `/api/cron/daily` and `/api/cron/scheduled-payments` only |
+
+**Honest record:** the run at `0cdd896` failed only `e2e_j12`. The failure was the real finding **J12-F7**, fixed in `38ac220` with a regression test.
