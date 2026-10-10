@@ -66,7 +66,9 @@ test('colluding members can only ever pay the accepted recipient — never redir
   const r = await C.castBallot(v.vote.id, c.id, 'yes');
   assert.equal(r.outcome, null, 'the recipient must agree too');
   const fin = await C.castBallot(v.vote.id, org.id, 'yes');
-  assert.equal(fin.outcome.applied.recipientId, org.id, 'even a unanimous vote pays only the rotation recipient');
+  assert.deepEqual(fin.outcome.applied, { releaseEligible: 1 }, 'the vote itself moves nothing');
+  const paid = await C.releaseCycle(id, b.id);
+  assert.equal(paid.recipientId, org.id, 'even a unanimous vote pays only the rotation recipient');
 });
 
 test('contributions racing to a protected goal never overfund; a replayed release pays once', async () => {

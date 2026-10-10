@@ -18,7 +18,7 @@ import { styles } from './CollectiveGroupsScreen';
  * status (transparency the members accepted), my dues, history, votes and disputes. The organizer only
  * prepares (invite, propose rules); after the start nobody has a special power over the money.
  */
-const OB = { open: 'à payer', partial: 'partiel', paid: 'payé', late_paid: 'payé en retard', missed: 'en retard', cancelled: 'annulé', refunded: 'remboursé' };
+const OB = { open: 'à payer', partial: 'partiel', paid: 'payé', late_paid: 'payé en retard', missed: 'en retard', cancelled: 'annulé', refunded: 'remboursé', terminated: 'clos (règlement)' };
 const TOPIC = { extend_grace: 'Prolonger le délai', partial_release: 'Verser le pot partiel', cancel: 'Annuler le groupe', exit: 'Sortie d’un membre' };
 const HIST = { contribution: 'Cotisation', payout: 'Pot versé', catch_up: 'Rattrapage', refund: 'Remboursement', withdrawal: 'Retrait' };
 const dt = (s) => (s ? new Date(s).toLocaleDateString('fr-SN') : '');
@@ -163,6 +163,15 @@ export default function CollectiveGroupScreen({ navigation, route }) {
             </View>
           ) : null}
 
+          {g.claims?.length ? (
+            <View style={[styles.card, styles.column]}>
+              <Text style={styles.title}>Positions à la clôture</Text>
+              <Text style={styles.detail}>Enregistrées seulement : rien n’est prélevé automatiquement, rien n’est effacé.</Text>
+              {g.claims.map((c) => (
+                <Text key={c.handle} style={styles.detail}>@{c.handle}{c.me ? ' (moi)' : ''} : {c.direction === 'owes' ? 'doit' : 'est créancier de'} {c.amountKori} ₭ (versé {c.paidKori} · reçu {c.receivedKori})</Text>
+              ))}
+            </View>
+          ) : null}
           {g.history?.length ? (
             <View style={[styles.card, styles.column]}>
               <Text style={styles.title}>Historique</Text>

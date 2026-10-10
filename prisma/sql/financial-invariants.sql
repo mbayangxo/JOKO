@@ -389,3 +389,12 @@ ALTER TABLE "ProtectedFund" DROP CONSTRAINT IF EXISTS "ProtectedFund_money_bound
 ALTER TABLE "ProtectedFund" ADD CONSTRAINT "ProtectedFund_money_bounds" CHECK ("raisedKori" >= 0 AND "releasedKori" >= 0 AND "refundedKori" >= 0 AND "releasedKori" + "refundedKori" <= "raisedKori" AND "raisedKori" <= "goalKori");
 ALTER TABLE "ProtectedContribution" DROP CONSTRAINT IF EXISTS "ProtectedContribution_refund_bounds";
 ALTER TABLE "ProtectedContribution" ADD CONSTRAINT "ProtectedContribution_refund_bounds" CHECK ("amountKori" > 0 AND "refundedKori" >= 0 AND "refundedKori" <= "amountKori");
+
+-- J11 (mirrors migration 20261024000000_j11_termination_claims).
+-- Claims are an immutable record (a later recovery or write-off would be a separate, approved record).
+DROP TRIGGER IF EXISTS "CollectiveClaim_append_only" ON "CollectiveClaim";
+CREATE TRIGGER "CollectiveClaim_append_only" BEFORE UPDATE OR DELETE ON "CollectiveClaim"
+  FOR EACH ROW EXECUTE FUNCTION joko_ledger_append_only();
+ALTER TABLE "CollectiveClaim" DROP CONSTRAINT IF EXISTS "CollectiveClaim_shape";
+ALTER TABLE "CollectiveClaim" ADD CONSTRAINT "CollectiveClaim_shape" CHECK ("amountKori" > 0 AND direction IN ('owes','owed') AND "paidKori" >= 0 AND "receivedKori" >= 0
+  AND "amountKori" = abs("receivedKori" - "paidKori") AND (direction = 'owes') = ("receivedKori" > "paidKori"));

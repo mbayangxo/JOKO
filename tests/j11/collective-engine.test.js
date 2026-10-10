@@ -104,12 +104,14 @@ test('J11-F2 regression — a malicious organizer cannot drain: no early release
   const { executeTerminationSettlement } = await import('../../lib/collective/ops.js');
   const settled = await executeTerminationSettlement(prisma, { groupId: g.id }, { id: `t-${key()}`, requestedBy: 'op-a', approvedBy: 'op-b' });
   const st = settled.statement;
+  assert.deepEqual(settled.claims.map((c) => [c.userId, c.direction, c.amountKori]).sort(), [[a.id, 'owed', 1000], [b.id, 'owed', 1000], [org.id, 'owes', 2000]].sort(),
+    'positions become explicit claims: nothing forgiven, nothing created, Σ owes = Σ owed');
   const orgLine = st.find((s) => s.userId === org.id);
   assert.equal(orgLine.netKori, 2000, 'the organizer received 3000 having paid 1000: recorded, not hidden');
   assert.equal(st.find((s) => s.userId === a.id).netKori, -1000, 'a paid cycle 1 and got the cycle-2 payment refunded');
   assert.equal(await pot(g.id), 0, 'nothing left in the pot');
   const obs = await prisma.collectiveObligation.findMany({ where: { groupId: g.id, userId: org.id, cycle: { gte: 2 } } });
-  assert.ok(obs.every((o) => o.status === 'cancelled'), 'future cycles cancelled — no automatic debit of anyone');
+  assert.ok(obs.every((o) => o.status === 'terminated'), 'future cycles closed as terminated (value carried by the claims) — no automatic debit of anyone');
   const again = await executeTerminationSettlement(prisma, { groupId: g.id }, { id: `t-${key()}`, requestedBy: 'op-a', approvedBy: 'op-b' });
   assert.equal(again.replayed, true, 'settles once');
 });
@@ -132,7 +134,11 @@ test('missed payment: recorded, never auto-debited; partial release only by unan
   assert.equal(v.outcome, null, 'the recipient must agree too');
   const aBefore = await bal(a);
   const res = await C.castBallot(v.vote.id, a.id, 'yes');
-  assert.equal(res.outcome.applied.amountKori, 2000);
+  assert.deepEqual(res.outcome.applied, { releaseEligible: 1 }, 'the vote only makes the cycle eligible');
+  assert.equal(await bal(a), aBefore, 'a vote never moves money');
+  const paid = await C.releaseCycle(g.id, b.id); // executed by the rules, re-validated now
+  assert.equal(paid.amountKori, 2000);
+  assert.equal(paid.basis, 'partial_vote');
   assert.equal(await bal(a), aBefore + 2000);
   // b pays late: the oldest debt first, and it goes on to a (the short-paid recipient)
   const late = await C.contribute(g.id, b.id, { idempotencyKey: key() });
@@ -196,6 +202,10 @@ test('goal savings: each member saves into and withdraws from their OWN share on
   const v = await C.openVote(g.id, org.id, { topic: 'cancel' });
   await C.castBallot(v.vote.id, a.id, 'yes');
   await C.castBallot(v.vote.id, b.id, 'yes');
+  assert.equal(await bal(a), aB, 'the vote moves nothing');
+  const { executeTerminationSettlement } = await import('../../lib/collective/ops.js');
+  const r = await executeTerminationSettlement(prisma, { groupId: g.id }, { id: `g-${key()}`, requestedBy: 'op-a', approvedBy: 'op-b' });
+  assert.deepEqual(r.claims, [], 'goal savers each get their own money back: no positions remain');
   assert.equal(await bal(a), aB + 2000);
   assert.equal(await share(b), 0);
 });

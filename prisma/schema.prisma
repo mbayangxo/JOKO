@@ -4785,6 +4785,7 @@ model CollectiveGroup {
   votes       CollectiveVote[]
   disputes    CollectiveDispute[]
   events      CollectiveEvent[]
+  claims      CollectiveClaim[]
 
   @@index([organizerId])
   @@index([status])
@@ -5054,4 +5055,26 @@ model CoopCapitalRecord {
 
   @@index([businessId, memberUserId])
   @@index([memberUserId])
+}
+
+/// J11 (P-J11-8): when a group closes (completed or terminated), every member's non-zero position — what
+/// they received minus what they paid — becomes an explicit, immutable claim. `owes` = received more than
+/// paid; `owed` = paid more than received. Per group Σ owes = Σ owed (money is conserved). A claim is a
+/// record: no money moves, nothing is auto-debited, and nothing is forgiven or redistributed until a
+/// separately approved recovery policy (P-J11-3) says how.
+model CollectiveClaim {
+  id           String   @id @default(cuid())
+  groupId      String
+  userId       String
+  direction    String
+  amountKori   Int
+  basis        String
+  paidKori     Int
+  receivedKori Int
+  createdAt    DateTime @default(now())
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, userId])
+  @@index([userId])
 }
