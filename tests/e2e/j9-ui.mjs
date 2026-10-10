@@ -148,8 +148,12 @@ try {
     assert.ok(!body.includes(w.phone), 'no phone on the applicant card');
     await tap(emp, 'Faire une offre');
     await see(emp, 'Confirme ton PIN');
-    for (const d of PIN) await tap(emp, d, { exact: true, last: true });
-    await see(emp, 'Offre envoyée');
+    for (const d of PIN.slice(0, -1)) await tap(emp, d, { exact: true, last: true });
+    // The toast is transient (~4.6 s): arm the watcher BEFORE the final digit submits, so a slow click
+    // under load cannot let it appear and vanish unobserved. Same assertion, no race.
+    const toast = see(emp, 'Offre envoyée');
+    await tap(emp, PIN.at(-1), { exact: true, last: true });
+    await toast;
     offer = await until(() => prisma.workOffer.findFirst({ where: { opportunityId: opp.id } }), 'offer');
     assert.equal(offer.fundingStatus, 'held');
     assert.equal(Number((await prisma.ledgerAccount.findUnique({ where: { code: `escrow:work:${offer.id}` } })).balance), 2000);

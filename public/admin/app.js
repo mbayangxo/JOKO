@@ -488,7 +488,8 @@ async function loadCommunityTab() {
     api('/moderation/reports').catch(() => ({ reports: [] })),
     api('/moderation/appeals').catch(() => ({ appeals: [] })),
   ]);
-  $('community-reports').innerHTML = tableHtml(['Report', 'Evidence (snapshot)', 'Context', 'Decision'], q.reports ?? [], (r) => `<tr>
+  const more = q.total > (q.shown ?? 0) ? `<p class="hint">Showing ${esc(q.shown)} of ${esc(q.total)} open reports, most severe first (scam / violence / sexual, then harassment / hate / impersonation, then other, spam last).</p>` : '';
+  $('community-reports').innerHTML = more + tableHtml(['Report', 'Evidence (snapshot)', 'Context', 'Decision'], q.reports ?? [], (r) => `<tr>
     <td>${esc(r.category)}<br><small>${esc(r.reason)} · ${fmtDate(r.createdAt)}</small></td>
     <td><small>${r.evidence ? esc(r.evidence.body) : '—'}</small></td>
     <td><small>${esc(r.reportsAgainstTarget30d)} report(s) in 30 d · ${esc(r.priorActions)} prior action(s)</small></td>

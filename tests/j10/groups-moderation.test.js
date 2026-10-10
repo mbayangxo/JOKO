@@ -126,3 +126,16 @@ test('moderation: snapshot report, trust_safety only, restriction stops messages
   ok(await say(x, g.id, 'Désolé à tous.'));
   assert.equal(await prisma.adminAuditLog.count({ where: { targetId: { in: [rep.id, act.id] } } }), 2);
 });
+
+test('triage: a storm of spam reports never pushes a newer scam report out of the operators’ queue', async () => {
+  const { moderationQueue } = await import('../../lib/community/moderation.js');
+  const reporter = await prisma.user.findFirst({ select: { id: true } });
+  const target = await prisma.user.findFirst({ where: { id: { not: reporter.id } }, select: { id: true } });
+  await prisma.contentReport.createMany({ data: Array.from({ length: 60 }, (_, i) => ({ reporterId: reporter.id, targetUserId: target.id, category: 'spam', reason: `storm ${i}`, status: 'open' })) });
+  const scam = await prisma.contentReport.create({ data: { reporterId: reporter.id, targetUserId: target.id, category: 'scam', reason: 'Demande de code OTP (triage test)', status: 'open' } });
+  const q = await moderationQueue({ limit: 50 });
+  assert.ok(q.reports.some((r) => r.id === scam.id), 'the scam report is in the first page');
+  assert.ok(q.total >= 61);
+  const firstSpam = q.reports.findIndex((r) => r.category === 'spam');
+  assert.ok(q.reports.slice(firstSpam).every((r) => r.category === 'spam'), 'spam comes last');
+});
