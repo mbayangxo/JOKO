@@ -8,17 +8,26 @@ export const visibleMsFor = (text) => Math.min(2200 + Math.max(0, String(text).l
 export function createToastScheduler({ setMessage, show, hide, stop, setTimer = setTimeout, clearTimer = clearTimeout }) {
   let generation = 0;
   let timer = null;
-  return function showToast(text) {
+  let disposed = false;
+  const showToast = function showToast(text) {
+    if (disposed) return;
     if (timer) clearTimer(timer);
     const gen = (generation += 1);
     stop();
     setMessage(text);
     show();
     timer = setTimer(() => {
-      if (gen !== generation) return;
+      if (disposed || gen !== generation) return;
       hide(({ finished }) => {
-        if (finished && gen === generation) setMessage(null);
+        if (finished && !disposed && gen === generation) setMessage(null);
       });
     }, visibleMsFor(text));
   };
+  /** Provider unmounted: cancel the pending timer; late timers/animation callbacks become no-ops. */
+  showToast.dispose = () => {
+    disposed = true;
+    if (timer) clearTimer(timer);
+    timer = null;
+  };
+  return showToast;
 }

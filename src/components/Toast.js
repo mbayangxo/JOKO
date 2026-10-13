@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createToastScheduler } from './toast-scheduler';
 import { Animated, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,6 +25,7 @@ export function ToastProvider({ children }) {
       }),
     [anim]
   );
+  useEffect(() => () => showToast.dispose(), [showToast]);
 
   return (
     <ToastContext.Provider value={showToast}>

@@ -72,3 +72,47 @@ test('an old timer never hides a newer toast; normal single toast hides after it
   assert.equal(visibleMsFor('court'), 2200);
   assert.equal(visibleMsFor('x'.repeat(200)), 6000);
 });
+
+test('rapid consecutive toasts: only the last is shown, and only its own timer can hide it', () => {
+  const h = harness(createToastScheduler);
+  for (let i = 0; i < 20; i += 1) h.show(`t${i}`);
+  assert.equal(h.msg(), 't19');
+  for (let i = 0; i < 19; i += 1) {
+    h.fireTimer(i); // stale timers (cleared in real life) must not hide t19
+    h.fadeEnds();
+  }
+  assert.equal(h.msg(), 't19');
+  h.fireTimer(19);
+  h.fadeEnds();
+  assert.equal(h.msg(), null);
+});
+
+test('an interrupted fade (finished: false) never clears the message', () => {
+  const h = harness(createToastScheduler);
+  h.show('A');
+  h.fireTimer(0); // fade starts …
+  h.show('B'); // … and is interrupted by the next toast (callback with finished:false)
+  assert.equal(h.msg(), 'B');
+});
+
+test('after unmount (dispose): late timers and animation callbacks are no-ops; new toasts are ignored', () => {
+  let sets = 0;
+  const timers = [];
+  let running = null;
+  const show = createToastScheduler({
+    setMessage: () => { sets += 1; },
+    stop: () => {},
+    show: () => {},
+    hide: (cb) => { running = cb; },
+    setTimer: (fn) => { timers.push(fn); return timers.length; },
+    clearTimer: () => {},
+  });
+  show('A');
+  timers[0](); // the fade starts …
+  show.dispose(); // … the provider unmounts
+  const before = sets;
+  running?.({ finished: true }); // the animation completes after unmount
+  timers[0](); // a timer fires after unmount
+  show('late'); // a caller still holding the old function
+  assert.equal(sets, before, 'no state update after unmount');
+});

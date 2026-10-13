@@ -7,6 +7,8 @@ import GlowButton from '../components/GlowButton';
 import ScreenBackground from '../components/ScreenBackground';
 import ScreenHeader from '../components/ScreenHeader';
 import { useToast } from '../components/Toast';
+import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
+import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import { contributeJekkal, getJekkalCampaign, respondJekkalBeneficiary } from '../lib/api-client';
 import { formatKori } from '../lib/kori.js';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
@@ -19,6 +21,7 @@ export default function JekkalDetailScreen({ navigation, route }) {
   const [amount, setAmount] = useState('5000');
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const money = useMoneySubmit(`jekkal:${campaignId}`);
   const [burst, setBurst] = useState(false);
 
   const load = useCallback(async () => {
@@ -41,15 +44,24 @@ export default function JekkalDetailScreen({ navigation, route }) {
       showToast('Montant invalide');
       return;
     }
+    if (money.busy) return;
     setSubmitting(true);
     try {
-      const result = await contributeJekkal(campaignId, { amount: n, message: message.trim() || undefined });
-      setCampaign(result.campaign);
-      setBurst(true);
-      setTimeout(() => setBurst(false), 2600);
-      showToast('Merci pour ton don ✦');
-    } catch (e) {
-      showToast(e.message ?? 'Erreur');
+      // J12: a donation is money — one intent per attempt; a lost reply is looked up, never re-sent; thanks
+      // are shown only once the server confirmed the donation.
+      const body = { amount: n, message: message.trim() || undefined };
+      const out = await money.submit((key) => contributeJekkal(campaignId, body, { idempotencyKey: key }), { instruction: { campaignId, amount: n } });
+      if (out.state === 'done') {
+        if (out.response?.campaign) setCampaign(out.response.campaign);
+        else load();
+        setBurst(true);
+        setTimeout(() => setBurst(false), 2600);
+        showToast('Merci pour ton don ✦');
+        money.reset();
+      } else if (out.state !== 'checking') {
+        showToast(out.message ?? 'Erreur');
+        if (out.state === 'accepted_pending') load();
+      }
     } finally {
       setSubmitting(false);
     }
@@ -84,6 +96,7 @@ export default function JekkalDetailScreen({ navigation, route }) {
       <ConfettiBurst active={burst} />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScreenHeader onBack={() => navigation.goBack()} title="Jëkkal" style={styles.header} />
+        <MoneyPhaseBanner phase={money.phase} />
         <ScrollView contentContainerStyle={styles.scroll}>
           <Text style={styles.title}>{campaign.title}</Text>
           <Text style={styles.beneficiary}>Pour {campaign.beneficiary?.name ?? campaign.beneficiary?.handle}</Text>

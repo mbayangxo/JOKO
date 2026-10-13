@@ -266,7 +266,8 @@ export default function ReceiveScreen({ navigation }) {
       }
       if (out.state === 'done' || out.state === 'accepted_pending') {
         await refreshWallet();
-        showToast('Paiement envoyé ✓');
+        // Only a server-confirmed payment is announced as sent; a held one says so.
+        showToast(out.state === 'done' ? 'Paiement envoyé ✓' : out.message);
       } else {
         showToast(out.nextStep ? `${out.message} ${out.nextStep}` : out.message ?? 'Paiement impossible');
       }

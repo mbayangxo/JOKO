@@ -724,10 +724,11 @@ export function createJekkalCampaign(body) {
   return apiFetch('/api/jekkal/campaigns', { method: 'POST', body, skipCache: true });
 }
 
-export function contributeJekkal(campaignId, body) {
+export function contributeJekkal(campaignId, body, { idempotencyKey } = {}) {
   return apiFetch(`/api/jekkal/campaigns/${encodeURIComponent(campaignId)}/contribute`, {
     method: 'POST',
     body,
+    idempotencyKey,
     skipCache: true,
   });
 }
