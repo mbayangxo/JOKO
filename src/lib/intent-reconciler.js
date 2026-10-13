@@ -29,9 +29,14 @@ const FINAL = new Set(['done', 'accepted_pending', 'failed_safe']);
  * deps: { getIntent(key), voidIntent(key), listPending(userId), forget(key), currentUser(), now(), mono() }
  * Returns { reconcileOne(rec), reconcileAll(), subscribe(fn), hasPending() }.
  */
+export const RECENT_OUTCOME_MS = 10 * 60_000;
+
 export function createIntentReconciler(deps) {
   const firstNotFoundMono = new Map(); // key → monotonic ms of the first "not_found" seen in this session
   const listeners = new Set();
+  // A final answer found before the screen of that flow was open (e.g. right after a restart) is kept briefly so
+  // that screen can still show it once — per user and flow, monotonic time, consumed on read.
+  const recent = new Map(); // `${userId}:${flow}` → { event, mono }
   let running = null;
   let pendingCount = 0;
 
@@ -45,7 +50,7 @@ export function createIntentReconciler(deps) {
     }
   };
 
-  async function reconcileOne(rec) {
+  async function reconcileOne(rec, { source = 'screen' } = {}) {
     let raw;
     try {
       raw = await deps.getIntent(rec.key);
@@ -69,7 +74,8 @@ export function createIntentReconciler(deps) {
     if (FINAL.has(out.state)) {
       firstNotFoundMono.delete(rec.key);
       await deps.forget(rec.key);
-      const event = { key: rec.key, flow: rec.flow, ...out };
+      const event = { key: rec.key, flow: rec.flow, source, ...out };
+      if (rec.userId && rec.flow) recent.set(`${rec.userId}:${rec.flow}`, { event, mono: deps.mono() });
       emit(event);
       return event;
     }
@@ -86,7 +92,7 @@ export function createIntentReconciler(deps) {
       }
       const records = (await deps.listPending(userId)).filter((r) => r.userId === userId);
       const results = [];
-      for (const rec of records) results.push(await reconcileOne(rec));
+      for (const rec of records) results.push(await reconcileOne(rec, { source: 'background' }));
       pendingCount = results.filter((r) => !FINAL.has(r.state)).length;
       return results;
     })();
@@ -97,9 +103,19 @@ export function createIntentReconciler(deps) {
     }
   }
 
+  /** The final answer of this user's most recent unknown attempt in `flow`, if found in the last 10 min (once). */
+  function takeRecent(userId, flow) {
+    const k = `${userId}:${flow}`;
+    const r = recent.get(k);
+    if (!r) return null;
+    recent.delete(k);
+    return deps.mono() - r.mono <= RECENT_OUTCOME_MS ? r.event : null;
+  }
+
   return {
     reconcileOne,
     reconcileAll,
+    takeRecent,
     hasPending: () => pendingCount > 0,
     subscribe(fn) {
       listeners.add(fn);

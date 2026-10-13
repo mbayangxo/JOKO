@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { AppState, Platform } from 'react-native';
 import { useAppState } from '../state/AppState';
+import { useToast } from './Toast';
 import { intentReconciler, reconcileNow } from '../lib/intent-reconciliation';
 import { FOREGROUND_INTERVAL_MS } from '../lib/intent-reconciler';
 
@@ -12,12 +13,15 @@ import { FOREGROUND_INTERVAL_MS } from '../lib/intent-reconciler';
  */
 export default function IntentReconciliationRunner() {
   const { refreshWallet } = useAppState();
+  const showToast = useToast();
 
   useEffect(() => {
     const visible = () => Platform.OS !== 'web' || typeof document === 'undefined' || document.visibilityState !== 'hidden';
     reconcileNow();
-    const unsubscribe = intentReconciler.subscribe(() => {
+    const unsubscribe = intentReconciler.subscribe((event) => {
       refreshWallet?.().catch(() => {});
+      // Wherever the user is: an earlier uncertain payment now has its server-confirmed answer.
+      if (event?.source === 'background' && event.message) showToast?.(event.message);
     });
     const sub = AppState.addEventListener?.('change', (s) => {
       if (s === 'active') reconcileNow();
@@ -35,7 +39,7 @@ export default function IntentReconciliationRunner() {
       if (typeof document !== 'undefined') document.removeEventListener?.('visibilitychange', onVisible);
       clearInterval(timer);
     };
-  }, [refreshWallet]);
+  }, [refreshWallet, showToast]);
 
   return null;
 }

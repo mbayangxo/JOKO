@@ -79,7 +79,13 @@ export function useMoneySubmit(flow = 'money') {
       const userId = await currentUser();
       if (!userId) return;
       const [rec] = await pendingIntentsToLookUp({ userId, flow }).catch(() => []);
-      if (!alive || !rec) return;
+      if (!alive) return;
+      if (!rec) {
+        // J13-F17: the app-wide reconciler may have found the answer before this screen opened — show it once.
+        const done = intentReconciler.takeRecent(userId, flow);
+        if (done) setPhase({ ...done, afterCheck: true, resumed: true });
+        return;
+      }
       keyRef.current = rec.key;
       attemptRef.current = null; // an unknown attempt is only ever looked up — never re-bound for a retry
       setPhase({ state: 'checking', resumed: true, unknown: true, message: 'Nous vérifions le statut d’un paiement précédent. Ne le renouvelle pas pour le moment.' });

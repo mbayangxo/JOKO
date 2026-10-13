@@ -184,3 +184,24 @@ test('the reconciler has no way to pay: its only server operations are lookup an
   assert.ok(w.calls.every(([op]) => op === 'get' || op === 'void'));
   assert.ok(!w.calls.some(([op, k]) => op === 'void' && k === 'k2'), 'in-progress is never closed');
 });
+
+test('an answer found before the flow\'s screen opened is handed to that screen once (same user + flow only)', async () => {
+  const w = world({ records: [rec('k1')], server: { k1: 'completed' } });
+  const r = createIntentReconciler(w.deps);
+  const events = [];
+  r.subscribe((e) => events.push(e));
+  await r.reconcileAll(); // app start, before any screen
+  assert.equal(events[0].source, 'background');
+  assert.equal(r.takeRecent('u2', 'p2p'), null, 'another user never gets it');
+  assert.equal(r.takeRecent('u1', 'merchant_pay'), null, 'another flow never gets it');
+  assert.equal(r.takeRecent('u1', 'p2p').state, 'done');
+  assert.equal(r.takeRecent('u1', 'p2p'), null, 'consumed once');
+});
+
+test('a handed-over answer expires after 10 minutes of monotonic time', async () => {
+  const w = world({ records: [rec('k1')], server: { k1: 'refused' } });
+  const r = createIntentReconciler(w.deps);
+  await r.reconcileAll();
+  w.mono += 10 * 60_000 + 1;
+  assert.equal(r.takeRecent('u1', 'p2p'), null);
+});
