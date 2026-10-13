@@ -24,7 +24,14 @@ const ri = (opts = {}) => issueInstructionRef({ recipientRef: rr(opts.via), send
 
 test('happy path: lookup → confirm → send verifies; the token never carries the id, handle or phone in clear', () => {
   const ref = rr();
-  for (const secret of [B.handle, B.phone, '771234567']) assert.ok(!Buffer.from(ref.split('.')[1], 'base64url').toString().includes(secret));
+  const instr = ri();
+  // Nothing readable: not the account ids, handle or phone — in any segment, raw or base64-decoded.
+  for (const t of [ref, instr]) {
+    const views = [t, ...t.split('.').map((p) => Buffer.from(p, 'base64url').toString('latin1'))];
+    for (const secret of [A.id, B.id, B.handle, B.phone, '771234567', KEY]) {
+      for (const v of views) assert.ok(!v.includes(secret), `token leaks ${secret}`);
+    }
+  }
   assert.equal(recipientIdFromRef(ref, { senderId: A.id, now: T0 }), B.id);
   const p = verifyInstructionRef(ri(), { senderId: A.id, recipient: B, amountKori: 1500, intentKey: KEY, now: T0 + 1000 });
   assert.equal(p.r, B.id);
@@ -32,9 +39,9 @@ test('happy path: lookup → confirm → send verifies; the token never carries 
 
 test('forged / tampered / wrong-kind / malformed tokens are refused', () => {
   const good = ri();
-  const [k, body, sig] = good.split('.');
-  const evil = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(body, 'base64url')), r: C.id })).toString('base64url');
-  for (const t of [`${k}.${evil}.${sig}`, `${k}.${body}.${sig.slice(0, -2)}xx`, rr(), 'ri2..', 'x', 'r1.AAAA', `${'a'.repeat(2000)}`]) {
+  const [k, iv, blob] = good.split('.');
+  const flip = (b64) => { const b = Buffer.from(b64, 'base64url'); b[0] ^= 1; return b.toString('base64url'); };
+  for (const t of [`${k}.${iv}.${flip(blob)}`, `${k}.${flip(iv)}.${blob}`, `rr2.${iv}.${blob}`, rr(), 'ri2..', 'x', 'r1.AAAA', `${'a'.repeat(2000)}`]) {
     refused(() => verifyInstructionRef(t, { senderId: A.id, recipient: B, amountKori: 1500, intentKey: KEY, now: T0 }), 'forged');
   }
   refused(() => verifyInstructionRef(undefined, { senderId: A.id, recipient: B, amountKori: 1500, intentKey: KEY, now: T0 }), 'confirmation_required');

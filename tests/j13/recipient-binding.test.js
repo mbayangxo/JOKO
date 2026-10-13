@@ -60,7 +60,11 @@ test('new client: lookup → confirm → send pays exactly the confirmed account
   const A = await sender();
   const b = await customer();
   const p = await prepare(A, b.handle, 900);
-  for (const t of [p.look.body.recipientRef, p.instructionRef]) assert.ok(!Buffer.from(t.split('.')[1], 'base64url').toString().includes(b.id));
+  for (const t of [p.look.body.recipientRef, p.instructionRef]) {
+    for (const part of [t, ...t.split('.').map((x) => Buffer.from(x, 'base64url').toString('latin1'))]) {
+      for (const secret of [b.id, A.id, b.handle, b.phone]) assert.ok(!part.includes(secret), 'tokens reveal nothing');
+    }
+  }
   assert.equal(p.look.body.id, undefined);
   const b0 = await bal(b.id);
   const r = await send(A, p.body, p.k);
@@ -124,6 +128,10 @@ test('stale confirmation screen: an expired recipientRef cannot be confirmed, an
   const b = await customer();
   const user = await prisma.user.findUnique({ where: { id: b.id } });
   const past = Date.now() - 60 * 60_000;
+  // Mint with the API server's own secret (the harness child process), so the server reaches the EXPIRY
+  // check — a token from any other secret is (correctly) 'forged'.
+  const mine = process.env.JWT_ACCESS_SECRET;
+  process.env.JWT_ACCESS_SECRET = 'http-test-access-secret-0123456789';
   const oldRef = issueRecipientRef({ senderId: A.id, recipient: user, via: 'handle', now: past });
   const conf = await confirm(A, oldRef, 500, key());
   assert.equal(conf.status, 409);
@@ -131,6 +139,7 @@ test('stale confirmation screen: an expired recipientRef cannot be confirmed, an
   const k = key();
   const freshRef = issueRecipientRef({ senderId: A.id, recipient: user, via: 'handle', now: past });
   const oldInstr = issueInstructionRef({ recipientRef: freshRef, senderId: A.id, recipient: user, amountKori: 500, intentKey: k, now: past });
+  process.env.JWT_ACCESS_SECRET = mine;
   const r = await send(A, { recipientHandle: b.handle, instructionRef: oldInstr, amount: 500 }, k);
   assert.equal(r.status, 409);
   assert.equal(r.body.code, 'expired');
@@ -149,7 +158,8 @@ test('replay: same key = the original payment; a new key, a changed amount or an
   const newKey = await send(A, p.body, key());
   assert.equal(newKey.status, 409, JSON.stringify(newKey.body));
   assert.equal(newKey.body.code, 'instruction_changed');
-  const bigger = await send(A, { ...p.body, amount: 7000 }, key());
+  // A changed amount below the PIN threshold, so the binding (not the step-up) is what refuses it.
+  const bigger = await send(A, { ...p.body, amount: 800 }, key());
   assert.equal(bigger.status, 409);
   assert.equal(bigger.body.code, 'instruction_changed');
   const D = await sender();
@@ -164,12 +174,15 @@ test('forged, tampered and cross-account tokens are refused before any money mov
   const b = await customer();
   const c = await customer();
   const p = await prepare(A, b.handle, 500);
-  const [k0, body, sig] = p.instructionRef.split('.');
-  const tampered = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(body, 'base64url')), r: c.id })).toString('base64url');
-  for (const instructionRef of [`${k0}.${tampered}.${sig}`, p.look.body.recipientRef, 'ri2.e30.AAAA', 'x']) {
-    const r = await send(A, { ...p.body, instructionRef }, p.k);
-    assert.equal(r.status, 409, `${instructionRef.slice(0, 12)}: ${r.status}`);
+  const [k0, iv, blob] = p.instructionRef.split('.');
+  const flip = (b64) => { const x = Buffer.from(b64, 'base64url'); x[3] ^= 1; return x.toString('base64url'); };
+  // Each attempt on its own fresh key, so the token check — not the idempotency fingerprint — is what refuses.
+  for (const instructionRef of [`${k0}.${iv}.${flip(blob)}`, `${k0}.${flip(iv)}.${blob}`, p.look.body.recipientRef, 'ri2.e30.AAAA', 'x']) {
+    const r = await send(A, { ...p.body, instructionRef }, key());
+    assert.equal(r.status, 409, `${instructionRef.slice(0, 12)}: ${r.status} ${JSON.stringify(r.body)}`);
+    assert.equal(r.body.code, 'forged');
   }
+  void c;
   const D = await sender();
   const conf = await confirm(D, p.look.body.recipientRef, 500, key());
   assert.equal(conf.status, 409);

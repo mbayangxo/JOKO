@@ -27,6 +27,7 @@ import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import { useSecurity } from '../context/SecurityContext';
 import { useLocale } from '../context/LocaleContext';
 import { confirmP2p, transferSend, lookupUser, getMboloVideoUploadConfig } from '../lib/api-client';
+import { subscribeNetwork } from '../lib/network-state';
 import { toE164, isValidLocalPhone } from '../lib/phone';
 import { resolveAccountQuery } from '../lib/k21-qr';
 import { formatKori, KORI_SYMBOL } from '../lib/kori.js';
@@ -90,6 +91,7 @@ function AmountStep({
   recipientProfile,
   lookupLoading,
   lookupError,
+  onRetryLookup,
   recentRecipients,
   onPickRecent,
   onContinue,
@@ -241,7 +243,16 @@ function AmountStep({
             </View>
           )}
           {lookupError && !lookupLoading && recipientQuery.length >= 3 && (
-            <Text style={styles.lookupError}>{lookupError}</Text>
+            <View style={styles.lookupErrorRow}>
+              <Text style={[styles.lookupError, { flex: 1 }]}>{lookupError}</Text>
+              {onRetryLookup ? (
+                // J13-F15: a lookup lost to the network can be retried in one tap (it also retries by itself
+                // when the connection returns).
+                <PressScale onPress={onRetryLookup} accessibilityRole="button" accessibilityLabel="Réessayer la recherche">
+                  <Text style={styles.lookupRetry}>Réessayer</Text>
+                </PressScale>
+              ) : null}
+            </View>
           )}
         </Animated.View>
 
@@ -462,6 +473,8 @@ export default function SendMoneyScreen({ navigation, route }) {
   const [recipientProfile, setRecipientProfile] = useState(null);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState('');
+  // Set only when the lookup failed to REACH the server (not for "introuvable"): then it may retry.
+  const [lookupNetworkFail, setLookupNetworkFail] = useState(false);
   const [reference, setReference] = useState('');
   const [undone, setUndone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -590,8 +603,10 @@ export default function SendMoneyScreen({ navigation, route }) {
             : resolveAccountQuery(trimmed).replace(/^@/, '');
         const profile = await lookupUser(query, { mode: mode === 'phone' ? 'phone' : 'handle' });
         setRecipientProfile(profile);
+        setLookupNetworkFail(false);
       } catch (err) {
         setRecipientProfile(null);
+        setLookupNetworkFail(err?.code === 'network' || err?.code === 'timeout');
         setLookupError(err.message ?? 'Personne introuvable');
       } finally {
         setLookupLoading(false);
@@ -607,6 +622,14 @@ export default function SendMoneyScreen({ navigation, route }) {
       if (lookupTimer.current) clearTimeout(lookupTimer.current);
     };
   }, [recipientQuery, recipientMode, runLookup]);
+
+  // J13-F15: a lookup lost during a dropout re-runs by itself once requests get through again.
+  useEffect(() => {
+    if (!lookupNetworkFail) return undefined;
+    return subscribeNetwork((st) => {
+      if (st.status !== 'offline') runLookup(recipientQuery, recipientMode);
+    });
+  }, [lookupNetworkFail, recipientQuery, recipientMode, runLookup]);
 
   const changeRecipientMode = (mode) => {
     setRecipientMode(mode);
@@ -720,6 +743,7 @@ export default function SendMoneyScreen({ navigation, route }) {
               recipientProfile={recipientProfile}
               lookupLoading={lookupLoading}
               lookupError={lookupError}
+              onRetryLookup={lookupNetworkFail ? () => runLookup(recipientQuery, recipientMode) : undefined}
               recentRecipients={recentRecipients}
               onPickRecent={pickRecentRecipient}
               onContinue={() => setStep('confirm')}
@@ -871,6 +895,8 @@ const styles = StyleSheet.create({
   recipientPreviewMeta: { fontSize: 11, color: 'rgba(5,8,5,0.6)', marginTop: 2 },
   recipientPreviewPhone: { fontSize: 11, color: colors.green, marginTop: 4, fontFamily: fontFamily.bodyBold },
   lookupError: { fontSize: 11, color: colors.terracotta, marginTop: spacing.sm },
+  lookupErrorRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  lookupRetry: { fontSize: 12, fontFamily: fontFamily.bodySemiBold, color: colors.ink, marginTop: spacing.sm, textDecorationLine: 'underline' },
   recArr: { fontSize: 11, color: 'rgba(5,8,5,0.5)' },
 
   reasonWrap: { paddingHorizontal: spacing.huge, paddingBottom: spacing.xxl },

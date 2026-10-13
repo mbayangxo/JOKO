@@ -261,11 +261,19 @@ try {
     const w = async (id) => { const x = await prisma.wallet.findUnique({ where: { userId: id } }); return x.balance + x.koriBalance; };
     const [a0, b0, c0] = [await w(a.id), await w(b.id), await w(c.id)];
     await tap(page, 'Oui — Envoyer');
-    // The PIN step-up comes first (server order: step-up, then recipient resolution); a correct PIN
-    // must still not get the payment to the wrong account.
-    const asked = await page.getByText('Confirme ton PIN').filter({ visible: true }).first().waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);
-    if (asked) for (const d of PIN) await tap(page, d, { exact: true, last: true });
-    await see(page, 'Le destinataire a changé');
+    // J13-4: the binding is checked at confirmation, so the refusal usually comes BEFORE any PIN prompt; if a
+    // PIN is asked first, a correct PIN must still not get the payment to the wrong account.
+    const first = await Promise.race([
+      page.getByText('Confirme ton PIN').filter({ visible: true }).first().waitFor({ state: 'visible', timeout: 20_000 }).then(() => 'pin'),
+      page.getByText('Le destinataire a changé').filter({ visible: true }).first().waitFor({ state: 'visible', timeout: 20_000 }).then(() => 'refused'),
+    ]).catch(() => 'nothing');
+    if (first === 'pin') {
+      for (const d of PIN) await tap(page, d, { exact: true, last: true });
+      await see(page, 'Le destinataire a changé');
+    }
+    assert.ok(first !== 'nothing', 'neither a PIN prompt nor a refusal appeared');
+    assert.equal(await seenEver(page, 'Le destinataire a changé'), true, 'the refusal is shown to the sender');
+    await see(page, 'À qui ?'); // back to choosing the recipient: the stale one was dropped
     await page.waitForTimeout(1500);
     assert.deepEqual([await w(a.id), await w(b.id), await w(c.id)], [a0, b0, c0], 'no money moved for anyone');
     assert.equal(await seenEver(page, 'Envoyé'), false, 'never shown as sent');

@@ -109,13 +109,16 @@ export default function HomeScreen({ navigation }) {
             </Animated.View>
             {walletRefreshError ? (
               // J13-F8: a balance that could not be refreshed is flagged — never silently shown as current.
-              <PressScale onPress={() => refreshWallet().catch(() => {})} accessibilityRole="button" accessibilityLabel="Actualiser le solde">
-                <Text style={styles.staleBalance}>⚠️ Solde peut-être pas à jour — touche pour actualiser</Text>
+              // It takes the pill's slot (one line, same box) so nothing below ever moves under a finger
+              // (J13-F16: the flag toggling on a lossy network shifted the action tiles mid-tap).
+              <PressScale onPress={() => refreshWallet().catch(() => {})} style={[styles.zeroFeesPill, styles.stalePill]} accessibilityRole="button" accessibilityLabel="Solde peut-être pas à jour. Actualiser le solde">
+                <Text style={[styles.zeroFeesText, styles.staleText]} numberOfLines={1}>⚠️ Solde peut-être pas à jour · actualiser</Text>
               </PressScale>
-            ) : null}
-            <View style={styles.zeroFeesPill}>
-              <Text style={styles.zeroFeesText}>✦ Zéro frais sur tous tes envois</Text>
-            </View>
+            ) : (
+              <View style={styles.zeroFeesPill}>
+                <Text style={styles.zeroFeesText} numberOfLines={1}>✦ Zéro frais sur tous tes envois</Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.homeActions}>
@@ -173,7 +176,8 @@ const styles = StyleSheet.create({
   notifDot: { position: 'absolute', top: 8, right: 9, width: 6, height: 6, borderRadius: 3, backgroundColor: colors.orange, borderWidth: 1.5, borderColor: colors.appCanvas.base },
 
   balanceDisplay: { alignItems: 'center', marginBottom: spacing.giant, marginTop: spacing.giant },
-  staleBalance: { marginTop: spacing.sm, fontSize: 12.5, color: '#8a5a00', textAlign: 'center', fontFamily: fontFamily.bodyMedium },
+  stalePill: { backgroundColor: 'rgba(232,92,26,0.10)', borderColor: 'rgba(232,92,26,0.35)' },
+  staleText: { color: colors.terracottaDark },
   balanceGlow: {
     position: 'absolute', top: -20, width: 220, height: 100, borderRadius: 100,
     backgroundColor: colors.green, alignSelf: 'center',

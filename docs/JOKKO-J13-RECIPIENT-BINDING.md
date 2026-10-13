@@ -23,7 +23,8 @@ So the person the sender confirmed on screen and the account that holds that lab
 | Confirm ("Oui — Envoyer") | `POST money/p2p/confirm` (moves no money; deliberately outside `transfers/` so the router idempotency layer never caches it under the payment's key) | Verifies the `recipientRef`: signature, expiry, same sender, the identifier **still** belongs to that account. Issues `instructionRef` (`ri2`), which adds the confirmed **amount** and the payment's **idempotency key**; expiry 10 min |
 | Send | `POST transfers/send` with `instructionRef` | Re-verifies against the current state: signature, kind, expiry, sender, recipient account id = account resolved now, identifier still held, amount, idempotency key = this request's key |
 
-- **Tokens** are HMAC-SHA256 under a dedicated subkey of the server secret, so they can never be confused with session JWTs. They are stateless (no storage), carry no handle, phone or account id in clear, and are compared in constant time.
+- **Tokens** are encrypted and authenticated with AES-256-GCM under a dedicated subkey of the server secret, so they can never be confused with session JWTs. The token kind is bound as associated data, so a recipient token can't be presented as an instruction token. They are stateless (no storage), and **nothing in them is readable**: no account id, handle, phone or key. Any modified byte makes the token `forged`.
+  - An earlier local draft (`7794d91`) only *signed* the payload, which left account ids readable in base64. The J13-4 test suite caught this before any gate, and it was replaced.
 - **One confirmation, one payment.** The instruction is bound to the idempotency key. The same key is the normal idempotent replay, which returns the original payment. A new key is refused (`instruction_changed`).
 - **Chat payments** use the same sequence (lookup by handle, then confirm, then send). The existing check that the recipient is a member of the thread still applies.
 

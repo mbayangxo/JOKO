@@ -111,7 +111,9 @@ async function openSend(page, toHandle) {
   await see(page, 'À qui ?');
   await tap(page, 'Handle', { exact: true });
   await page.getByPlaceholder('@handle').filter({ visible: true }).first().fill(`@${toHandle}`);
-  await page.waitForTimeout(2500);
+  // Like a real user, continue once the recipient is shown (the lookup may be lost to a dropout: it must
+  // recover by itself when the connection returns — J13-F15 — or this wait fails).
+  await see(page, `@${toHandle}`, 60_000);
   await tap(page, 'Continuer →');
   await see(page, 'Oui — Envoyer');
 }
