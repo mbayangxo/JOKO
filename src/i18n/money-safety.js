@@ -11,13 +11,15 @@
 export const SAFETY_LANGS = ['wo', 'ff', 'srr'];
 
 export const MONEY_SAFETY = {
-  checking: { fr: 'Vérification du paiement en cours… Ne le renouvelle pas.' },
-  resumed_checking: { fr: 'Un paiement précédent est en vérification… Ne le renouvelle pas.' },
-  still_checking: { fr: 'Toujours en vérification. Consulte ton historique avant de renouveler.' },
+  // J13-F17: an UNKNOWN outcome never says whether money moved — only that it is being checked.
+  checking: { fr: 'Nous vérifions le statut de ce paiement. Ne le renouvelle pas pour le moment.' },
+  resumed_checking: { fr: 'Nous vérifions le statut d’un paiement précédent. Ne le renouvelle pas pour le moment.' },
+  still_checking: { fr: 'Nous vérifions toujours le statut de ce paiement. Ne le renouvelle pas : ton historique se mettra à jour dès que nous aurons la réponse.' },
   done: { fr: 'Paiement effectué.' },
   pending: { fr: 'Opération enregistrée — en attente de confirmation. Ne la renouvelle pas.' },
   refused: { fr: 'Opération refusée — aucun argent n’a été débité.' },
-  not_received: { fr: 'Le paiement n’a pas été reçu — aucun argent n’a été débité. Tu peux recommencer.' },
+  // Only after the server CLOSED the attempt (nothing ran, and nothing can run later under that key).
+  not_received: { fr: 'Le paiement n’a pas été reçu : il a été annulé et aucun argent n’a été débité. Tu peux recommencer.' },
   // Shape of a reviewed translation (none exist yet):
   //   wo: { text: '…', reviewedBy: 'name/role of the native reviewer', reviewedAt: '2026-…', checkedAgainst: 'fr' }
 };
@@ -43,10 +45,12 @@ export function safetyIdFor(phase) {
     case 'accepted_pending':
       return 'pending';
     case 'failed_safe':
+      return phase.voided ? 'not_received' : 'refused';
     case 'blocked':
       return 'refused';
     case 'safe_to_retry':
-      return 'not_received';
+      // J13-F17: no longer produced; if it ever appears it is treated as UNKNOWN, never as "not debited".
+      return 'checking';
     default:
       return null;
   }

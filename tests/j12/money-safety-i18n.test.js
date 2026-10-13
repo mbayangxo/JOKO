@@ -45,8 +45,13 @@ test('every money phase maps to a safety message; "completed" only for a server-
   assert.equal(safetyIdFor({ state: 'checking' }), 'checking');
   assert.equal(safetyIdFor({ state: 'checking', resumed: true }), 'resumed_checking');
   assert.equal(safetyIdFor({ state: 'accepted_pending' }), 'pending');
-  assert.equal(safetyIdFor({ state: 'safe_to_retry' }), 'not_received');
+  // J13-F17: "not received" only once the server CLOSED the attempt; a legacy safe_to_retry reads as unknown.
+  assert.equal(safetyIdFor({ state: 'safe_to_retry' }), 'checking');
+  assert.equal(safetyIdFor({ state: 'failed_safe', voided: true }), 'not_received');
   assert.equal(safetyIdFor({ state: 'failed_safe' }), 'refused');
+  for (const id of ['checking', 'resumed_checking', 'still_checking']) {
+    assert.ok(!/aucun argent|pas été reçu|effectué/i.test(MONEY_SAFETY[id].fr), `${id} must not state an outcome`);
+  }
   assert.equal(safetyIdFor({ state: 'done' }), 'done');
   assert.equal(safetyIdFor({ state: 'submitting' }), null);
 });

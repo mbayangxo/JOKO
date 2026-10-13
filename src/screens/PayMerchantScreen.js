@@ -220,7 +220,7 @@ function ConfirmStep({ merchant, amount, balance, onPay, onCancel, submitting })
   );
 }
 
-function SuccessStep({ merchant, amount, oldBalance, newBalance, reference, onDone, onMarkedUndone, onShareMbolo, undone }) {
+function SuccessStep({ merchant, amount, oldBalance, newBalance, reference, onDone, onMarkedUndone, onShareMbolo, undone, held = false }) {
   useSuccessHaptic();
   const ring = usePopIn(0, 500, 0.4);
   const title = useEntrance(200, 500, 10);
@@ -232,14 +232,19 @@ function SuccessStep({ merchant, amount, oldBalance, newBalance, reference, onDo
   return (
     <View style={styles.successRoot}>
       <Animated.View style={[styles.ssRing, ring]}>
-        <Text style={{ fontSize: 38, color: colors.greenDark }}>{undone ? '↩' : '✓'}</Text>
+        <Text style={{ fontSize: 38, color: held ? colors.goldDark : colors.greenDark }}>{undone ? '↩' : held ? '🔎' : '✓'}</Text>
       </Animated.View>
-      <Animated.Text style={[styles.ssTitle, title]}>{undone ? 'Annulé' : 'Payé !'}</Animated.Text>
+      {/* J13-F17: a payment held for review is NOT paid — never "Payé !" until the server completes it. */}
+      <Animated.Text style={[styles.ssTitle, title]}>{undone ? 'Annulé' : held ? 'En vérification' : 'Payé !'}</Animated.Text>
       <Animated.Text style={[styles.ssSub, sub]}>
-        {undone ? 'Paiement annulé — argent récupéré.' : `${merchant.name} a reçu\nton paiement instantanément.`}
+        {undone
+          ? 'Paiement annulé — argent récupéré.'
+          : held
+            ? `Ton paiement à ${merchant.name} est en vérification par K21.\nIl n’est pas encore effectué — ne le renouvelle pas.\nTon historique se mettra à jour.`
+            : `${merchant.name} a reçu\nton paiement instantanément.`}
       </Animated.Text>
 
-      {!undone && <UndoTransferBar reference={reference} amount={amount} onUndone={onMarkedUndone} />}
+      {!undone && !held && <UndoTransferBar reference={reference} amount={amount} onUndone={onMarkedUndone} />}
 
       <Animated.View style={receipt}>
         <ReceiptCard
@@ -252,7 +257,7 @@ function SuccessStep({ merchant, amount, oldBalance, newBalance, reference, onDo
             { key: 'ref', label: 'Référence', value: reference, small: true },
           ]}
         />
-        {!undone && (
+        {!undone && !held && (
           <ReceiptShareButtons
             type="merchant"
             amount={amount}
@@ -263,7 +268,7 @@ function SuccessStep({ merchant, amount, oldBalance, newBalance, reference, onDo
         )}
       </Animated.View>
 
-      {!undone && (
+      {!undone && !held && (
         <Animated.View style={[styles.wakhnaBonus, bonus]}>
           <Text style={{ fontSize: 16 }}>✦</Text>
           <Text style={styles.wakhnaBonusText}>
@@ -287,6 +292,7 @@ export default function PayMerchantScreen({ navigation, route }) {
   const [newBalance, setNewBalance] = useState(0);
   const [reference, setReference] = useState('');
   const [undone, setUndone] = useState(false);
+  const [held, setHeld] = useState(false); // J13-F17: answered 202 — under review, not paid
   const [submitting, setSubmitting] = useState(false);
   const [stepUpVisible, setStepUpVisible] = useState(false);
   const [merchants, setMerchants] = useState([]);
@@ -374,6 +380,7 @@ export default function PayMerchantScreen({ navigation, route }) {
       if (out.state === 'done' || out.state === 'accepted_pending') {
         setReference(out.response?.reference ?? out.response?.receiptReference ?? out.references?.[0] ?? '');
         setUndone(false);
+        setHeld(out.state === 'accepted_pending');
         const wallet = await refreshWallet();
         setNewBalance(wallet.balance ?? wallet.koriBalance ?? balance - amount);
         setStep('success');
@@ -455,6 +462,7 @@ export default function PayMerchantScreen({ navigation, route }) {
               onMarkedUndone={handleUndone}
               onShareMbolo={shareMbolo}
               undone={undone}
+              held={held}
             />
           </StepTransition>
         )}

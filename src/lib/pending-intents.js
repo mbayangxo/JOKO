@@ -53,3 +53,19 @@ export async function pendingIntentsToLookUp({ userId, flow, now = Date.now() },
   if (live.length !== list.length) await storage.set(JSON.stringify(live));
   return live.filter((r) => pendingIntentAction(r, { userId, now }) === 'lookup' && r.flow === flow).sort((a, b) => b.createdAt - a.createdAt);
 }
+
+/** J13-F17: hard upper bound — a record is never kept beyond this, even if never resolved. */
+export const PENDING_INTENT_MAX_AGE_MS = 7 * 24 * 3600_000;
+
+/**
+ * J13-F17: EVERY remembered unknown attempt of this user (all flows), for reconciliation to a final answer.
+ * Unlike pendingIntentsToLookUp, the 24 h lookup TTL does not silently drop an unresolved record; only the
+ * 7-day bound (or a clock far in the past/future) does. Other users' records are never returned.
+ */
+export async function listPendingIntents({ userId, now = Date.now() }, storage = defaultStorage) {
+  if (!userId) return [];
+  const list = await readAll(storage);
+  const keep = list.filter((r) => r && typeof r.key === 'string' && Number.isFinite(Number(r.createdAt)) && Math.abs(now - Number(r.createdAt)) <= PENDING_INTENT_MAX_AGE_MS);
+  if (keep.length !== list.length) await storage.set(JSON.stringify(keep));
+  return keep.filter((r) => r.userId === userId).sort((a, b) => a.createdAt - b.createdAt);
+}

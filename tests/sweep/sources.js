@@ -85,6 +85,8 @@ export function sourceFor(routeKey) {
     [/^businesses\/:id\/work\/applications\/:subId/, `SELECT o."businessId" || '|' || a."id" FROM "WorkApplication" a JOIN "WorkOpportunity" o ON o."id" = a."opportunityId" WHERE o."businessId" NOT IN ($MYBIZ)`],
     [/^businesses\/:id\/work\/disputes\/:subId/, `SELECT a."businessId" || '|' || d."id" FROM "WorkDispute" d JOIN "WorkAssignment" a ON a."id" = d."assignmentId" WHERE a."businessId" NOT IN ($MYBIZ)`],
     [/^businesses\/:id/, `SELECT "id" FROM "Business" WHERE "id" NOT IN ($MYBIZ)`],
+    // J13-F17: another user's intent keys (raw part only). Voiding one acts on the caller's OWN namespace.
+    [/^money\/intents\/:id/, `SELECT regexp_replace("key", '^api:[^:]+:[^:]+:', '') FROM "ApiIdempotency" WHERE "provider" = 'api' AND "userId" <> $ME AND "operation" <> 'intent_void'`],
     [/^money\/charges\/:id/, `SELECT "code" FROM "MerchantCharge" WHERE "businessId" NOT IN ($MYBIZ)`],
     [/^money\/payments\/:reference/, `SELECT e."reference" FROM "JournalEntry" e WHERE e."kind" IN ('pay_merchant','merchant_payment','charge_payment','business_payment') AND NOT EXISTS (SELECT 1 FROM "Posting" p JOIN "LedgerAccount" a ON a."id" = p."accountId" WHERE p."entryId" = e."id" AND (a."code" LIKE 'customer:' || $ME || ':%' OR a."ownerId" IN ($ME, $MYBIZ)))`],
     [/^roles\/:id/, null], // self-scoped: covered by tests/j3/authz-roles (no foreign object)

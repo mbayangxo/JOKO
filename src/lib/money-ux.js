@@ -37,7 +37,7 @@ export function classifySubmission({ response, error }) {
   }
   // Outcome unknown: the request may or may not have executed.
   if (e.code === 'outcome_unknown' || e.code === 'timeout' || e.code === 'network' || e.code === 'idempotency_in_progress' || (e.status >= 500 && e.status !== 503)) {
-    return { state: 'checking', message: 'Vérification du paiement en cours… Ne le renouvelle pas.', canRetrySameIntent: false, newIntentAllowed: false };
+    return { state: 'checking', unknown: true, message: PROVISIONAL, canRetrySameIntent: false, newIntentAllowed: false };
   }
   if (e.code === 'step_up_required') {
     return { state: 'needs_pin', message: 'Confirme avec ton code PIN.', canRetrySameIntent: true, newIntentAllowed: false };
@@ -50,24 +50,38 @@ export function classifySubmission({ response, error }) {
     category: e.category ?? e.data?.category ?? null,
     canRetrySameIntent: e.status === 503,
     newIntentAllowed: true,
+    ...(e.code === 'intent_voided' ? { voided: true, confirmed: true } : {}),
   };
 }
 
-/** Interpret GET /api/money/intents/:key while the screen shows "checking". */
+// J13-F17: wording for an UNKNOWN outcome. Never "aucun argent n’a été débité" (nor "effectué") until the
+// server has given a final answer.
+export const PROVISIONAL = 'Nous vérifions le statut de ce paiement. Ne le renouvelle pas pour le moment.';
+export const NOT_RECEIVED_CONFIRMED = 'Le paiement n’a pas été reçu : il a été annulé et aucun argent n’a été débité. Tu peux recommencer.';
+
+/**
+ * Interpret GET /api/money/intents/:key (or its /void answer).
+ *   done              completed (confirmed)
+ *   accepted_pending  under review / provider pending (not a success, not a failure)
+ *   failed_safe       CONFIRMED not executed: refused, or the key was closed before anything arrived (voided)
+ *   checking          UNKNOWN: in progress, or nothing received YET (the original may still arrive)
+ */
 export function classifyIntent(intent) {
   switch (intent?.state) {
     case 'completed':
       return { state: 'done', message: 'Paiement effectué.', references: intent.references ?? [], stopPolling: true };
     case 'accepted_pending':
-      return { state: 'accepted_pending', message: intent.message, references: intent.references ?? [], stopPolling: true };
+      return { state: 'accepted_pending', message: intent.message ?? 'Opération en vérification par K21. Ne la renouvelle pas — suis-la dans ton historique.', references: intent.references ?? [], stopPolling: true };
     case 'refused':
-      return { state: 'failed_safe', message: 'Opération refusée — aucun argent n’a été débité.', stopPolling: true, newIntentAllowed: true };
+      return { state: 'failed_safe', confirmed: true, message: 'Opération refusée — aucun argent n’a été débité.', stopPolling: true, newIntentAllowed: true };
+    case 'voided':
+      return { state: 'failed_safe', confirmed: true, voided: true, message: NOT_RECEIVED_CONFIRMED, stopPolling: true, newIntentAllowed: true };
     case 'not_found':
-      // Nothing reached the server: retrying with the SAME intent key is safe.
-      return { state: 'safe_to_retry', message: 'Le paiement n’a pas été reçu. Tu peux réessayer sans risque de double paiement.', stopPolling: true, canRetrySameIntent: true };
+      // J13-F17: NOT final — nothing has arrived yet, the original may still. Never "safe to retry" here.
+      return { state: 'checking', unknown: true, message: PROVISIONAL, stopPolling: false, canRetrySameIntent: false, newIntentAllowed: false };
     case 'in_progress':
     default:
-      return { state: 'checking', message: 'Vérification du paiement en cours…', stopPolling: false };
+      return { state: 'checking', unknown: true, message: PROVISIONAL, stopPolling: false, canRetrySameIntent: false, newIntentAllowed: false };
   }
 }
 
@@ -178,6 +192,8 @@ export function requestCreateProblem(error) {
 export function outcomeToast(out, successText) {
   if (out?.state === 'done') return successText;
   if (out?.state === 'accepted_pending') return out.message ?? 'Opération enregistrée — en attente de confirmation. Ne la renouvelle pas.';
-  if (out?.state === 'checking') return out.message ?? 'Vérification du paiement en cours… Ne le renouvelle pas.';
-  return out?.message ?? 'Opération refusée — aucun argent n’a été débité.';
+  // Only a CONFIRMED answer may say that no money moved (J13-F17).
+  if (out?.state === 'failed_safe' || out?.state === 'blocked') return out.message ?? 'Opération refusée — aucun argent n’a été débité.';
+  if (out?.state === 'needs_pin') return out.message ?? 'Confirme avec ton code PIN.';
+  return PROVISIONAL;
 }

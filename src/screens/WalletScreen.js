@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import LoadErrorState from '../components/LoadErrorState';
+import { intentReconciler, reconcileNow } from '../lib/intent-reconciliation';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -239,11 +240,16 @@ export default function WalletScreen({ navigation }) {
   const [activityLoaded, setActivityLoaded] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
+  // J13-F17: an unknown payment that gets its final answer (here or anywhere in the app) reloads the history
+  // and balance from the server — the provisional state is replaced by the authoritative one.
+  useEffect(() => intentReconciler.subscribe(() => setReloadKey((k) => k + 1)), []);
+
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       setLoading(true);
       setActivityLoaded(false);
+      reconcileNow(); // history refresh = a reconciliation point (lookups only; never a re-submission)
       // Server-authoritative balance + one coherent history (survives reinstall).
       Promise.all([getMoneyHome(), getMoneyActivity()])
         .then(([h, a]) => {

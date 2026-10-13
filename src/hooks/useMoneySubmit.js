@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getMoneyIntent } from '../lib/api-client';
-import { classifyIntent, classifySubmission, newIntentKey } from '../lib/money-ux';
+import { classifySubmission, newIntentKey, PROVISIONAL } from '../lib/money-ux';
 import { getAccessToken } from '../lib/secure-storage';
-import { INTENT_RETRY_WINDOW_MS, instructionFingerprint, sameKeyRetryAllowed, subjectOf } from '../lib/offline-policy';
-import { forgetPendingIntent, pendingIntentsToLookUp, rememberPendingIntent } from '../lib/pending-intents';
+import { instructionFingerprint, sameKeyRetryAllowed, subjectOf } from '../lib/offline-policy';
+import { pendingIntentsToLookUp, rememberPendingIntent } from '../lib/pending-intents';
+import { intentReconciler } from '../lib/intent-reconciliation';
 
 /**
  * J4 — one money submission = one intent key, reused for every retry of that
@@ -20,13 +20,13 @@ import { forgetPendingIntent, pendingIntentsToLookUp, rememberPendingIntent } fr
  *  - nothing is ever shown as completed until the server says so.
  *
  * phase.state: idle | submitting | done | accepted_pending | checking |
- *              needs_pin | blocked | failed_safe | safe_to_retry
+ *              needs_pin | blocked | failed_safe   (J13-F17: no 'safe_to_retry' — "not received yet" is
+ *              'checking' until the server confirms or the key is closed)
  */
 const POLL_MS = 2000;
 const POLL_TRIES = 15;
-// Final answers: the remembered intent is forgotten. "Nothing received" (safe_to_retry) is NOT final for the
-// device: the key is kept until the retry window ends, so the SAME payment re-entered — even after another
-// restart — reuses it, and a late-arriving original request can never execute twice.
+// Final answers end the attempt. "Nothing received YET" is NOT final (J13-F17): it stays "checking" until the
+// server confirms an outcome or the key is closed by the reconciler (lib/intent-reconciler.js).
 const FINAL = new Set(['done', 'accepted_pending', 'failed_safe', 'blocked']);
 
 const currentUser = async () => subjectOf(await getAccessToken().catch(() => null));
@@ -46,32 +46,28 @@ export function useMoneySubmit(flow = 'money') {
     setPhase({ state: 'idle' });
   }, [rotate]);
 
-  const poll = useCallback(async (resumed = null) => {
-    const key = keyRef.current;
+  // J13-F17: an answer found later (app resume, history refresh, foreground interval) replaces the provisional
+  // banner of the attempt it belongs to — and only that one.
+  useEffect(() => intentReconciler.subscribe((event) => {
+    if (event.key !== keyRef.current) return;
+    setPhase((p) => ({ ...event, afterCheck: true, ...(p.resumed ? { resumed: true } : {}) }));
+    if (event.newIntentAllowed) rotate();
+  }), [rotate]);
+
+  const poll = useCallback(async (rec, resumed = false) => {
     for (let i = 0; i < POLL_TRIES; i += 1) {
       await new Promise((r) => setTimeout(r, POLL_MS));
-      try {
-        let out = classifyIntent(await getMoneyIntent(key));
-        if (out.stopPolling) {
-          if (FINAL.has(out.state)) forgetPendingIntent(key).catch(() => {});
-          if (resumed && out.state === 'safe_to_retry') {
-            // After a restart: nothing was received. Within the retry window the key stays bound to the
-            // instruction's hash (same payment → same key); after it, the record is dropped and a new
-            // payment needs a fresh confirmation. Never shown as "failed" — only "not received".
-            const fresh = resumed.fp && Date.now() - resumed.createdAt <= INTENT_RETRY_WINDOW_MS;
-            if (fresh) attemptRef.current = { userId: resumed.userId, fingerprint: resumed.fp, createdAt: resumed.createdAt };
-            else forgetPendingIntent(key).catch(() => {});
-            out = { ...out, canRetrySameIntent: Boolean(fresh), newIntentAllowed: !fresh, message: 'Le paiement précédent n’a pas été reçu — aucun argent n’a été débité. Tu peux recommencer.' };
-          }
-          setPhase({ ...out, afterCheck: true, ...(resumed ? { resumed: true } : {}) }); // shown by MoneyPhaseBanner
-          if (out.newIntentAllowed) rotate();
-          return out;
-        }
-      } catch {
-        // still offline: keep showing "checking" — never suggest paying again
+      if (keyRef.current !== rec.key) return { state: 'superseded' };
+      // Lookup only (and, once overdue, closing a key nothing ran under) — never a re-submission.
+      const out = await intentReconciler.reconcileOne(rec);
+      if (FINAL.has(out.state)) {
+        setPhase({ ...out, afterCheck: true, ...(resumed ? { resumed: true } : {}) }); // shown by MoneyPhaseBanner
+        if (out.newIntentAllowed) rotate();
+        return out;
       }
     }
-    const still = { state: 'checking', message: 'Toujours en vérification. Consulte ton historique avant de renouveler.', stopPolling: true };
+    // Still unknown: keep blocking a second payment; the app-wide reconciler keeps checking in the foreground.
+    const still = { state: 'checking', unknown: true, message: PROVISIONAL, stopPolling: true, ...(resumed ? { resumed: true } : {}) };
     setPhase(still);
     return still;
   }, [rotate]);
@@ -85,9 +81,9 @@ export function useMoneySubmit(flow = 'money') {
       const [rec] = await pendingIntentsToLookUp({ userId, flow }).catch(() => []);
       if (!alive || !rec) return;
       keyRef.current = rec.key;
-      attemptRef.current = null; // only a definite "nothing received" re-binds the key (see poll)
-      setPhase({ state: 'checking', resumed: true, message: 'Un paiement précédent est en vérification… Ne le renouvelle pas.' });
-      poll(rec);
+      attemptRef.current = null; // an unknown attempt is only ever looked up — never re-bound for a retry
+      setPhase({ state: 'checking', resumed: true, unknown: true, message: 'Nous vérifions le statut d’un paiement précédent. Ne le renouvelle pas pour le moment.' });
+      poll(rec, true);
     })();
     return () => {
       alive = false;
@@ -120,8 +116,9 @@ export function useMoneySubmit(flow = 'money') {
         setPhase({ ...c, error });
         if (c.newIntentAllowed) rotate();
         if (c.state === 'checking') {
-          if (userId) await rememberPendingIntent({ key, userId, flow, fp: fingerprint }).catch(() => {});
-          const resolved = await poll();
+          const createdAt = attemptRef.current?.createdAt ?? Date.now();
+          if (userId) await rememberPendingIntent({ key, userId, flow, fp: fingerprint, now: createdAt }).catch(() => {});
+          const resolved = await poll({ key, userId, flow, createdAt });
           return { ok: resolved.state === 'done', error, ...resolved };
         }
         return { ok: false, error, ...c };

@@ -135,7 +135,7 @@ try {
     await openSend(page, bC.handle);
     await tap(page, 'Oui — Envoyer');
     await pinIfAsked(page);
-    await see(page, 'Vérification du paiement en cours');
+    await see(page, 'Nous vérifions le statut de ce paiement');
     assert.ok(!(await visible(page, 'Envoyé !')), 'never shown as sent before the server confirms');
     // a nervous second tap while checking must not fire a second payment
     await page.getByText('Oui — Envoyer').filter({ visible: true }).first().click({ timeout: 2000 }).catch(() => {});
@@ -153,7 +153,7 @@ try {
   await step('restart while unknown: the app resumes the LOOKUP (never re-sends) and confirms only from the server', async () => {
     await page.reload();
     await openSend(page, bC.handle).catch(() => {}); // land on the Send screen again (the banner shows at the top)
-    await see(page, 'Un paiement précédent est en vérification');
+    await see(page, 'Nous vérifions le statut d’un paiement précédent'); // J13-F17 provisional wording
     assert.ok(!(await visible(page, 'Paiement effectué')), 'still unknown while lookups fail');
     intentsCut = false; // network back
     await see(page, 'Paiement effectué', 40_000);
@@ -175,7 +175,12 @@ try {
     await page.waitForTimeout(4000);
     assert.ok(!(await visible(page, 'Envoyé !')), 'offline: never shown as sent');
     await ctx.setOffline(false);
-    await see(page, 'Le paiement n’a pas été reçu', 45_000); // the intent lookup proves nothing executed
+    // J13-F17: "nothing received YET" is provisional — never "not received / no money debited" until the
+    // server has CLOSED the attempt (after which a late original is refused).
+    await see(page, 'Nous vérifions le statut de ce paiement', 45_000);
+    await page.waitForTimeout(15_000);
+    assert.ok(!(await visible(page, 'pas été reçu')), 'never a definitive "not received" while the original may still arrive');
+    await see(page, 'Le paiement n’a pas été reçu : il a été annulé', 150_000);
     assert.equal(await bal(A.id), before, 'no money moved');
   });
 
@@ -190,7 +195,7 @@ try {
     });
     await openSend(page, bC.handle);
     await page.waitForTimeout(3000);
-    assert.ok(!(await visible(page, 'Un paiement précédent')), 'C is not shown A’s pending payment');
+    assert.ok(!(await visible(page, 'paiement précédent')), 'C is not shown A’s pending payment');
     assert.equal(lookups, 0, 'C’s session never looks up A’s intent');
   });
 
@@ -217,7 +222,7 @@ try {
     await tap(gp, 'Groupes d’épargne (nouveau)');
     await tap(gp, name);
     await tap(gp, 'Cotiser 1000 ₭', { exact: true });
-    await see(gp, 'Vérification du paiement en cours');
+    await see(gp, 'Nous vérifions le statut de ce paiement');
     assert.ok(!(await visible(gp, 'Cotisation enregistrée')), 'never shown as paid before the server confirms');
     await see(gp, 'Paiement effectué', 40_000); // the intent lookup — not a re-send — confirms it
     assert.equal(await prisma.collectivePayment.count({ where: { groupId: g.id, userId: m1.id, kind: 'contribution' } }), 1, 'one contribution');

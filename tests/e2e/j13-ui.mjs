@@ -11,6 +11,8 @@
  *   6. A slow-network double tap on a GlowButton sends one request.
  *   7. Recipient renamed/reclaimed after confirmation: refused, nobody paid (J13-F12).
  *   8. A notification to another account's parcel reveals nothing.
+ *   9–11. J13-F17: lost reply → provisional then settled; never-arrived → closed, final, late original refused;
+ *        a 202 hold → "en vérification", never closed.
  *
  *   WEB_DIR=… PLAYWRIGHT_CORE=… CHROMIUM=… DATABASE_URL=… node tests/e2e/j13-ui.mjs
  */
@@ -130,7 +132,7 @@ try {
     await openCampaign(page, title);
     await page.getByPlaceholder('Montant').filter({ visible: true }).first().fill('1000');
     await tap(page, 'Contribuer', { exact: true });
-    await see(page, 'Vérification du paiement en cours');
+    await see(page, 'Nous vérifions le statut de ce paiement');
     assert.equal(await seenEver(page, 'Merci pour ton don'), false, 'no thanks before the server confirms');
     await page.getByText('Contribuer', { exact: true }).filter({ visible: true }).first().click({ timeout: 2000 }).catch(() => {});
     await page.waitForTimeout(1500);
@@ -297,6 +299,110 @@ try {
     for (const leak of [`HP-SECRET-${hx}`, '918273', `Colis privé ${hx}`]) {
       assert.equal(await seenEver(page, leak), false, `leaked ${leak}`);
     }
+    await ctx.close();
+  });
+
+  // ── J13-F17: uncertain outcomes are provisional until the server confirms; reconciliation never re-sends ──
+  async function sendFlow(page, handle) {
+    await tap(page, 'Yónnee', { exact: true });
+    await see(page, 'À qui ?');
+    await tap(page, 'Handle', { exact: true });
+    await page.getByPlaceholder('@handle').filter({ visible: true }).first().fill(`@${handle}`);
+    await see(page, `@${handle}`, 60_000);
+    await tap(page, 'Continuer →');
+    await tap(page, 'Oui — Envoyer');
+    const pin = await page.getByText('Confirme ton PIN').filter({ visible: true }).first().waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);
+    if (pin) for (const d of PIN) await tap(page, d, { exact: true, last: true });
+  }
+  const NEVER_EARLY = ['aucun argent', 'pas été reçu', 'Envoyé !', 'Paiement effectué'];
+  const wallet = async (id) => { const x = await prisma.wallet.findUnique({ where: { userId: id } }); return x.balance + x.koriBalance; };
+
+  await step('J13-F17 lost reply: provisional "nous vérifions" (never failed/succeeded), then the server answer settles it; paid once; history updated', async () => {
+    const a = await customer({ koriBalance: 20_000 });
+    await prisma.user.update({ where: { id: a.id }, data: { pinHash: await bcrypt.hash(PIN, 4) } });
+    const A = await signedIn(api, a);
+    const b = await customer();
+    const { ctx, page } = await sessionPage(A, 'f17-lost');
+    let executed = 0;
+    let replays = 0;
+    let lookupsCut = true;
+    await page.route('**/api/transfers/send', async (route) => {
+      const resp = await route.fetch();
+      if (resp.status() === 201) {
+        // The client's automatic same-key retry gets the STORED reply (Idempotent-Replay), never a 2nd payment.
+        if (resp.headers()['idempotent-replay'] === 'true') replays += 1;
+        else executed += 1;
+        return route.abort('failed'); // ran on the server; reply lost
+      }
+      return route.fulfill({ response: resp });
+    });
+    await page.route('**/api/money/intents/**', (route) => (lookupsCut ? route.abort('failed') : route.continue()));
+    const a0 = await wallet(a.id);
+    await sendFlow(page, b.handle);
+    await see(page, 'Nous vérifions le statut de ce paiement', 45_000);
+    await page.waitForTimeout(5000);
+    for (const t of NEVER_EARLY) assert.equal(await seenEver(page, t), false, `"${t}" shown before the server answered`);
+    assert.equal(executed, 1, `one execution (replays of the stored reply: ${replays})`);
+    assert.equal(a0 - (await wallet(a.id)), 5000, 'the server debited once');
+    assert.equal(await prisma.koriTransaction.count({ where: { senderId: a.id } }), 1, 'one payment row');
+    lookupsCut = false; // the network comes back: reconciliation (lookups only) gets the authoritative answer
+    await see(page, 'Paiement effectué', 60_000);
+    assert.equal(a0 - (await wallet(a.id)), 5000, 'still exactly once — reconciliation never re-sends');
+    await page.goto(`http://127.0.0.1:${web.port}/`);
+    await tap(page, 'Mon portefeuille');
+    await see(page, '✓ Effectué');
+    await ctx.close();
+  });
+
+  await step('J13-F17 never arrived: provisional until the key is CLOSED; then "not received" is final and a delayed original is refused', async () => {
+    const a = await customer({ koriBalance: 20_000 });
+    await prisma.user.update({ where: { id: a.id }, data: { pinHash: await bcrypt.hash(PIN, 4) } });
+    const A = await signedIn(api, a);
+    const b = await customer();
+    const { ctx, page } = await sessionPage(A, 'f17-void');
+    let lost = null;
+    let voids = 0;
+    await page.route('**/api/transfers/send', async (route) => {
+      const req = route.request();
+      if (!req.headers()['x-step-up-token']) return route.continue(); // the PIN challenge: executes nothing
+      lost = { key: req.headers()['idempotency-key'], body: req.postDataJSON(), token: req.headers()['x-step-up-token'] };
+      return route.abort('failed'); // never reaches the server
+    });
+    await page.route('**/api/money/intents/*/void', (route) => { voids += 1; return route.continue(); });
+    const a0 = await wallet(a.id);
+    await sendFlow(page, b.handle);
+    await see(page, 'Nous vérifions le statut de ce paiement', 45_000);
+    await page.waitForTimeout(20_000);
+    for (const t of NEVER_EARLY) assert.equal(await seenEver(page, t), false, `"${t}" shown while the original could still arrive`);
+    await see(page, 'Le paiement n’a pas été reçu : il a été annulé', 150_000);
+    assert.ok(voids >= 1, 'closed by the reconciler');
+    assert.ok(lost?.key, 'the lost request was captured');
+    // The "delayed original" finally reaches the server with its original key, body and PIN token: refused.
+    const late = await A.call('POST', 'transfers/send', lost.body, { headers: { 'idempotency-key': lost.key, 'x-step-up-token': lost.token } });
+    assert.equal(late.status, 409, JSON.stringify(late.body));
+    assert.equal(late.body.code, 'intent_voided');
+    assert.equal(await wallet(a.id), a0, 'no money moved');
+    assert.equal(await prisma.koriTransaction.count({ where: { senderId: a.id } }), 0);
+    await ctx.close();
+  });
+
+  await step('J13-F17 risk-review hold (202): "en vérification" — neither success nor failure, and never closed', async () => {
+    const a = await customer({ koriBalance: 20_000 });
+    await prisma.user.update({ where: { id: a.id }, data: { pinHash: await bcrypt.hash(PIN, 4) } });
+    const A = await signedIn(api, a);
+    const b = await customer();
+    const { ctx, page } = await sessionPage(A, 'f17-hold');
+    let voids = 0;
+    await page.route('**/api/transfers/send', (route) => (route.request().headers()['x-step-up-token']
+      ? route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ status: 'pending_review', held: true, message: 'Opération en vérification par K21. Ne la renouvelle pas.' }) })
+      : route.continue()));
+    await page.route('**/api/money/intents/*/void', (route) => { voids += 1; return route.continue(); });
+    await sendFlow(page, b.handle);
+    await see(page, 'en vérification', 45_000);
+    await page.waitForTimeout(20_000);
+    for (const t of ['aucun argent', 'pas été reçu', 'Paiement effectué', 'Envoyé !', 'a reçu ton argent']) assert.equal(await seenEver(page, t), false, `"${t}" for a held payment`);
+    await see(page, 'En vérification');
+    assert.equal(voids, 0, 'a held payment is never closed');
     await ctx.close();
   });
 

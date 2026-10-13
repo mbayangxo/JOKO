@@ -1735,6 +1735,11 @@ export function getMoneyIntent(intentKey) {
   return apiFetch(`/api/money/intents/${encodeURIComponent(intentKey)}`, { skipCache: true });
 }
 
+/** J13-F17: close an intent that never reached the server (moves no money; never closes one that ran). */
+export function voidMoneyIntent(intentKey) {
+  return apiFetch(`/api/money/intents/${encodeURIComponent(intentKey)}/void`, { method: 'POST', skipCache: true });
+}
+
 export function createMerchantCharge({ businessId, amountKori, label, externalRef, orderId }) {
   return apiFetch('/api/money/charges', { method: 'POST', body: { businessId, amountKori, label, externalRef, orderId }, skipCache: true });
 }

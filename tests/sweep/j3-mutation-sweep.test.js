@@ -49,6 +49,10 @@ const PUBLIC_BY_DESIGN = new Set([
   'POST polls/:id/vote', // profile polls are public: the vote is the attacker's own
   // Self-scoped by construction: deletes only friendship edges that include the caller.
   'DELETE friends/:id',
+  // J13-F17, self-scoped by construction: closes only the CALLER's own intent namespace (api:<caller>:VOID:<key>);
+  // someone else's identical key is never touched — proven in tests/j13/f17-reconciliation.test.js. Answering
+  // differently for a key that exists elsewhere would be an existence oracle.
+  'POST money/intents/:id/void',
   // Role by design: the attacker IS an active courier, and accepting an OPEN
   // job is what couriers do (the buyer requested it; escrow is the buyer's own
   // request). Pickup/deliver/confirm on someone else's job stay refused.

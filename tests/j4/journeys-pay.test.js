@@ -69,10 +69,15 @@ test('P2P: duplicate tap / retry with the same intent key never pays twice; the 
   // After an app restart (new session on another phone) the outcome is the same.
   const again = await signedIn(api, { ...A, device: newDevice() });
   assert.equal((await again.call('GET', `money/intents/${k}`)).body.state, 'completed');
-  // A never-submitted intent is safe to retry.
-  const unknown = await A.call('GET', `money/intents/${key()}`);
+  // J13-F17: "nothing received YET" is NOT safe to retry — the original may still arrive. Only once the key
+  // is closed (and a late original therefore refused) is it a final "not received".
+  const uk = key();
+  const unknown = await A.call('GET', `money/intents/${uk}`);
   assert.equal(unknown.body.state, 'not_found');
-  assert.equal(unknown.body.safeToRetry, true);
+  assert.equal(unknown.body.safeToRetry, false);
+  const closed = await A.call('POST', `money/intents/${uk}/void`, {});
+  assert.equal(closed.body.state, 'voided');
+  assert.equal((await A.call('GET', `money/intents/${uk}`)).body.safeToRetry, true);
   // Same key, different amount → refused (no silent second payment).
   const reuse = await A.call('POST', 'transfers/send', { recipientHandle: B.handle, amount: 999 }, { headers: { 'idempotency-key': k } });
   assert.equal(reuse.status, 422);

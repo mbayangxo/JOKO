@@ -269,7 +269,7 @@ try {
       await openSend(page, B.handle);
       await tap(page, 'Oui — Envoyer');
       await pinIfAsked(page);
-      await see(page, 'Vérification du paiement en cours');
+      await see(page, 'Nous vérifions le statut de ce paiement');
       await page.close();
       // the clock is "fixed" again and the network is back: a fresh page of the same app
       const { page: p2 } = await open(ctx, A, `clock${skewH}-after`);
@@ -345,7 +345,7 @@ try {
     await openSend(page, B.handle);
     await tap(page, 'Oui — Envoyer');
     await pinIfAsked(page);
-    await see(page, 'Vérification du paiement en cours');
+    await see(page, 'Nous vérifions le statut de ce paiement');
     await cdp.send('Page.setWebLifecycleState', { state: 'frozen' });
     await new Promise((r) => setTimeout(r, 10_000));
     await cdp.send('Page.setWebLifecycleState', { state: 'active' });

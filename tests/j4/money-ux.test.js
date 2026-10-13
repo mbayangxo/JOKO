@@ -58,12 +58,16 @@ test('definite refusals: nothing debited, server message + next step shown, a ne
   assert.equal(outage.canRetrySameIntent, true);
 });
 
-test('intent polling: completed / pending / refused / not_found stop; in_progress keeps checking', () => {
+test('intent polling: completed / pending / refused / voided stop; in_progress AND not_found keep checking (J13-F17)', () => {
   assert.deepEqual(
-    [classifyIntent({ state: 'completed', references: ['a'] }), classifyIntent({ state: 'accepted_pending' }), classifyIntent({ state: 'refused' }), classifyIntent({ state: 'not_found' })].map((x) => [x.state, x.stopPolling]),
-    [['done', true], ['accepted_pending', true], ['failed_safe', true], ['safe_to_retry', true]],
+    [classifyIntent({ state: 'completed', references: ['a'] }), classifyIntent({ state: 'accepted_pending' }), classifyIntent({ state: 'refused' }), classifyIntent({ state: 'voided' })].map((x) => [x.state, x.stopPolling]),
+    [['done', true], ['accepted_pending', true], ['failed_safe', true], ['failed_safe', true]],
   );
-  assert.equal(classifyIntent({ state: 'not_found' }).canRetrySameIntent, true);
+  // "Nothing received YET" is not an answer: the original may still arrive. Never "safe to retry".
+  const nf = classifyIntent({ state: 'not_found' });
+  assert.deepEqual([nf.state, nf.stopPolling, nf.canRetrySameIntent, nf.newIntentAllowed], ['checking', false, false, false]);
+  assert.ok(!/aucun argent|pas été reçu|effectué/i.test(nf.message), nf.message);
+  assert.equal(classifyIntent({ state: 'voided' }).voided, true);
   for (const s of [{ state: 'in_progress' }, null, {}]) assert.equal(classifyIntent(s).stopPolling, false);
 });
 

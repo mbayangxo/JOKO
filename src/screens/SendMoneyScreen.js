@@ -394,7 +394,7 @@ function ConfirmStep({ amount, reason, balance, recipientProfile, onConfirm, onC
   );
 }
 
-function SuccessStep({ amount, reason, reference, recipientProfile, onDone, onMarkedUndone, onShareMbolo, undone }) {
+function SuccessStep({ amount, reason, reference, recipientProfile, onDone, onMarkedUndone, onShareMbolo, undone, held = false }) {
   useSuccessHaptic();
   const ring = usePopIn(0, 500, 0.3);
   const title = useEntrance(200, 500, 10);
@@ -405,19 +405,22 @@ function SuccessStep({ amount, reason, reference, recipientProfile, onDone, onMa
 
   return (
     <View style={styles.successRoot}>
-      {!undone ? <ConfettiBurst /> : null}
+      {!undone && !held ? <ConfettiBurst /> : null}
       <View style={styles.successContent}>
         <Animated.View style={[styles.ssRing, ring]}>
-          <Text style={{ fontSize: 38, color: colors.green }}>{undone ? '↩' : '✓'}</Text>
+          <Text style={{ fontSize: 38, color: held ? colors.goldDark : colors.green }}>{undone ? '↩' : held ? '🔎' : '✓'}</Text>
         </Animated.View>
-        <Animated.Text style={[styles.ssTitle, title]}>{undone ? 'Annulé' : 'Envoyé !'}</Animated.Text>
+        {/* J13-F17: a payment held for review is NOT sent — never "Envoyé !" until the server completes it. */}
+        <Animated.Text style={[styles.ssTitle, title]}>{undone ? 'Annulé' : held ? 'En vérification' : 'Envoyé !'}</Animated.Text>
         <Animated.Text style={[styles.ssSub, sub]}>
           {undone
             ? 'L\'argent est revenu sur ton compte.'
-            : `${label} a reçu ton argent\nen quelques secondes.`}
+            : held
+              ? `Ton envoi à ${label} est en vérification par K21.\nIl n’est pas encore effectué — ne le renouvelle pas.\nTon historique se mettra à jour.`
+              : `${label} a reçu ton argent\nen quelques secondes.`}
         </Animated.Text>
 
-        {!undone && (
+        {!undone && !held && (
           <UndoTransferBar reference={reference} amount={amount} onUndone={onMarkedUndone} />
         )}
 
@@ -432,7 +435,7 @@ function SuccessStep({ amount, reason, reference, recipientProfile, onDone, onMa
               { key: 'ref', label: 'Référence', value: reference, small: true },
             ]}
           />
-          {!undone && (
+          {!undone && !held && (
             <ReceiptShareButtons
               amount={amount}
               counterparty={label}
@@ -475,6 +478,7 @@ export default function SendMoneyScreen({ navigation, route }) {
   const [lookupError, setLookupError] = useState('');
   // Set only when the lookup failed to REACH the server (not for "introuvable"): then it may retry.
   const [lookupNetworkFail, setLookupNetworkFail] = useState(false);
+  const [held, setHeld] = useState(false); // J13-F17: answered 202 — under review, not sent
   const [reference, setReference] = useState('');
   const [undone, setUndone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -678,6 +682,7 @@ export default function SendMoneyScreen({ navigation, route }) {
       if (out.state === 'done' || out.state === 'accepted_pending') {
         setReference(out.response?.reference ?? out.references?.[0] ?? out.error?.data?.references?.[0] ?? null);
         setUndone(false);
+        setHeld(out.state === 'accepted_pending');
         removeAttachment();
         await refreshWallet();
         setStep('success');
@@ -787,6 +792,7 @@ export default function SendMoneyScreen({ navigation, route }) {
               onMarkedUndone={handleUndone}
               onShareMbolo={shareMbolo}
               undone={undone}
+              held={held}
             />
           </StepTransition>
         )}

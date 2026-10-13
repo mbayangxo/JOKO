@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**725 routes.** Column legend:
+**726 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -820,6 +820,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET money/activity/:reference` | user | wallet.receipt.read | party (the reference touches the caller’s accounts / own operation) |  |  |  |  |  |  |
 | `POST money/preview` | user | wallet.preview | self |  |  |  |  |  | server-authoritative amount / fee / total; executes nothing |
 | `GET money/intents/:id` | user | wallet.intent.read | self (own Idempotency-Key namespace) |  |  |  |  |  |  |
+| `POST money/intents/:id/void` | user | wallet.intent.read | self (own Idempotency-Key namespace) |  |  |  |  |  | J13-F17: closes an intent that never arrived (refuses a late original); executes nothing, never closes one that ran |
 | `POST money/charges` | user | merchant.charge.create | business:business.charges.create |  |  |  |  | ledger |  |
 | `GET money/charges/:id` | user | merchant.charge.view | opaque code holder (server-provided merchant + amount only) |  |  |  |  |  |  |
 | `POST money/charges/:id/pay` | user | merchant.charge.pay | payer (pays own wallet → merchant; once; before expiry; amount must match) |  | 1 | amount |  | ledger+risk |  |
