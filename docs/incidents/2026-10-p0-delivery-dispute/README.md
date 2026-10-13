@@ -138,3 +138,16 @@ No other reachable money-moving route with this bypass was found in the live cod
 - Production deployments from that branch all failed after `7d262de`, so the live build (`7d262de`, 2026-07-17) does **not** contain the bug.
 - The patch package's recommended base, **`7d262de`**, remains correct. Applying the patch on `19ac203` would ship a blank app.
 - Fixed on the audit branch (one-line import). This does not change any state of the incident.
+
+## 9. Re-verification on the current production base `b0318b5` (2026-10-13, local only)
+
+Production now runs `b0318b5`, which is `7d262de` plus the P0-A containment and does not touch the files in this patch.
+- `emergency-b0318b5.patch` is **byte-identical** to `emergency-7d262de.patch` (sha256 prefix `a52648f78bf37b72`) and applies cleanly to `b0318b5`.
+
+| Check (fresh database, production-shaped) | Result |
+|---|---|
+| `b0318b5` + patch, full production suite (`npm test`) | **122 / 122** |
+| Probe `p0b-dispute-resolve.test.js` on the patched tree (every caller, both outcomes, with/without key) | **pass**: 403 `operator_required`; no escrow, dispute or wallet row changed |
+| The same probe on **unpatched** `b0318b5` | **fails** (the route still answers as a working route: the exposure persists in production) |
+
+**Status: still OPEN in production.** Separate package; deployment not authorized and not performed. Vercel access from this session returns 403 even for the deployment list (2026-10-13).

@@ -66,3 +66,15 @@ File: `historical-duplicates.sql`. It runs inside `BEGIN TRANSACTION READ ONLY â
 ## 9. Rollback / forward-fix
 - **Rollback:** redeploy `7d262de` (the bug returns but no data is harmed). Logs left in `payout_pending` by an interrupted request are safe: they are not payable. Return them to `verified` after review with a single targeted, audited update.
 - **Forward-fix:** preferred. Any defect in the claim logic fails closed: nothing is paid, and the logs stay claimed or verified.
+
+## 10. Re-verification on the current production base `b0318b5` (2026-10-13, local only)
+
+- `f1-hotfix-on-b0318b5.patch` has the **same hunks** as `f1-hotfix-on-7d262de.patch` and applies cleanly. P0-A touched other files.
+
+| Check (fresh database) | Result |
+|---|---|
+| `f1-coop-payout.test.js` on **unpatched** `b0318b5` | **fails 2/3** (duplicate payout reproduced on the production base) |
+| The same test on patched `b0318b5` | **3 / 3** |
+| `b0318b5` + patch, full production suite | **125 / 125** (122 + the 3 F1 tests) |
+
+**Status: still OPEN in production.** Separate package; never bundled with P0-B, J11 or J12; deployment not authorized and not performed.
