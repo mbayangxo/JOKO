@@ -5084,3 +5084,15 @@ model CollectiveClaim {
   @@unique([groupId, userId])
   @@index([userId])
 }
+
+/// J13-4: a handle given up by an account (renamed). Lets the server tell whether a handle may have changed
+/// owner recently — the only way to verify an older client's handle-only payment (recipient-binding-policy).
+/// Append-only; never used as a payment identifier.
+model HandleRelease {
+  id         String   @id @default(cuid())
+  handle     String
+  userId     String
+  releasedAt DateTime @default(now())
+
+  @@index([handle, releasedAt])
+}

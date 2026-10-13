@@ -359,9 +359,17 @@ export function getTransactions(limit = 20, accessToken) {
   return apiFetch(`/api/transactions?limit=${limit}`, { skipCache: true, accessToken, _retry401: !accessToken });
 }
 
+/**
+ * J13-4: exchange the lookup's recipientRef for a single-payment instructionRef (this account, this amount,
+ * this intent key). Moves no money. Called at "Oui — Envoyer", inside the same intent as the send.
+ */
+export function confirmP2p({ recipientRef, amountKori, intentKey }) {
+  return apiFetch('/api/money/p2p/confirm', { method: 'POST', body: { recipientRef, amountKori, intentKey }, skipCache: true });
+}
+
 export function transferSend({
   recipientHandle,
-  recipientRef,
+  instructionRef,
   amount,
   currency = 'kori',
   note,
@@ -377,7 +385,7 @@ export function transferSend({
   const handle = String(recipientHandle).replace(/^@/, '');
   return apiFetch('/api/transfers/send', {
     method: 'POST',
-    body: { recipientHandle: handle, recipientRef, amount, currency, note, voiceNoteUrl, photoUrl, videoUrl, gifUrl, giftCardTheme, threadId },
+    body: { recipientHandle: handle, instructionRef, amount, currency, note, voiceNoteUrl, photoUrl, videoUrl, gifUrl, giftCardTheme, threadId },
     stepUpToken,
     skipCache: true,
     idempotencyKey: intentKey,

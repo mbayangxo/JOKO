@@ -26,7 +26,7 @@ import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
 import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import { useSecurity } from '../context/SecurityContext';
 import { useLocale } from '../context/LocaleContext';
-import { transferSend, lookupUser, getMboloVideoUploadConfig } from '../lib/api-client';
+import { confirmP2p, transferSend, lookupUser, getMboloVideoUploadConfig } from '../lib/api-client';
 import { toE164, isValidLocalPhone } from '../lib/phone';
 import { resolveAccountQuery } from '../lib/k21-qr';
 import { formatKori, KORI_SYMBOL } from '../lib/kori.js';
@@ -632,17 +632,20 @@ export default function SendMoneyScreen({ navigation, route }) {
                 : {};
       // J4: one intent key for this payment attempt, reused across step-up
       // and retries; an unknown outcome is checked with the server, never re-sent.
-      const out = await moneySubmit.submit((intentKey) =>
-        transferSend({
+      const out = await moneySubmit.submit(async (intentKey) => {
+        // J13-4: the confirmed recipient + amount become a server-issued, single-payment instruction; the
+        // payment goes to the account confirmed on screen, or nowhere.
+        const { instructionRef } = await confirmP2p({ recipientRef: recipientProfile.recipientRef, amountKori: amount, intentKey });
+        return transferSend({
           recipientHandle: recipientProfile.handle,
-          // J13-F12: the payment goes to the account confirmed on screen, or nowhere.
-          recipientRef: recipientProfile.recipientRef,
+          instructionRef,
           amount,
           note: reason,
           ...attachmentParams,
           stepUpToken: stepUpToken ?? security.stepUpToken,
           intentKey,
-        }),
+        });
+      },
         { instruction: { to: recipientProfile.handle, ref: recipientProfile.recipientRef ?? null, amount, note: reason, ...attachmentParams } },
       );
       if (out.state === 'needs_pin') {
@@ -658,7 +661,7 @@ export default function SendMoneyScreen({ navigation, route }) {
         if (out.state === 'accepted_pending') showToast(out.message);
         return;
       }
-      if (out.category === 'recipient_changed') {
+      if (out.category === 'recipient_changed' || out.category === 'confirmation_required') {
         // The handle now points at a different account: drop the stale recipient and make the sender look again.
         setRecipientProfile(null);
         setStep('amount');

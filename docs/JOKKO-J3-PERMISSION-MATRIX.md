@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**724 routes.** Column legend:
+**725 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -825,6 +825,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST money/charges/:id/pay` | user | merchant.charge.pay | payer (pays own wallet → merchant; once; before expiry; amount must match) |  | 1 | amount |  | ledger+risk |  |
 | `POST money/charges/:id/cancel` | user | merchant.charge.cancel | business:business.charges.create |  |  |  |  |  |  |
 | `POST money/payments/:reference/refund` | user | merchant.refund | payee of the original payment (or its business treasury) |  |  |  |  | ledger+risk |  |
+| `POST money/p2p/confirm` | user | wallet.preview | self |  |  |  |  |  | J13-4: issues a signed, single-payment instructionRef bound to the confirmed account, amount and intent key; executes nothing |
 
 ## User — notifications
 

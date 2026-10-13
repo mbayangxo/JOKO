@@ -22,6 +22,8 @@ import {
   markMboloThreadRead,
   saveMboloMessageMedia,
   sendMboloMessage,
+  confirmP2p,
+  lookupUser,
   transferRequest,
   transferSend,
   reportMboloMessage,
@@ -820,13 +822,18 @@ export default function MbooloChatScreen({ navigation, route }) {
     }
     setSendingMoney(true);
     try {
+      if (!sendIntentKey.current) sendIntentKey.current = `mbolo-send-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      // J13-4: bind the payment to the partner's ACCOUNT (server-issued), never to the handle alone.
+      const partner = await lookupUser(directPartner.handle, { mode: 'handle' });
+      const { instructionRef } = await confirmP2p({ recipientRef: partner.recipientRef, amountKori: amount, intentKey: sendIntentKey.current });
       const result = await transferSend({
         recipientHandle: directPartner.handle,
+        instructionRef,
         amount,
         note: sendNote.trim() || undefined,
         photoUrl: sendPhotoUrl ?? undefined,
         threadId,
-        intentKey: sendIntentKey.current ?? undefined,
+        intentKey: sendIntentKey.current,
       });
       if (result.mboloMessage) setMessages((prev) => [...prev, result.mboloMessage]);
       await refreshWallet();
