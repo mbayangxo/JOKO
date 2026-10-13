@@ -2,7 +2,7 @@
 
 **Scope:** local engineering only. **Nothing deployed.** J11, J12 and J13 are not activated in production. The J13 migration (`20261027000000_j13_handle_release`) is additive and **not deployed**. Production incidents are reported separately in §8 and were never bundled with J13.
 
-**Final tested commit:** see §7 (gate pending at the time of writing; this report is updated with the result).
+**Final tested code commit: `86ee972`**: fresh-database J1–J13 gate fully clean (§7). Every later commit on this branch changes **documentation only** (`git diff --stat 86ee972 <report commit>` lists `docs/` files only).
 
 ---
 
@@ -83,7 +83,7 @@ Changed assertions (each made stricter or more precise, never weaker):
 | `8dc3adf` | Not clean: tests 779/780 (J13-F12); everything else passed |
 | `4f6eada` | Not clean: tests 797/797, all E2E passed, **J12 lab 10/11** (J13-F15 / J13-F16); everything else passed |
 | `a287efa` | Not clean: **tests 811/812**; everything else passed (E2E J8–J13 all pass, **J12 lab 11/11**, invariants, sweeps, rehearsal, empty schema diff, 0 critical, deploy-inert, no Postgres restart). Failure: `money-in-chat … not a member … rejected` expected 403, got 426. The J13-4 binding ran before the thread-membership authorization check. Fixed in `86ee972` (binding after the authorization refusals); test unchanged |
-| `86ee972` | §7 |
+| `86ee972` | **CLEAN** (§7) |
 
 Between gates (`a287efa` code):
 - targeted regressions 71/71, twice;
@@ -96,10 +96,55 @@ Between gates (`a287efa` code):
 - Payroll `employeeHandle` and scheduled-payment *creation* to adopt the same recipient binding (tracked, same policy).
 - Production rollout of J13-4 in phases, each needing separate authorization (binding doc §6).
 - P-J9-4 (Affiliate entry point).
+- J13-F17: "not received" must stay provisional and self-correct (§7). Scheduling (J13 follow-up vs J14) is a user decision.
 
 ## 7. Final gate (fresh database)
 
-_Pending: filled in from the gate run on `86ee972`._
+**CLEAN at `86ee972`.** Fresh database, `scripts/dev/gate.sh`, 2026-10-13.
+
+| Check | Result |
+|---|---|
+| Unit / integration / HTTP / J3–J13 suites | **812/812** |
+| Ledger invariants (after each suite and after all) | OK: money, logistics, work, collective |
+| Load | 5/5 |
+| Sweeps (authorization, horizontal) | 5/5 |
+| Web export | OK |
+| Browser E2E | J8 12/12 · J9 11/11 · J10 7/7 · J11 8/8 · J12 9/9 · **J13 9/9** |
+| J12 weak-network lab (**simulated**: desktop Chromium + DevTools emulation) | **11/11**. Lossy 3G step: attempts 3, outcomes sent / not received / sent, **2 debits for 2 "sent"** (one reply lost after execution was resolved correctly) |
+| Migration rehearsal | OK (`ok: true`) |
+| Schema diff (migrations vs schema) | empty |
+| Dependency audit | 0 critical (20 high / 8 moderate, unchanged since J12) |
+| Deploy-inert | yes |
+| Postgres | **no restart during the run** (up since 04:59:36 UTC) |
+
+Recipient binding inside this gate (all pass):
+- token unit tests 8/8;
+- end-to-end 13/13, including every legacy-client case:
+  - stable handle → allowed;
+  - real rename + reclaim → 426;
+  - direct chat → allowed; group thread → 426;
+  - `RECIPIENT_BINDING_ENFORCE=true` and sunset → 426 for legacy, 201 for bound clients;
+- the browser step: recipient changed after confirmation → refused, nobody paid.
+
+### J13-F17 (open, found during the final review; not fixed in `86ee972`)
+
+A payment the app reports as **"n’a pas été reçu"** (the intent lookup found nothing under that key at that moment) is a point-in-time answer:
+
+- **Protected:**
+  - a late-arriving original cannot execute twice: the same key is kept for 10 min, and with J13-4 the instruction expires after 10 min;
+  - if it executes inside that window, **history shows it**, because history is read from the server ledger.
+- **Not protected:**
+  - the screen's wording ("aucun argent n’a été débité") is stated as final;
+  - nothing re-checks or corrects that screen if the late original settles;
+  - no test covers a late settlement after "not received".
+
+Proposed fix, as its own commit and fresh gate:
+- provisional wording until the window closes;
+- a background re-check of the same key;
+- a deterministic test (forced "not found", then the delayed original executes) asserting:
+  - history shows it;
+  - the same payment re-entered returns the original;
+  - the message is corrected.
 
 ## 8. Production (separate track; nothing deployed)
 
