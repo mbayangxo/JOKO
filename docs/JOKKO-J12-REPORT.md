@@ -1,127 +1,139 @@
-# J12: Offline, low-bandwidth, Senegal-first (local only)
+# J12: Offline, low-bandwidth, Senegal-first (final report)
 
-**Status:** first slice built locally. The J12 browser E2E passes **5 / 5** (lost response, restart, airplane mode, account switch, no page errors), with J2 invariants OK. Nothing has been deployed, and no production schema, data or flag has changed. J12 adds **no** schema change, migration, cron or server money path. The changes are client-side safety rules, one UI banner, tests and this document.
+**Scope:** local engineering only. **Nothing deployed.** J11 and J12 are **not activated** in production: all J11 money flags stay off, and the two J12 migrations are additive and not deployed. Production incidents are reported separately in §9 and were never bundled with J12.
 
-Rules applied throughout (from the J12 brief):
-- An offline payment is never displayed as completed before authoritative server confirmation.
-- No spendable local balances.
-- Expired or materially changed financial instructions are never auto-replayed.
-- Test coverage: airplane mode, weak network, duplicate retries, clock changes, stale permissions, account switching, lost responses.
+**Final tested commit:** see §8. The report itself is committed after the gate; that commit is docs only.
+
+**Every result marked "simulated" comes from desktop Chromium with DevTools emulation, not a physical device** (§6).
 
 ---
 
-## 1. Inventory: what already existed (J4–J11)
+## 1. Rules applied everywhere
 
-| Area | Existing foundation | Assessment |
+| Rule | How it is enforced |
+|---|---|
+| Never display a payment as completed before the server confirms it | `MoneyPhaseBanner` says "effectué" only for `state === 'done'`, i.e. after the server answer or an intent lookup. Browser tests assert that "Envoyé !" never appears while an outcome is unknown. |
+| No spendable local balances | Balances are never cached: they are excluded by the low-data allowlist. Pending intents store a key, the user, the flow and an instruction **hash** only. |
+| Never auto-resubmit a financial transaction after an uncertain outcome | An uncertain outcome leads to a **lookup** (`GET /api/money/intents/:key`) only, including after a restart. The same key is reused only for an identical instruction within 10 min (P-J12-5), and only on a user action. |
+| Offline state never overrides server permissions | Queued messages and replays pass the same membership and posting checks; a removed member cannot replay. Revoked sessions show no private content. Refusals become "held", never retried. |
+| Queued money is never shown as money | The offline queue accepts text and stickers only. Money kinds and money commands are dropped and never drafted. |
+
+## 2. Policy decisions applied (P-J12-1 … P-J12-5)
+
+| Decision | Implementation |
+|---|---|
+| **P-J12-1** low-data cache | A strict allowlist of public, non-sensitive GETs (`src/lib/offline-policy.js`), at most 45 s, keyed per user (token subject), cleared on sign-in, sign-out and session refresh failure. Private, financial, identity and authorization responses are never cached (tested path by path). |
+| **P-J12-2** languages | `src/i18n/money-safety.js`: reviewed French is the reference and fallback. A Wolof, Pulaar or Serer entry is used only with a native-speaker review record (`reviewedBy`, `reviewedAt`, `checkedAgainst: 'fr'`). The build test fails on an unreviewed entry. **No translation was invented.** |
+| **P-J12-3** chat dedupe | Additive migration `20261025000000_j12_mbolo_client_message_id`: nullable `clientMessageId` plus a unique index on (`senderId`, `clientMessageId`). The server replays on a repeated id, refuses reuse for a different message (409), and survives concurrent sends (P2002 → replay). **Not deployed.** |
+| **P-J12-4** SMS | Research and dormant code only: `docs/JOKKO-J12-SMS-USSD.md`. Balance-by-SMS is now opt-in and PIN-confirmed (J12-F12). There is no SMS payment authorization and no USSD. |
+| **P-J12-5** windows | Client lookup period 24 h; identical-instruction retry 10 min. **The server's idempotency rows and ledger remain authoritative beyond these windows** (history shows the real outcome). An expired client record is only forgotten: it is never shown as "failed" and never enables a second payment. After a restart, a "nothing received" answer keeps the key bound to the instruction hash for 10 min, so re-entering the same payment reuses it and a late-arriving original cannot execute twice. |
+
+## 3. Features completed
+
+| Area | Delivered | Evidence |
 |---|---|---|
-| Money writes | One `Idempotency-Key` per user action. The server fingerprints the body and returns 422 on reuse with a different body. Keys are scoped by user and route. A 5xx after commit is recorded as `completed_response_lost` (`lib/api-idempotency.js`). | Strong. It is the base everything else relies on. |
-| Unknown outcome | `useMoneySubmit` keeps one key per attempt. A lost response leads to `outcome_unknown` and then polling of `GET /api/money/intents/:key`. A second payment is blocked while checking. | Good, but **in memory only**: an app kill or reload lost the key (see J12-F3). |
-| Low-data mode | 45 s client GET cache, longer timeouts, `X-Low-Data` header. | **Unsafe partitioning** (J12-F1). |
-| Mbolo offline queue | A local outbox for chat messages. | **Not scoped to the account** (J12-F2). |
-| Languages | fr/en/wo cover the 173 i18n keys (wo is missing 5 signup keys). Eight other languages are best-effort, about 13 keys each. | Most money screens use **hard-coded French** (11 of 87 screens use the locale). See §5. |
-| SMS | Africa's Talking or Twilio adapter (OTP, notifications). | No USSD. See §4. |
+| Pending-payment memory and restart resume | `useMoneySubmit` + `pending-intents` (key, user, flow, hash) | E2E j12: lost reply, restart, airplane mode, account switch; lab: clock ±, page killed, background freeze |
+| J9 offers and budget top-ups | `BusinessWorkScreen` on `useMoneySubmit` + banner; router intent ledger | E2E j9 11/11 |
+| J11 contributions | `CollectiveGroupScreen` on `useMoneySubmit` + banner; contribute, withdraw, release and protected contribute added to the intent ledger | E2E j12 (lost reply → verification → server confirmation, paid once); E2E j11 8/8 |
+| PIN × idempotency | J12-F7 + J12-F8 | `tests/j12/pin-idempotency.test.js` (6, real HTTP), `tests/j4/intents.test.js` (order test, fails before the fix) |
+| Chat outbox dedupe and sync states | Stable client ids, owner-scoped queue, pending/held states, Resend/Discard, retry while open | `tests/j12/chat-dedupe.test.js` (6); E2E: lost reply stored exactly once; lab reconnect storm, 0 duplicates |
+| Interrupted uploads | `src/lib/upload-resume.js`: mint → PUT → complete → send checkpoint; "Reprendre" in chat | `tests/j12/upload-resume.test.js` (cut at every step, URL expiry, refusal, J12-F9) |
+| Offline drafts (non-financial) | `src/lib/drafts.js` + `useDraft`: job posting, chat compose; money fields and money commands never drafted; 7-day TTL; wiped at sign-out | `tests/j12/drafts-network.test.js`; E2E draft survives a reload |
+| Expired, revoked and switched sessions | Cache cleared on refresh failure; per-user partitions; revoked session shows nothing private | E2E revoked-session step; PIN suite (revoked step-up rejected) |
+| Network status and accessibility | `NetworkStatusBanner` (screen-reader alert) derived from real requests and browser events; banner copy says a payment never leaves offline | unit test; E2E offline/online |
+| Low-data daily-life screens | `LowDataImage` tap-to-load on Marché, shop, product and channel screens; chat already lazy | `import-integrity` + build |
+| Web boot on weak networks | J12-F14 font timeout fix; J12-F15 boot message and bounded automatic retry (`public/index.html`) | lab: cold 2G load, interrupted first load |
+| Weak-network / low-end lab | `tests/e2e/j12-lab.mjs`, part of the gate, JSON report | §6 |
 
-## 2. Findings
+## 4. Findings (all fixed locally unless stated otherwise)
 
 | ID | Finding | Severity | Status |
 |---|---|---|---|
-| **J12-F1** | The low-data GET cache was keyed by URL only. It was **never cleared** (`clearApiCache` had no caller) and it cached **every** GET without `skipCache`. On a shared phone, user B could get user A's cached response for up to 45 s after an account switch, for any personal GET without `skipCache` (business, payroll, orders, groups, messages…). | Privacy (device-local). Not theft-capable. | **Fixed locally.** Allowlist of public, non-money GETs only, partitioned by the token's user, and cleared on sign-in and sign-out. |
-| **J12-F2** | The Mbolo offline outbox was not tied to the account that wrote each message. After an account switch, B opening the same thread (e.g. a group both belong to) would send **A's queued messages as B**. Stale messages were also sent with no age limit. | Impersonation on a shared device. Not money. | **Fixed locally.** Entries carry their owner. Only text and stickers can be queued. Stale (>24 h) or clock-ambiguous entries are held, never auto-sent. Ownerless legacy entries are never sent. |
-| **J12-F3** | An unknown-outcome intent key lived in React memory. If the app was killed or reloaded during "vérification", the user lost the handle and could pay again by hand, because the first payment's status was invisible. | Double-payment risk from user retry. The server cannot prevent it, because a new tap carries a new key. | **Fixed locally.** The key alone is remembered (no amount, recipient or balance), per user, for lookup only. It is resumed on screen mount and never re-submitted. |
-| **J12-F4** | Same-key retry had no time or instruction bound on the client. The server's body fingerprint already refuses a changed body, but an old "nothing received" key could be retried hours later with the same body. | Stale-instruction replay (no double-spend). | **Fixed locally.** Same-key retry requires the same user, an identical instruction fingerprint, ≤10 min and a sane clock. Anything else gets a new key and a fresh confirmation. |
-| **J12-F7** | **Found by the new J12 browser test.** The router-level idempotency wrapper (J4, `lib/api-idempotency.js`) stored the **403 `step_up_required`** PIN challenge as the final answer for the intent key. When the user entered the PIN, the client correctly retried with the **same** key, and the server **replayed the 403 instead of executing**. In-app payments above the step-up threshold, or from an untrusted session, could never complete with that key. | Fails closed: no money moves and nothing is double-paid. Functional blocker for high-value payments. **Production is not affected:** the deployed `b0318b5` predates the J4 wrapper (verified read-only with `git show`). | **Fixed locally.** A PIN challenge is treated as non-final. If nothing moved, the key is released (the existing J4 5xx path), so the PIN-confirmed retry executes once. If anything moved, it is recorded as completed. Regression test in `tests/j4/intents.test.js` (fails before, passes after). |
-| **J12-F5** | Mbolo message sends carry no stable client id, so a lost response followed by an outbox flush can post a message twice. | Cosmetic duplication, no money. | Open. Proposal: a per-entry client id and server dedupe (P-J12-3). |
-| **J12-F6** | Money-safety status texts ("ne le renouvelle pas", "aucun argent n'a été débité") exist only in French. | Comprehension risk for Wolof-first users. | Open. Needs native-speaker-reviewed copy (P-J12-2). **Not machine-written.** |
+| J12-F1 | Low-data cache never cleared, URL-keyed, cached personal GETs | Device privacy | Fixed |
+| J12-F2 | Offline chat queue not tied to its author; after an account switch, A's messages could be sent as B | Impersonation (device) | Fixed |
+| J12-F3 | Unknown-outcome key lost on app kill or reload | Double payment by user retry | Fixed |
+| J12-F4 | Same-key retry unbounded in time and instruction | Stale replay | Fixed |
+| J12-F5 | Chat messages could post twice after a lost reply | Cosmetic | **Fixed** (P-J12-3) |
+| J12-F6 | Payment-safety text French-only | Comprehension | Mechanism built; **translations await native reviewers** |
+| J12-F7 | PIN challenge (403) stored as the intent's final answer, so PIN-confirmed payments could never complete | Fails closed | Fixed. **Production not affected** (`b0318b5` predates the J4 wrapper) |
+| J12-F8 | Reply sent before the idempotency row was final, so an instant retry got a spurious 409 | Fails closed | Fixed (order test fails before the fix) |
+| J12-F9 | Retried or concurrent media completion charged the vault quota twice | Quota accounting | Fixed (test fails before the fix) |
+| J12-F10 | Chat imported a misspelled media-send function: every chat photo, video, GIF and voice send threw | Feature broken (local branch only; not in `b0318b5`) | Fixed + import-integrity guard |
+| J12-F11 | Web bundle 9.4 MB raw / 2.1 MB gzip: about 63 s first download on 2G | Performance | **Open**: J13 (code splitting, Hermes bytecode for native, asset diet) |
+| J12-F12 | Balance-by-SMS on by default for every user | Privacy (SIM holder) | Fixed for new accounts and PIN to enable; **existing users: decision P-J12-6** |
+| J12-F13 | User lookup guessed "phone" for any query with 8+ digits; digit-heavy handles were "introuvable" | Functional; also a ~2 % test-flake source | Fixed (explicit mode) |
+| J12-F14 | **Web app stuck forever on the loading screen on slow links** (expo-font 3 s timeout) | Availability (web) | Fixed on J12; **also present in production `b0318b5`**: separate package (§9) |
+| J12-F15 | An interrupted bundle download left a blank page | Availability (web) | Fixed (boot message + bounded retry) |
 
-## 3. What was built (local)
+## 5. Senegal-first languages and accessibility
+- The safety-message catalogue and reviewed-only mechanism are in place; screens show reviewed French until reviewed translations exist.
+- **Needed from people, not code:** Wolof, then Pulaar, then Serer payment-safety texts written and reviewed by native speakers against the French meaning.
+- **Accessibility:**
+  - status banners announce themselves (`accessibilityRole="alert"`, polite live region);
+  - tap-to-load images carry labels;
+  - the boot page uses `role="status"`.
 
-- **`src/lib/offline-policy.js`** (pure, unit-tested) holds the rules:
-  - cache allowlist and per-user cache key;
-  - outbox decision (`send` / `hold` / `drop` / `not_mine`);
-  - instruction fingerprint;
-  - same-key retry window;
-  - pending-intent lookup TTL (24 h).
-- **`src/lib/api-client.js`:** the low-data cache uses the allowlist and is partitioned by user.
-- **`SessionContext`:** clears the cache on sign-in and sign-out.
-- **`src/lib/mbolo-outbox.js`:** owner-scoped, text and stickers only, stale and clock-ambiguous entries held.
-- **`src/lib/pending-intents.js`:** device-local list of `{key, userId, flow, createdAt}`, capped at 20 entries and pruned after 24 h.
-- **`src/hooks/useMoneySubmit.js`:**
-  - takes a `flow` and an `instruction`;
-  - remembers unknown outcomes;
-  - resumes lookups on mount (marked `resumed`);
-  - after a restart, a "nothing received" answer requires a **new** intent;
-  - rotates the key for changed or old instructions.
-- **`src/components/MoneyPhaseBanner.js`:** shows only the server's verdict for attempts that went through a check. It never says "effectué" before `state === 'done'`.
-  - Mounted on Send, Cash, Merchant pay and Request-pay screens.
-- **`lib/api-idempotency.js`:** J12-F7 fix, a PIN challenge is never stored as the intent's answer.
-- **Tests:**
-  - `tests/j12/offline-policy.test.js` (5): account switch, clock moved backwards, stale entries, duplicate retry, changed amount or recipient, expired instruction, lost response and restart, lookup-only storage shape.
-  - `tests/e2e/j12-ui.mjs` (Chromium, real API and DB):
-    - **lost response:** the server executes, the reply and the auto-retry are cut → "vérification", never "Envoyé !", a second tap sends nothing;
-    - **restart while unknown:** a reload resumes the **lookup**, never a re-send, and confirms only from the server;
-    - **airplane mode** before sending: nothing executes, and nothing is shown as sent;
-    - **account switch** on the same browser profile: no visibility of or lookup on the other user's intent;
-    - exactly one debit and one credit, checked in the DB, plus J2 invariants.
+## 6. Weak-network / low-end lab (**SIMULATED**)
 
-**Weak network (2G/3G):** the low-data timeout (45 s) and the single same-key automatic retry already existed. The new code adds no extra round-trips to the money path. The resume lookup is one GET per 2 s for at most 30 s, only when an outcome is unknown.
+**Harness:** `tests/e2e/j12-lab.mjs`. Desktop Chromium with DevTools network and CPU emulation, seeded loss, fixed profiles:
+- **2G:** 280/256 kbps, 800 ms RTT;
+- **3G-unstable:** 750/250 kbps, 300 ms RTT, 10 % seeded request loss, 2 s drops every 12 s;
+- **CPU:** 6× slowdown as a low-end proxy.
 
-## 4. SMS/USSD feasibility (assessment only, nothing built)
+The JSON report is written by the gate (`lab.json`). Results at the final gate are in §8.
 
-| Channel | What it could safely do | What it must not do | Dependencies |
-|---|---|---|---|
-| **SMS out** (existing adapter) | Receipts and status ("Paiement reçu", "en vérification"), group-dues reminders, with no balance in clear text by default. | Carry codes that authorise money. Include full balances. | Opt-in, per-message cost, sender-ID registration, data-protection review of message contents. |
-| **SMS in** (commands) | Balance or status queries after PIN-less, low-risk confirmation. | Money movement: there is no step-up, SIM-swap exposure, and spoofable sender. | Not recommended for money. |
-| **USSD** | Balance check, last-5 history, and P2P/cash-out **with PIN in session**. This is the standard WAEMU pattern. | Run without a PIN. Run outside the J2 kernel and idempotency. | **A licensed aggregator or MNO shortcode** (Orange/Free/Expresso), commercial agreements, and the BCEAO position on the channel (K21-REGULATORY-STRATEGY). Session timeouts of about 180 s require one intent key per USSD session. |
+**Still needs a real low-end Android device:**
+- true memory pressure and process death by the OS (emulation cannot limit memory);
+- Hermes start-up and JS parse time on an entry-level SoC;
+- real 2G/3G radio behaviour (RRC state promotion, handovers, carrier proxies);
+- background kill by vendor battery managers;
+- SecureStore performance;
+- camera and media pickers;
+- TalkBack with real fonts;
+- APK size and install over mobile data.
 
-Recommendation: start with SMS **receipts and status only**, behind a flag, after a data-protection review. USSD is a regulatory and commercial decision, not an engineering one (P-J12-4).
+## 7. Not done (scope for J13)
+- **Bundle diet (J12-F11):**
+  - route-level code splitting on web;
+  - Hermes bytecode and size budget for native;
+  - font subsetting;
+  - an image size budget;
+  - a performance budget in CI.
+- **Server-side `X-Low-Data` trimming:** smaller list payloads, no avatars.
+- **Real-device lab:** low-end Android devices on real Orange/Free/Expresso SIMs, following §6.
+- **Reviewed Wolof copy:** wire it into the catalogue once reviewed.
+- **Dormant SMS receipts:** the P-J12-7 design, flag off.
+- **Offline drafts:** extend to dispute and support forms (the allowlist is ready).
 
-## 5. Senegal-first languages and low-end Android
+## 8. Final gate (fresh database, J1–J12)
+(filled below after the run)
 
-- **Language coverage:**
-  - fr is authoritative. wo is solid for i18n keys (5 signup keys missing).
-  - Money screens are hard-coded French.
-- **Proposed order:**
-  1. Extract money-safety and status strings into keys.
-  2. Wolof copy from a native speaker, reviewed against the French meaning (refusal, verification, "do not repeat").
-  3. Pulaar, then Serer.
-  4. Keep the other best-effort languages labelled as such.
-- **Low-end Android:** this slice adds no heavy dependencies; the banner is a plain `View`/`Text`.
-- **Still to measure on a real device:**
-  - cold-start time and JS bundle size from the web export;
-  - list virtualisation on History and Mbolo;
-  - image sizes in low-data mode;
-  - large text (K21-ACCESSIBILITY) and the screen reader (`accessibilityLiveRegion` on the banner).
+## 9. Production (separate from J12; nothing deployed)
 
-## 6. Decisions needed (none taken; silence is not approval)
-
-- **P-J12-1:** Cache allowlist contents and TTL. Proposal: the public catalog, directory and config list in `offline-policy.js`, 45 s.
-- **P-J12-2:** Wolof (then Pulaar, Serer) money-safety copy, written and reviewed by native speakers. Engineering will not ship machine-written financial text.
-- **P-J12-3:** Message dedupe (client id plus server unique index). This is a schema change and needs a migration review.
-- **P-J12-4:** SMS receipts (opt-in, content rules) and the USSD channel (aggregator or MNO, BCEAO).
-- **P-J12-5:** Pending-intent lookup TTL (24 h) and same-key retry window (10 min).
-
-## 7. Not done in this slice
-
-- Interrupted media upload resume.
-- Offline **drafts** for non-money forms (job posts, group proposals).
-- Server-side `X-Low-Data` response trimming.
-- Real-device 2G profiling.
-- Applying the same banner to J9 offers and J11 contributions. Those flows use their own idempotency keys, but no lookup resume yet.
-
-## 8. Gate at `38ac220` (fresh database, J1–J12, 2026-10-10)
-
-Script: `scripts/dev/gate.sh`. Postgres did not restart during the run, and **every step exited 0**.
-
-| Check | Result |
+| Incident | Status |
 |---|---|
-| `npm test` (J1–J12) | **742 / 742** |
-| Money, logistics, work and collective invariants (after the suite and after everything) | **OK** |
-| Load and sweeps | **OK** |
-| Web build | **OK** |
-| Browser E2E J8 / J9 / J10 / J11 / **J12** | **12/12, 11/11, 7/7, 8/8, 5/5** |
-| Migration rehearsal | **OK** |
-| Migrations ⇄ schema | **empty diff** |
-| `npm audit` critical | **0** |
-| Deploy-inert | **yes**: crons are `/api/cron/daily` and `/api/cron/scheduled-payments` only |
+| **P0-A** tontine drain containment | Production build `dpl_CmyTMHWsumXsE3aduWzbcjzUxEoS` (`b0318b5`) READY; aliases verified on 2026-10-10. **Runtime verification INCOMPLETE:** on 2026-10-13 runtime errors, runtime logs **and even the deployment list** return 403 for this session (scope `mbayangxos-projects`). Containment is **not** claimed. Owner checks remain in the incident README §10. Never roll back to `7d262de`. |
+| **P0-B** delivery-dispute ruling open to users | **OPEN in production.** Re-verified on `b0318b5`: patch byte-identical; patched 122/122 + probe; the probe fails on unpatched `b0318b5`. Separate package; not deployed. |
+| **F1** cooperative double payout | **OPEN in production.** Re-verified on `b0318b5`: duplicate payout reproduced unpatched (fails 2/3); patched 3/3; suite 125/125. Separate package; not deployed. |
+| **Web slow-boot** (new, J12-F14) | **Present in production.** Emulated 2G: `b0318b5` still on the splash after 240 s; patched, home at 39 s. Availability only, no money or data risk. Separate package `docs/incidents/2026-10-web-slow-boot/`; not deployed. |
 
-**Honest record:** the run at `0cdd896` failed only `e2e_j12`. The failure was the real finding **J12-F7**, fixed in `38ac220` with a regression test.
+Kebu Supabase was not touched. No secrets were read or printed.
+
+## 10. Decisions and external dependencies (none taken here)
+- **P-J12-6:** switch existing users' balance-by-SMS off (with notice).
+- **P-J12-7:** approve the dormant SMS receipt design.
+- **P-J12-8:** read-only USSD pilot after the licensing decision.
+- **Native reviewers:** Wolof, Pulaar and Serer payment-safety copy.
+- **Deployment authority and Vercel access:** both are needed for P0-A verification and for the P0-B, F1 and web slow-boot packages, each deployed separately.
+- **Migration windows:** the two additive J12 migrations, including building the chat index `CONCURRENTLY` on a large table.
+
+## 11. Recommendation for J13
+**J13 = "fast and verifiable on a real phone".** In order:
+1. Get the production emergency packages deployed and verified, one by one (P0-B, F1, web slow-boot), with restored Vercel access.
+2. Bundle and start-up budget (J12-F11) with a CI performance gate.
+3. A real-device low-end Android lab on Senegalese networks, turning §6's "simulated" into measured.
+4. Reviewed Wolof safety copy.
+5. Dormant SMS receipts (flag off).
+6. Server low-data payloads.
+
+J11 and J12 production activation should wait for steps 1 and 3.
