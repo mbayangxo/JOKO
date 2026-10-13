@@ -21,6 +21,7 @@ import { getMarketplaceShop, placeMarketplaceOrder, setBusinessCommunityStatus }
 import { getSeenStatusKeys, markStatusSeen } from '../lib/status-seen-storage';
 import { useEntrance, usePopIn } from '../hooks/animations';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
+import LowDataImage from '../components/LowDataImage';
 
 function statusKey(businessId, c) {
   return `${businessId}:${c.userId}:${c.updatedAt}`;
@@ -31,7 +32,7 @@ function ProductRow({ product, qty, onChangeQty, onShare, delay = 0 }) {
   return (
     <Animated.View style={[styles.productRow, entrance]}>
       {product.imageUrl ? (
-        <Image source={{ uri: product.imageUrl }} style={styles.productImg} />
+        <LowDataImage uri={product.imageUrl} style={styles.productImg} />
       ) : (
         <View style={[styles.productImg, styles.productImgPh]}>
           <Text style={{ fontSize: 22 }}>🛒</Text>

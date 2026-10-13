@@ -4,6 +4,7 @@ import { getAccessToken, getOrCreateDeviceId, getRefreshToken, saveSessionTokens
 import { captureApiError } from './sentry.js';
 import { loadPreferences } from './preferences-storage.js';
 import { LOW_DATA_CACHE_TTL_MS, lowDataCacheKey, subjectOf } from './offline-policy.js';
+import { reportRequest } from './network-state.js';
 
 const API_BASE =
   process.env.EXPO_PUBLIC_API_URL ??
@@ -123,7 +124,9 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
   let lastError;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
+      const t0 = Date.now();
       const response = await fetchWithTimeout(url, options, timeoutMs);
+      reportRequest({ ok: true, ms: Date.now() - t0, retried: attempt > 0 });
       if (auth && response.ok) await touchActivity();
 
       const data = await response.json().catch(() => ({}));
@@ -148,6 +151,8 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
               });
               return apiFetch(path, { method, body, stepUpToken, auth, skipCache, _retry401: false, accessToken: accessTokenOverride, idempotencyKey: writeKey });
             } catch {
+              // J12: an expired/revoked session ends here — nothing cached for it survives.
+              GET_CACHE.clear();
               await clearSession();
             }
           }
@@ -176,6 +181,7 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
       return data;
     } catch (error) {
       lastError = error;
+      if (error.name === 'AbortError' || /Network|fetch|Load failed/.test(error.message ?? '')) reportRequest({ ok: false, unreachable: true });
       const retryable =
         error.name === 'AbortError' ||
         error.message?.includes('Network') ||

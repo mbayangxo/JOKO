@@ -19,6 +19,7 @@ import {
   saveMyChannel,
 } from '../lib/api-client';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
+import LowDataImage from '../components/LowDataImage';
 
 // Channels — WeChat-style: every member can create ONE channel; you follow
 // channels and watch what they post. Feed = only channels you follow.
@@ -60,7 +61,7 @@ function PostCard({ post, onDelete }) {
         ) : null}
       </View>
       {post.body ? <Text style={styles.postBody}>{post.body}</Text> : null}
-      {post.imageUrl ? <Image source={{ uri: post.imageUrl }} style={styles.postImage} /> : null}
+      {post.imageUrl ? <LowDataImage uri={post.imageUrl} style={styles.postImage} /> : null}
     </View>
   );
 }

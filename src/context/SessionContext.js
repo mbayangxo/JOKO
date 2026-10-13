@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { clearSession, getAccessToken, getRefreshToken, setPinConfigured } from '../lib/secure-storage.js';
 import { authLogout, clearApiCache } from '../lib/api-client.js';
 import { restoreSession } from '../lib/session.js';
+import { clearUserDrafts } from '../lib/drafts.js';
+import { subjectOf } from '../lib/offline-policy.js';
 import { useAppState } from '../state/AppState.js';
 
 const SessionContext = createContext(null);
@@ -62,6 +64,9 @@ export function SessionProvider({ children }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    // J12: the signed-out user's drafts never stay readable on a shared phone.
+    const leaving = subjectOf(await getAccessToken().catch(() => null));
+    if (leaving) await clearUserDrafts(leaving).catch(() => {});
     // Revoke the refresh token server-side; never block sign-out on the network.
     try {
       const refreshToken = await getRefreshToken();

@@ -75,6 +75,13 @@ const see = async (page, text, timeout = 20_000) => {
     throw new Error(`"${text}" not visible; screen: …${body.slice(-600)}`);
   }
 };
+const until = async (fn, what) => {
+  for (let i = 0; i < 80; i += 1) {
+    if (await fn()) return true;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`timed out: ${what}`);
+};
 const visible = async (page, text) => (await page.getByText(text).filter({ visible: true }).count()) > 0;
 const bal = async (userId) => (await prisma.wallet.findUnique({ where: { userId } })).koriBalance;
 
@@ -216,6 +223,68 @@ try {
     assert.equal(await prisma.collectivePayment.count({ where: { groupId: g.id, userId: m1.id, kind: 'contribution' } }), 1, 'one contribution');
     assert.equal(await bal(m1.id), before - 1000, 'debited exactly once');
     await gctx.close();
+  });
+
+  await step('chat, reply lost: the message is queued once, retried with the SAME id, stored exactly once', async () => {
+    const e1 = await customer();
+    const f1 = await customer();
+    await prisma.user.update({ where: { id: f1.id }, data: { name: 'Fatou Sow' } });
+    await prisma.userFriend.createMany({ data: [{ userId: e1.id, friendId: f1.id }, { userId: f1.id, friendId: e1.id }] });
+    const E1 = await signedIn(api, e1);
+    const th = await E1.call('POST', 'mbolo/threads', { memberHandles: [f1.handle] });
+    assert.equal(th.status, 201, JSON.stringify(th.body));
+    const cctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const cp = await sessionPage(cctx, E1, 'E1');
+    let posts = 0;
+    await cp.route('**/api/mbolo/threads/*/messages', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      posts += 1;
+      if (posts === 1) {
+        await route.fetch(); // stored on the server …
+        return route.abort('failed'); // … reply lost
+      }
+      if (posts === 2) return route.abort('failed'); // the client's automatic retry is cut too
+      return route.continue();
+    });
+    await tap(cp, 'Mboolo', { exact: true });
+    await tap(cp, 'Fatou Sow');
+    const box = cp.getByPlaceholder('Message…').filter({ visible: true }).first();
+    await box.fill('On se retrouve au marché à 17h');
+    await box.press('Enter');
+    await see(cp, 'en attente d’envoi', 20_000);
+    await until(async () => (await prisma.mboloMessage.count({ where: { threadId: th.body.id } })) === 1 && posts >= 3, 'outbox flushed');
+    await cp.waitForTimeout(4000);
+    assert.equal(await prisma.mboloMessage.count({ where: { threadId: th.body.id } }), 1, 'stored exactly once despite the retries');
+    const row = await prisma.mboloMessage.findFirst({ where: { threadId: th.body.id } });
+    assert.match(row.clientMessageId ?? '', /^cm-/);
+    assert.ok(!(await visible(cp, 'en attente d’envoi')), 'the pending state clears once the server has it');
+
+    await step('network banner: offline is announced honestly, cleared on reconnect', async () => {
+      await cctx.setOffline(true);
+      await cp.evaluate(() => window.dispatchEvent(new Event('offline')));
+      await see(cp, 'un paiement ne part jamais hors ligne');
+      await cctx.setOffline(false);
+      await cp.evaluate(() => window.dispatchEvent(new Event('online')));
+      await cp.waitForTimeout(500);
+      assert.ok(!(await visible(cp, 'un paiement ne part jamais hors ligne')));
+    });
+
+    await step('draft survives a reload; a revoked session shows no private content after reload', async () => {
+      await box.fill('Brouillon pas encore envoyé');
+      await cp.waitForTimeout(1200); // debounced save
+      await cp.reload();
+      await tap(cp, 'Mboolo', { exact: true });
+      await tap(cp, 'Fatou Sow');
+      const restored = cp.getByPlaceholder('Message…').filter({ visible: true }).first();
+      await until(async () => (await restored.inputValue()) === 'Brouillon pas encore envoyé', 'draft restored');
+      await prisma.authSession.updateMany({ where: { userId: e1.id }, data: { revokedAt: new Date() } });
+      await cp.reload();
+      await cp.waitForTimeout(4000);
+      const body = await cp.innerText('body');
+      assert.ok(!body.includes('On se retrouve au marché'), 'no message history for a revoked session');
+      assert.ok(!body.includes('Brouillon pas encore envoyé'), 'no draft shown without a valid session');
+    });
+    await cctx.close();
   });
 
   await step('no uncaught page errors', async () => {

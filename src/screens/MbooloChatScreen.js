@@ -36,6 +36,7 @@ import {
 import { parseMoneyCommand } from '../lib/mbolo-voice-money';
 import { flushMboloOutbox, enqueueMboloMessage, newClientMessageId, outboxState, releaseHeld, discardHeld } from '../lib/mbolo-outbox';
 import { OUTBOX_KINDS } from '../lib/offline-policy';
+import { useDraft } from '../hooks/useDraft';
 import { runTerangaGifStudio } from '../lib/mbolo-gif-studio';
 import { formatXof, getDirectPartner } from '../lib/mbolo-social';
 import { useMbooloVoiceRecorder, formatVoiceDuration } from '../hooks/useMbooloVoiceRecorder';
@@ -361,6 +362,11 @@ export default function MbooloChatScreen({ navigation, route }) {
   const micPulse = useBlink(isRecording ? 600 : 100000, isRecording ? 0.55 : 1);
   const readyToastShown = useRef(false);
   const [messages, setMessages] = useState([]);
+  // J12: what the user is typing survives a lost connection / restart as a local per-thread draft.
+  const composeDraft = useDraft('mbolo-compose', threadId ?? null);
+  useEffect(() => {
+    if (composeDraft.restored?.fields?.text) setText((t) => t || composeDraft.restored.fields.text);
+  }, [composeDraft.restored]);
   const [userId, setUserId] = useState(null);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -454,7 +460,12 @@ export default function MbooloChatScreen({ navigation, route }) {
           refreshSync();
           loadMessages();
         });
-      const timer = setInterval(loadMessages, 3000);
+      // J12: while the chat is open, queued messages are retried with the regular refresh (same client
+      // ids — the server stores each once); held/refused ones wait for the user.
+      const timer = setInterval(() => {
+        loadMessages();
+        flushMboloOutbox(threadId).then(mergeSent).then(refreshSync).catch(() => {});
+      }, 3000);
       return () => clearInterval(timer);
     }, [loadMessages, threadId, mergeSent, refreshSync]),
   );
@@ -489,6 +500,7 @@ export default function MbooloChatScreen({ navigation, route }) {
       const msg = await sendMboloMessage(threadId, withId);
       setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
       setText('');
+      composeDraft.discard();
     } catch (err) {
       const lost = ['network', 'timeout', 'outcome_unknown'].includes(err?.code) || (typeof navigator !== 'undefined' && navigator.onLine === false);
       if (err?.code === 'verification_required' || err?.status === 403) {
@@ -496,6 +508,7 @@ export default function MbooloChatScreen({ navigation, route }) {
       } else if (lost && OUTBOX_KINDS.includes(withId.kind ?? 'text')) {
         await enqueueMboloMessage(threadId, withId).catch(() => {});
         setText('');
+        composeDraft.discard();
         refreshSync();
         showToast('Hors ligne — message en attente, il partira une seule fois');
       } else {
@@ -508,6 +521,9 @@ export default function MbooloChatScreen({ navigation, route }) {
 
   const handleTextChange = (value) => {
     setText(value);
+    // A money command ("envoie 2000 à @awa") is a financial instruction: never kept as a draft.
+    if (parseMoneyCommand(value)) composeDraft.discard();
+    else composeDraft.save({ text: value });
     if (!threadId) return;
     if (typingTimer.current) clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => {
@@ -519,6 +535,7 @@ export default function MbooloChatScreen({ navigation, route }) {
   // send flow, pre-filled; the person reviews the recipient and amount there and confirms (step-up when required).
   const handleSendMoneyCommand = (cmd) => {
     setText('');
+    composeDraft.discard();
     showToast('Vérifie le destinataire et le montant, puis confirme');
     open('SendMoney', { recipientHandle: cmd.handle, prefilledAmount: cmd.amount, note: cmd.note.slice(0, 140) });
   };

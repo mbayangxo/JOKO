@@ -16,6 +16,7 @@ import { SessionProvider } from './src/context/SessionContext';
 import { SecurityProvider, useSecurity } from './src/context/SecurityContext';
 import PinGateScreen from './src/screens/PinGateScreen';
 import DeviceSecurityBanner from './src/components/DeviceSecurityBanner';
+import NetworkStatusBanner from './src/components/NetworkStatusBanner';
 import { ToastProvider } from './src/components/Toast';
 import { navigationIntegration, Sentry } from './src/lib/sentry';
 import NavSideEffects from './src/hooks/NavSideEffects';
@@ -34,6 +35,7 @@ function AppShell() {
   return (
     <>
       <DeviceSecurityBanner risk={deviceRisk} />
+      <NetworkStatusBanner />
       <RootNavigator />
     </>
   );

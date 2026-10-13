@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useDraft } from '../hooks/useDraft';
 import { ActivityIndicator, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -46,6 +47,18 @@ export default function BusinessWorkScreen({ navigation }) {
   const [rules, setRules] = useState([]);
   const [kind, setKind] = useState(0);
   const [post, setPost] = useState({ title: '', description: '', area: '', skills: '', rate: '', units: '1' });
+  // J12: the posting text survives a lost connection or app restart as a local, per-user draft (pay fields
+  // are never drafted — they are re-entered and confirmed). Restoring never publishes anything.
+  const postDraft = useDraft('work-post', bizId);
+  useEffect(() => {
+    if (postDraft.restored) {
+      setPost((p) => ({ ...p, ...postDraft.restored.fields }));
+      showToast('Brouillon restauré — vérifie avant de publier');
+    }
+  }, [postDraft.restored]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    postDraft.save(post);
+  }, [post]); // eslint-disable-line react-hooks/exhaustive-deps
   const [offer, setOffer] = useState({});
   const [codes, setCodes] = useState({});
   const [stepUpFor, setStepUpFor] = useState(null);
@@ -100,6 +113,7 @@ export default function BusinessWorkScreen({ navigation }) {
     });
     showToast(o.status === 'under_review' ? 'Annonce en vérification : elle semble demander de l’argent aux travailleurs' : 'Annonce publiée');
     setPost({ title: '', description: '', area: '', skills: '', rate: '', units: '1' });
+    postDraft.discard();
   });
 
   const loadApplicants = async (oppId) => {
