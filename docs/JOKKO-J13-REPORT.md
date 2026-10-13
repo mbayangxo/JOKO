@@ -82,7 +82,8 @@ Changed assertions (each made stricter or more precise, never weaker):
 |---|---|
 | `8dc3adf` | Not clean: tests 779/780 (J13-F12); everything else passed |
 | `4f6eada` | Not clean: tests 797/797, all E2E passed, **J12 lab 10/11** (J13-F15 / J13-F16); everything else passed |
-| `a287efa` | §7 |
+| `a287efa` | Not clean: **tests 811/812**; everything else passed (E2E J8–J13 all pass, **J12 lab 11/11**, invariants, sweeps, rehearsal, empty schema diff, 0 critical, deploy-inert, no Postgres restart). Failure: `money-in-chat … not a member … rejected` expected 403, got 426. The J13-4 binding ran before the thread-membership authorization check. Fixed in `86ee972` (binding after the authorization refusals); test unchanged |
+| `86ee972` | §7 |
 
 Between gates (`a287efa` code):
 - targeted regressions 71/71, twice;
@@ -98,7 +99,7 @@ Between gates (`a287efa` code):
 
 ## 7. Final gate (fresh database)
 
-_Pending: filled in from the gate run on `a287efa`._
+_Pending: filled in from the gate run on `86ee972`._
 
 ## 8. Production (separate track; nothing deployed)
 
