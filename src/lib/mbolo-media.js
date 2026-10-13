@@ -9,6 +9,8 @@ import {
   mboloMediaUploadUrl,
   sendMboloMessage,
 } from './api-client';
+import { newUploadCheckpoint, runUpload } from './upload-resume.js';
+import { newClientMessageId } from './mbolo-outbox.js';
 
 /** Keep under server zod limit (800k) with JSON overhead. */
 export const MAX_MEDIA_CHARS = 720_000;
@@ -491,22 +493,19 @@ export async function sendMbooloMediaMessage({
   waveformJson,
   retention = 'thread',
   blob,
+  checkpoint = null,
 }) {
   const status = await getMboloStorageStatus().catch(() => ({ storage: 'legacy' }));
   const storageReady = status.storage === 'supabase';
   const msgKind = MESSAGE_KIND[kind] ?? kind;
 
   if (storageReady) {
-    const uploaded = await uploadMbooloMedia({
-      threadId,
-      kind,
-      uri,
-      mimeType,
-      durationMs,
-      waveformJson,
-      retention,
-      blob,
-    });
+    // J12: resumable — a retry with the same `checkpoint` continues from the first unfinished step
+    // (never a second asset, a second vault charge or a second message; see src/lib/upload-resume.js).
+    const cp = checkpoint ?? newUploadCheckpoint(newClientMessageId());
+    const normalizedKind = kind === 'image' ? 'photo' : kind;
+    let blobP = null;
+    const getBlob = () => (blobP ??= uriToBlob(uri, mimeType, blob));
     const body =
       msgKind === 'voice'
         ? `🎤 ${Math.max(1, Math.round((durationMs ?? 0) / 1000))}s`
@@ -515,14 +514,27 @@ export async function sendMbooloMediaMessage({
           : msgKind === 'gif'
             ? 'GIF'
             : '📷 Photo';
-    const msg = await sendMboloMessage(threadId, {
-      kind: msgKind,
-      body,
-      mediaAssetId: uploaded.mediaAssetId,
-      mediaUrl: uploaded.readUrl,
-      retention,
-    });
-    return { ...msg, mediaUrl: uploaded.readUrl };
+    try {
+      await runUpload(cp, {
+        mint: async () => {
+          const b = await getBlob();
+          return mboloMediaUploadUrl({ threadId, kind: normalizedKind, mimeType: mimeType ?? b.type ?? 'application/octet-stream', sizeBytes: b.size, retention });
+        },
+        put: async (mint) => {
+          const b = await getBlob();
+          const res = await fetch(mint.uploadUrl, { method: 'PUT', headers: mint.headers ?? { 'Content-Type': mimeType ?? b.type }, body: b });
+          // 409 = this signed path already holds our bytes (the first PUT landed, its reply was lost).
+          if (!res.ok && res.status !== 409) throw Object.assign(new Error('Échec envoi du fichier vers le stockage'), { status: res.status });
+        },
+        complete: (mint) => mboloMediaComplete({ assetId: mint.assetId, durationMs, waveformJson }),
+        send: (completed, clientMessageId) =>
+          sendMboloMessage(threadId, { kind: msgKind, body, mediaAssetId: cp.mint.assetId, mediaUrl: completed.readUrl, retention, clientMessageId }),
+      });
+    } catch (e) {
+      e.checkpoint = cp;
+      throw e;
+    }
+    return { ...cp.message, mediaUrl: cp.complete.readUrl };
   }
 
   if (msgKind === 'video') {

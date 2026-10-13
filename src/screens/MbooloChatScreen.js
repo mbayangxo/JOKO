@@ -30,7 +30,7 @@ import {
   pickMboloImage,
   takeMboloPhoto,
   pickMboloVideoAsset,
-  sendMboloMediaMessage,
+  sendMbooloMediaMessage,
   resolveVoicePlaybackSource,
 } from '../lib/mbolo-media';
 import { parseMoneyCommand } from '../lib/mbolo-voice-money';
@@ -571,15 +571,13 @@ export default function MbooloChatScreen({ navigation, route }) {
       showToast('Studio GIF Teranga…');
       const asset = await runTerangaGifStudio();
       if (!asset) return;
-      await postMediaMessage(
-        sendMboloMediaMessage({
+      await sendMedia({
           threadId,
           kind: asset.mode === 'video_fallback' ? 'video' : 'gif',
           uri: asset.uri,
           mimeType: asset.mimeType,
           blob: asset.blob,
-        }),
-      );
+        });
     } catch (err) {
       showToast(err.message ?? 'Studio GIF impossible');
     }
@@ -593,13 +591,20 @@ export default function MbooloChatScreen({ navigation, route }) {
 
   const closeAttach = () => setAttachOpen(false);
 
-  const postMediaMessage = async (promise) => {
+  // J12: an interrupted media upload keeps its checkpoint; "Reprendre" continues from the step that was
+  // cut (never a second upload or message). Bytes are not kept across an app restart.
+  const [interrupted, setInterrupted] = useState(null);
+  const postMediaMessage = async (promise, args = null) => {
     setSending(true);
     try {
       const msg = await promise;
-      setMessages((prev) => [...prev, msg]);
+      setInterrupted(null);
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
     } catch (err) {
-      if (err?.code === 'verification_required' || err?.status === 403) {
+      if (args && err?.checkpoint && err.resumable) {
+        setInterrupted({ args, checkpoint: err.checkpoint });
+        showToast('Envoi interrompu — tu peux reprendre là où il s’est arrêté');
+      } else if (err?.code === 'verification_required' || err?.status === 403) {
         showToast(err.message ?? 'Vérifie ton profil (nom + téléphone) pour envoyer des messages');
       } else if (err?.code === 'storage_unavailable' || err?.code === 'legacy_media_disabled') {
         showToast(err.message ?? 'Stockage média indisponible — contacte le support K21');
@@ -610,6 +615,8 @@ export default function MbooloChatScreen({ navigation, route }) {
       setSending(false);
     }
   };
+  const sendMedia = (args) => postMediaMessage(sendMbooloMediaMessage(args), args);
+  const resumeUpload = () => interrupted && postMediaMessage(sendMbooloMediaMessage({ ...interrupted.args, checkpoint: interrupted.checkpoint }), interrupted.args);
 
   const handlePhoto = async () => {
     try {
@@ -618,14 +625,12 @@ export default function MbooloChatScreen({ navigation, route }) {
       if (Platform.OS === 'web') closeAttach();
       if (!mediaUrl) return;
       showToast('Envoi de la photo…');
-      await postMediaMessage(
-        sendMboloMediaMessage({
+      await sendMedia({
           threadId,
           kind: 'image',
           uri: mediaUrl,
           mimeType: 'image/jpeg',
-        }),
-      );
+        });
     } catch (err) {
       closeAttach();
       showToast(err.message ?? 'Photo impossible');
@@ -639,14 +644,12 @@ export default function MbooloChatScreen({ navigation, route }) {
       if (Platform.OS === 'web') closeAttach();
       if (!mediaUrl) return;
       showToast('Envoi de la photo…');
-      await postMediaMessage(
-        sendMboloMediaMessage({
+      await sendMedia({
           threadId,
           kind: 'image',
           uri: mediaUrl,
           mimeType: 'image/jpeg',
-        }),
-      );
+        });
     } catch (err) {
       closeAttach();
       showToast(err.message ?? 'Photo impossible');
@@ -660,15 +663,13 @@ export default function MbooloChatScreen({ navigation, route }) {
       if (Platform.OS === 'web') closeAttach();
       if (!asset) return;
       showToast('Envoi de la vidéo…');
-      await postMediaMessage(
-        sendMboloMediaMessage({
+      await sendMedia({
           threadId,
           kind: 'video',
           uri: asset.uri,
           mimeType: asset.mimeType,
           blob: asset.blob,
-        }),
-      );
+        });
     } catch (err) {
       closeAttach();
       showToast(err.message ?? 'Vidéo impossible');
@@ -719,14 +720,12 @@ export default function MbooloChatScreen({ navigation, route }) {
         showToast('GIF indisponible');
         return;
       }
-      await postMediaMessage(
-        sendMboloMediaMessage({
+      await sendMedia({
           threadId,
           kind: 'gif',
           uri: gif.url,
           mimeType: 'image/gif',
-        }),
-      );
+        });
     } catch (err) {
       showToast(err.message ?? 'GIF impossible');
     }
@@ -737,15 +736,13 @@ export default function MbooloChatScreen({ navigation, route }) {
       const mediaUrl = await stopVoice();
       if (!mediaUrl) return;
       showToast('⏹ Enregistrement terminé — envoi…');
-      await postMediaMessage(
-        sendMboloMediaMessage({
+      await sendMedia({
           threadId,
           kind: 'voice',
           uri: mediaUrl,
           mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/mp4',
           durationMs: durationMillis,
-        }),
-      );
+        });
       showToast('Message vocal envoyé ✓');
     } catch (err) {
       showToast(err.message ?? 'Enregistrement impossible');
@@ -876,6 +873,15 @@ export default function MbooloChatScreen({ navigation, route }) {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
+        {interrupted ? (
+          <View style={styles.syncBar} accessibilityRole="alert" accessibilityLiveRegion="polite" testID="chat-upload-interrupted">
+            <Text style={styles.syncText}>📶 Envoi du média interrompu ({interrupted.checkpoint.put ? 'fichier déjà envoyé' : 'fichier pas encore envoyé'}).</Text>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
+              <PressScale onPress={resumeUpload} disabled={sending}><Text style={styles.syncAction}>Reprendre</Text></PressScale>
+              <PressScale onPress={() => setInterrupted(null)}><Text style={styles.syncAction}>Annuler</Text></PressScale>
+            </View>
+          </View>
+        ) : null}
         {sync.pending > 0 || sync.held > 0 ? (
           <View style={styles.syncBar} accessibilityRole="alert" accessibilityLiveRegion="polite" testID="chat-sync-state">
             {sync.pending > 0 ? (
