@@ -361,6 +361,7 @@ export function getTransactions(limit = 20, accessToken) {
 
 export function transferSend({
   recipientHandle,
+  recipientRef,
   amount,
   currency = 'kori',
   note,
@@ -376,7 +377,7 @@ export function transferSend({
   const handle = String(recipientHandle).replace(/^@/, '');
   return apiFetch('/api/transfers/send', {
     method: 'POST',
-    body: { recipientHandle: handle, amount, currency, note, voiceNoteUrl, photoUrl, videoUrl, gifUrl, giftCardTheme, threadId },
+    body: { recipientHandle: handle, recipientRef, amount, currency, note, voiceNoteUrl, photoUrl, videoUrl, gifUrl, giftCardTheme, threadId },
     stepUpToken,
     skipCache: true,
     idempotencyKey: intentKey,

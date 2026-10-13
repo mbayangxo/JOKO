@@ -635,13 +635,15 @@ export default function SendMoneyScreen({ navigation, route }) {
       const out = await moneySubmit.submit((intentKey) =>
         transferSend({
           recipientHandle: recipientProfile.handle,
+          // J13-F12: the payment goes to the account confirmed on screen, or nowhere.
+          recipientRef: recipientProfile.recipientRef,
           amount,
           note: reason,
           ...attachmentParams,
           stepUpToken: stepUpToken ?? security.stepUpToken,
           intentKey,
         }),
-        { instruction: { to: recipientProfile.handle, amount, note: reason, ...attachmentParams } },
+        { instruction: { to: recipientProfile.handle, ref: recipientProfile.recipientRef ?? null, amount, note: reason, ...attachmentParams } },
       );
       if (out.state === 'needs_pin') {
         setStepUpVisible(true);
@@ -655,6 +657,11 @@ export default function SendMoneyScreen({ navigation, route }) {
         setStep('success');
         if (out.state === 'accepted_pending') showToast(out.message);
         return;
+      }
+      if (out.category === 'recipient_changed') {
+        // The handle now points at a different account: drop the stale recipient and make the sender look again.
+        setRecipientProfile(null);
+        setStep('amount');
       }
       showToast(out.message ?? 'Envoi impossible');
     } finally {

@@ -9,6 +9,8 @@
  *   4. A balance that could not be refreshed is flagged until it refreshes.
  *   5. A trade-invoice notification routes to the invoices.
  *   6. A slow-network double tap on a GlowButton sends one request.
+ *   7. Recipient renamed/reclaimed after confirmation: refused, nobody paid (J13-F12).
+ *   8. A notification to another account's parcel reveals nothing.
  *
  *   WEB_DIR=… PLAYWRIGHT_CORE=… CHROMIUM=… DATABASE_URL=… node tests/e2e/j13-ui.mjs
  */
@@ -229,6 +231,55 @@ try {
     await page.waitForTimeout(4000);
     assert.equal(posts, 1, `one request on the wire (posts ${posts})`);
     assert.equal(await prisma.solidarityCampaign.count({ where: { title } }), 1, 'exactly one campaign');
+    await ctx.close();
+  });
+
+  await step('recipient renamed + handle reclaimed after confirmation → refused, nobody paid, the sender must look again (J13-F12)', async () => {
+    const a = await customer({ koriBalance: 20_000 });
+    const A = await signedIn(api, a);
+    const b = await customer();
+    const c = await customer();
+    const handle = `awa${Date.now().toString(36).slice(-6)}`;
+    await prisma.user.update({ where: { id: b.id }, data: { handle, name: 'Awa Diop' } });
+    const { ctx, page } = await sessionPage(A, 'rebind');
+    await tap(page, 'Yónnee', { exact: true });
+    await see(page, 'À qui ?');
+    await tap(page, 'Handle', { exact: true });
+    await page.getByPlaceholder('@handle').filter({ visible: true }).first().fill(`@${handle}`);
+    await see(page, 'Continuer →');
+    await page.waitForTimeout(900);
+    await tap(page, 'Continuer →');
+    await see(page, 'Oui c\'est bien Awa Diop'); // the verified recipient is shown and must be confirmed
+    // Between confirmation screen and tap: B renames, C takes the handle.
+    await prisma.user.update({ where: { id: b.id }, data: { handle: `${handle}_old` } });
+    await prisma.user.update({ where: { id: c.id }, data: { handle, name: 'Quelqu’un d’autre' } });
+    const w = async (id) => { const x = await prisma.wallet.findUnique({ where: { userId: id } }); return x.balance + x.koriBalance; };
+    const [a0, b0, c0] = [await w(a.id), await w(b.id), await w(c.id)];
+    await tap(page, 'Oui — Envoyer');
+    await see(page, 'Le destinataire a changé');
+    await page.waitForTimeout(1500);
+    assert.deepEqual([await w(a.id), await w(b.id), await w(c.id)], [a0, b0, c0], 'no money moved for anyone');
+    assert.equal(await seenEver(page, 'Envoyé'), false, 'never shown as sent');
+    await ctx.close();
+  });
+
+  await step('a notification pointing at another account\'s parcel shows none of it (server refuses; navigation bypasses nothing)', async () => {
+    const a = await customer();
+    const A = await signedIn(api, a);
+    const b = await customer();
+    const hx = Date.now().toString(36).slice(-5);
+    const hub = await prisma.deliveryHub.create({ data: { name: `Point ${hx}`, code: `PT-${hx}`, address: 'Rue 3', city: 'Dakar', lat: 14.7, lng: -17.4 } });
+    const theirs = await prisma.hubParcel.create({ data: { reference: `HP-SECRET-${hx}`, ownerId: b.id, hubId: hub.id, status: 'at_hub', originCountry: 'FR', description: `Colis privé ${hx}`, pickupCode: '918273' } });
+    await prisma.notification.create({ data: { userId: a.id, title: 'Ton colis est arrivé', body: 'Viens le chercher.', kind: 'hub_parcel', refId: theirs.id, category: 'orders' } });
+    const { ctx, page } = await sessionPage(A, 'xparcel');
+    await tap(page, 'Alertes', { exact: true });
+    await see(page, 'Ton colis est arrivé');
+    await tap(page, 'Voir', { exact: true });
+    await see(page, 'Accès refusé');
+    await page.waitForTimeout(1500);
+    for (const leak of [`HP-SECRET-${hx}`, '918273', `Colis privé ${hx}`]) {
+      assert.equal(await seenEver(page, leak), false, `leaked ${leak}`);
+    }
     await ctx.close();
   });
 
