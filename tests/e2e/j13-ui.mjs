@@ -21,6 +21,9 @@ import { prisma } from '../helpers/db.js';
 import { serveWeb } from './serve-web.mjs';
 import { customer, signedIn } from '../j3/helpers.js';
 import { assertInvariants } from '../../lib/money-kernel/invariants.js';
+import bcrypt from 'bcryptjs';
+
+const PIN = '482913';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 const log = (m) => process.stdout.write(`${m}\n`);
@@ -190,7 +193,8 @@ try {
     let cut = true;
     await page.route('**/api/wallet', (route) => (cut ? route.abort('failed') : route.continue()));
     await tap(page, 'Mon portefeuille');
-    await tap(page, 'Retour', { exact: true }).catch(async () => page.goBack());
+    // The back arrow is icon-only: found by its accessible name (J13 accessibility labels), not by text.
+    await page.getByRole('button', { name: 'Retour', exact: true }).filter({ visible: true }).first().click({ timeout: 20_000 });
     await see(page, 'Solde peut-être pas à jour');
     cut = false;
     await tap(page, 'Solde peut-être pas à jour');
@@ -241,6 +245,7 @@ try {
     const c = await customer();
     const handle = `awa${Date.now().toString(36).slice(-6)}`;
     await prisma.user.update({ where: { id: b.id }, data: { handle, name: 'Awa Diop' } });
+    await prisma.user.update({ where: { id: a.id }, data: { pinHash: await bcrypt.hash(PIN, 4) } });
     const { ctx, page } = await sessionPage(A, 'rebind');
     await tap(page, 'Yónnee', { exact: true });
     await see(page, 'À qui ?');
@@ -256,6 +261,10 @@ try {
     const w = async (id) => { const x = await prisma.wallet.findUnique({ where: { userId: id } }); return x.balance + x.koriBalance; };
     const [a0, b0, c0] = [await w(a.id), await w(b.id), await w(c.id)];
     await tap(page, 'Oui — Envoyer');
+    // The PIN step-up comes first (server order: step-up, then recipient resolution); a correct PIN
+    // must still not get the payment to the wrong account.
+    const asked = await page.getByText('Confirme ton PIN').filter({ visible: true }).first().waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);
+    if (asked) for (const d of PIN) await tap(page, d, { exact: true, last: true });
     await see(page, 'Le destinataire a changé');
     await page.waitForTimeout(1500);
     assert.deepEqual([await w(a.id), await w(b.id), await w(c.id)], [a0, b0, c0], 'no money moved for anyone');

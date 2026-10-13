@@ -66,7 +66,7 @@ test('handle renamed and RECLAIMED by another person between lookup and send →
   assert.equal(r.status, 409, JSON.stringify(r.body));
   assert.equal(r.body.code, 'recipient_changed');
   assert.deepEqual([await bal(A.id), await bal(b.id), await bal(c.id)], [a0, b0, c0], 'no money moved for anyone');
-  assert.equal(await prisma.transaction.count({ where: { senderId: A.id } }), 0);
+  assert.equal(await prisma.koriTransaction.count({ where: { senderId: A.id } }), 0);
 });
 
 test('forged, malformed and foreign refs are refused before any money moves', async () => {
@@ -101,7 +101,7 @@ test('same idempotency key with a changed recipient or ref → 422, never execut
   const replay = await A.call('POST', 'transfers/send', { recipientHandle: b.handle, recipientRef: refB, amount: 700 }, { headers: { 'idempotency-key': k } });
   assert.equal(replay.status, 201);
   assert.equal(replay.body.reference, first.body.reference, 'a replay is the original payment, not a new one');
-  assert.equal(await prisma.transaction.count({ where: { senderId: A.id } }), 1);
+  assert.equal(await prisma.koriTransaction.count({ where: { senderId: A.id } }), 1);
 });
 
 test('authorization unchanged with a ref: no session → 401; high value still needs PIN; a block still refuses', async () => {
@@ -114,8 +114,17 @@ test('authorization unchanged with a ref: no session → 401; high value still n
   assert.equal(big.status, 403);
   assert.equal(big.body.code, 'step_up_required');
   const token = await stepUp(A);
+  const b0 = await bal(b.id);
   const ok = await A.call('POST', 'transfers/send', { recipientHandle: b.handle, recipientRef: ref, amount: 60_000 }, { headers: { 'idempotency-key': key(), 'x-step-up-token': token } });
-  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  // The PIN is accepted; the risk engine may additionally HOLD a high-value send to a new recipient (202).
+  // Either it executed (201) or it is held for review with no money moved — never silently anything else.
+  assert.ok([201, 202].includes(ok.status), `${ok.status} ${JSON.stringify(ok.body)}`);
+  if (ok.status === 202) {
+    assert.equal(await bal(b.id), b0, 'a held payment has not reached the recipient');
+    assert.ok(await prisma.heldTransaction.count({ where: { userId: A.id } }) >= 1, 'the hold is recorded for review');
+  } else {
+    assert.equal(await bal(b.id), b0 + 60_000);
+  }
   await prisma.userBlock.create({ data: { blockerId: b.id, blockedUserId: A.id } });
   const blocked = await A.call('POST', 'transfers/send', { recipientHandle: b.handle, recipientRef: ref, amount: 500 }, { headers: { 'idempotency-key': key() } });
   assert.equal(blocked.status, 403);

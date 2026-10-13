@@ -32,14 +32,18 @@ test('a parcel notification pointing at SOMEONE ELSE\'s parcel opens nothing of 
   const theirs = await parcelOf(b.id);
   // Even a notification row crafted to point at B's parcel only yields a route…
   const r = routeForKind(inferKind({ kind: 'hub_parcel' }), theirs.id);
-  assert.deepEqual(r, { screen: 'HubParcelDetail', params: { parcelId: theirs.id } });
+  assert.equal(r.target, 'HubParcelDetail');
+  assert.deepEqual(r.targetParams, { parcelId: theirs.id });
   // …and the screen's load is refused by the server: no reference, pickup code or description leaks.
   const got = await A.call('GET', `hubs/parcels/${theirs.id}`);
   assert.equal(got.status, 403);
   assert.ok(!JSON.stringify(got.body).includes('654321') && !JSON.stringify(got.body).includes(theirs.reference));
-  for (const action of ['in-transit', 'pickup', 'last-mile', 'arrive']) {
-    const w = await A.call('POST', `hubs/parcels/${theirs.id}/${action}`, {});
-    assert.ok([403, 404, 409, 410].includes(w.status), `${action}: ${w.status}`);
+  // Well-formed bodies (the CORRECT pickup code included), so the authorization check — not body
+  // validation — is what refuses.
+  const bodies = { 'in-transit': {}, pickup: { pickupCode: '654321' }, 'last-mile': { area: 'Plateau', address: 'Rue 10' }, arrive: {} };
+  for (const [action, body] of Object.entries(bodies)) {
+    const w = await A.call('POST', `hubs/parcels/${theirs.id}/${action}`, body);
+    assert.ok([403, 404, 409, 410].includes(w.status), `${action}: ${w.status} ${JSON.stringify(w.body)}`);
   }
   assert.equal((await prisma.hubParcel.findUnique({ where: { id: theirs.id } })).status, 'at_hub', 'nothing changed');
   const mine = await parcelOf(a.id);
@@ -94,6 +98,6 @@ test('list routes carry no resource id — the destination always loads the view
   for (const kind of ['marketplace_order', 'low_stock', 'support_ticket', 'trade_invoice', 'scheduled_payment', 'agent_float', 'business_invitation']) {
     const r = routeForKind(inferKind({ kind }), 'someone-elses-id');
     assert.ok(r, kind);
-    assert.equal(r.params, undefined, `${kind} must not forward a foreign id`);
+    assert.equal(r.targetParams, undefined, `${kind} must not forward a foreign id`);
   }
 });

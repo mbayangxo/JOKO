@@ -60,7 +60,7 @@ test('cash-in: amount → provider → PENDING (not spendable) → provider conf
   const rc = await s.call('GET', `money/activity/${ref}`);
   assert.equal(rc.status, 200, JSON.stringify(rc.body));
   assert.equal(rc.body.status, 'pending');
-  assert.equal(rc.body.statusLabel, 'En cours');
+  assert.equal(rc.body.statusLabel, 'En cours de traitement'); // J13-F6: precise state (submitted to the provider), not a vague "En cours"
   const spend = await s.call('POST', 'transfers/send', { recipientHandle: (await customer()).handle, amount: 100 });
   assert.equal(spend.status, 400, 'cannot spend pending cash-in');
   assert.equal((await s.call('GET', `money/intents/${k}`)).body.state, 'accepted_pending');

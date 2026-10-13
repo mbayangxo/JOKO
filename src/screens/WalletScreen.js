@@ -234,12 +234,16 @@ export default function WalletScreen({ navigation }) {
   const [celebrate, setCelebrate] = useState(false);
   // J13-F7: a failed history load is shown as an error with retry — never as "Aucune opération".
   const [activityFailed, setActivityFailed] = useState(false);
+  // The history has its OWN load state: the screen spinner is released by another request, and an
+  // unresolved history must never read as "Aucune opération" (J13-F7, found by the J13 browser suite).
+  const [activityLoaded, setActivityLoaded] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       setLoading(true);
+      setActivityLoaded(false);
       // Server-authoritative balance + one coherent history (survives reinstall).
       Promise.all([getMoneyHome(), getMoneyActivity()])
         .then(([h, a]) => {
@@ -247,9 +251,13 @@ export default function WalletScreen({ navigation }) {
           setHome(h);
           setActivity(Array.isArray(a?.items) ? a.items : []);
           setActivityFailed(false);
+          setActivityLoaded(true);
         })
         .catch(() => {
-          if (!cancelled) setActivityFailed(true);
+          if (!cancelled) {
+            setActivityFailed(true);
+            setActivityLoaded(true);
+          }
         });
       Promise.all([getTransactions(100), getTontineGroups()])
         .then(async ([txList, groups]) => {
@@ -314,7 +322,9 @@ export default function WalletScreen({ navigation }) {
 
             <View>
               <Text style={styles.sectionLabel}>Historique</Text>
-              {activityFailed && activity.length === 0 ? (
+              {!activityLoaded && activity.length === 0 ? (
+                <ActivityIndicator color={colors.greenDark} accessibilityLabel="Chargement de l’historique" />
+              ) : activityFailed && activity.length === 0 ? (
                 <LoadErrorState what="ton historique" onRetry={() => setReloadKey((k) => k + 1)} />
               ) : activity.length === 0 ? (
                 <Text style={styles.emptyText}>Aucune opération pour l'instant.</Text>

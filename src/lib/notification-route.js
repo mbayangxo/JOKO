@@ -35,24 +35,40 @@ export function inferKind(notification) {
 }
 
 
-/** Routes for the kinds handled generically (the screen keeps its own cases for the older kinds). */
+// Screens registered only inside the Marketplace tab's stack: from the root-level Notifications screen they
+// must be reached through Main → MarketplaceTab (a bare navigate('TradeInvoices') silently does nothing —
+// found by the J13 browser suite).
+export const MARKETPLACE_STACK_SCREENS = new Set(['HubParcel', 'HubParcelDetail', 'MerchantOrders', 'TradeInvoices']);
+
+function to(target, params) {
+  if (MARKETPLACE_STACK_SCREENS.has(target)) {
+    return { screen: 'Main', params: { screen: 'MarketplaceTab', params: { screen: target, params } }, target, targetParams: params };
+  }
+  return { screen: target, params, target, targetParams: params };
+}
+
+/**
+ * Routes for the kinds handled generically (the screen keeps its own cases for the older kinds).
+ * Only a parcel carries the notification's refId; the destination loads it through the normal
+ * authenticated endpoint, so the server — not the notification — decides what the viewer may see.
+ */
 export function routeForKind(kind, refId) {
   switch (kind) {
     case 'parcel':
-      return refId ? { screen: 'HubParcelDetail', params: { parcelId: refId } } : { screen: 'HubParcel', params: undefined };
+      return refId ? to('HubParcelDetail', { parcelId: refId }) : to('HubParcel', undefined);
     case 'order':
-      return { screen: 'MerchantOrders', params: undefined };
+      return to('MerchantOrders', undefined);
     case 'stock':
     case 'business':
-      return { screen: 'BusinessMain', params: undefined };
+      return to('BusinessMain', undefined);
     case 'support':
-      return { screen: 'Support', params: undefined };
+      return to('Support', undefined);
     case 'trade':
-      return { screen: 'TradeInvoices', params: undefined };
+      return to('TradeInvoices', undefined);
     case 'scheduled':
-      return { screen: 'ScheduledPayments', params: undefined };
+      return to('ScheduledPayments', undefined);
     case 'agent':
-      return { screen: 'AgentHome', params: undefined };
+      return to('AgentHome', undefined);
     default:
       return null;
   }
