@@ -6,6 +6,8 @@ import PressScale from '../components/PressScale';
 import ScreenBackground from '../components/ScreenBackground';
 import ScreenHeader from '../components/ScreenHeader';
 import StepUpOverlay from '../components/StepUpOverlay';
+import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
+import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import { useToast } from '../components/Toast';
 import {
   acceptCollectiveRules, castCollectiveBallot, contributeCollective, declineCollectiveRules, getCollectiveGroup, inviteToCollective,
@@ -49,15 +51,23 @@ export default function CollectiveGroupScreen({ navigation, route }) {
       showToast(e.message ?? 'Action impossible');
     }
   };
-  const pay = async (stepUpToken, idempotencyKey) => {
-    try {
-      const r = await contributeCollective(id, { stepUpToken, idempotencyKey });
-      showToast(r.payout ? `Cotisation enregistrée — le pot du cycle ${r.payout.cycle} a été versé` : 'Cotisation enregistrée');
-      load();
-    } catch (e) {
-      if (e.code === 'step_up_required') return setStepUp({ idempotencyKey: e.idempotencyKey });
-      showToast(e.message ?? 'Cotisation impossible');
+  // J12: one intent per contribution attempt — reused for the PIN retry, looked up (never re-sent) when
+  // the outcome is unknown, resumed after a restart. Nothing is shown as paid before the server says so.
+  const money = useMoneySubmit(`collective:${id}`);
+  const pay = async (stepUpToken) => {
+    if (money.busy) return;
+    const out = await money.submit((key) => contributeCollective(id, { stepUpToken, idempotencyKey: key }), {
+      instruction: { group: id, cycle: g?.myDue?.[0]?.cycle ?? null, dueKori: g?.myDue?.[0]?.dueKori ?? null },
+    });
+    if (out.state === 'needs_pin') return setStepUp({});
+    if (out.state === 'done' || out.state === 'accepted_pending') {
+      const r = out.response ?? {};
+      showToast(r.payout ? `Cotisation enregistrée — le pot du cycle ${r.payout.cycle} a été versé` : out.state === 'done' ? 'Cotisation enregistrée' : out.message);
+      if (!out.error) money.reset();
+    } else if (out.state !== 'checking') {
+      showToast(out.message ?? 'Cotisation impossible');
     }
+    load();
   };
 
   if (!g) {
@@ -75,6 +85,7 @@ export default function CollectiveGroupScreen({ navigation, route }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <ScreenHeader onBack={() => navigation.goBack()} title={g.name} style={styles.header} />
+        <MoneyPhaseBanner phase={money.phase} />
         <ScrollView contentContainerStyle={styles.scroll}>
           <View style={[styles.card, styles.column]}>
             <Text style={styles.title}>{g.kind === 'rotating' ? 'Tontine tournante' : 'Épargne objectif'} · {g.contributionKori} ₭ par cycle</Text>
@@ -119,7 +130,7 @@ export default function CollectiveGroupScreen({ navigation, route }) {
             <View style={[styles.card, styles.column, styles.urgent]}>
               <Text style={styles.title}>À cotiser : {g.myDue[0].dueKori} ₭ (cycle {g.myDue[0].cycle})</Text>
               <Text style={styles.detail}>{g.myDue[0].status === 'missed' ? 'En retard — rien n’est prélevé automatiquement.' : `Avant le ${dt(g.myDue[0].dueAt)}`}</Text>
-              <PressScale onPress={() => pay()} disabled={g.frozen}><Text style={styles.action}>Cotiser {g.myDue[0].dueKori} ₭</Text></PressScale>
+              <PressScale onPress={() => pay()} disabled={g.frozen || money.busy}><Text style={styles.action}>Cotiser {g.myDue[0].dueKori} ₭</Text></PressScale>
             </View>
           ) : null}
           {active && g.kind === 'goal' && g.myShareKori > 0 && g.withdrawPolicy === 'anytime' ? (
@@ -181,7 +192,7 @@ export default function CollectiveGroupScreen({ navigation, route }) {
             </View>
           ) : null}
         </ScrollView>
-        <StepUpOverlay visible={Boolean(stepUp)} onCancel={() => setStepUp(null)} onVerified={(token) => { const k = stepUp?.idempotencyKey; setStepUp(null); pay(token, k); }} />
+        <StepUpOverlay visible={Boolean(stepUp)} onCancel={() => setStepUp(null)} onVerified={(token) => { setStepUp(null); pay(token); }} />
       </SafeAreaView>
     </View>
   );

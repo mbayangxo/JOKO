@@ -1,10 +1,12 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import PressScale from '../components/PressScale';
 import GlowButton from '../components/GlowButton';
 import StepUpOverlay from '../components/StepUpOverlay';
+import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
+import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import { useToast } from '../components/Toast';
 import {
   acceptBizMilestone, acceptBizMilestonesBatch, appealBizWorkDispute, approveBizWorkRule, createBizOffer, createBizOpportunity, decideBizApplication, endBizAssignment, fundBizWorkRule,
@@ -12,7 +14,6 @@ import {
   proposeBizWorkRule,
 } from '../lib/api-client';
 import { formatKori } from '../lib/kori.js';
-import { newActionKey } from '../lib/logistics-ux';
 import { APP_STATUS, ARRANGEMENT, ASSIGNMENT_STATUS, FUNDING, MILESTONE_STATUS } from '../lib/work-ux';
 import { workStyles as styles } from './WorkScreen';
 
@@ -48,7 +49,10 @@ export default function BusinessWorkScreen({ navigation }) {
   const [offer, setOffer] = useState({});
   const [codes, setCodes] = useState({});
   const [stepUpFor, setStepUpFor] = useState(null);
-  const offerKey = useRef({});
+  // J12: funded offers and budget top-ups are money: one intent per attempt (same key for the PIN retry and
+  // for a reconnect), an unknown outcome is looked up — never re-sent — and survives a restart.
+  const offerMoney = useMoneySubmit('work-offer');
+  const ruleMoney = useMoneySubmit('work-rule-fund');
 
   const say = (e, fallback) => showToast(/Network|fetch/i.test(e?.message ?? '') ? 'Réseau incertain — réessaie : rien ne sera fait deux fois' : e?.message ?? fallback);
 
@@ -108,31 +112,50 @@ export default function BusinessWorkScreen({ navigation }) {
   };
 
   const sendOffer = async (opp, app, stepUpToken) => {
+    if (offerMoney.busy) return;
     const f = offer[app.id] ?? {};
-    offerKey.current[app.id] = offerKey.current[app.id] ?? newActionKey('work-offer');
+    const body = {
+      applicationId: app.id, startDate: f.startDate || new Date(Date.now() + 86400000).toISOString().slice(0, 10), duties: f.duties || opp.description,
+      ...(opp.funding === 'payroll' ? { rateKori: opp.rateKori, wagePeriod: 'month' } : {}),
+      ...(opp.type === 'courier' ? { rateKori: opp.rateKori, units: opp.units } : {}),
+      ...(opp.arrangement === 'apprenticeship' ? { learningPlan: f.learningPlan || '' } : {}),
+      ...(f.attendance ? { evidenceRequired: 'attendance' } : {}),
+    };
     setBusy(true);
     try {
-      await createBizOffer(bizId, {
-        applicationId: app.id, startDate: f.startDate || new Date(Date.now() + 86400000).toISOString().slice(0, 10), duties: f.duties || opp.description,
-        ...(opp.funding === 'payroll' ? { rateKori: opp.rateKori, wagePeriod: 'month' } : {}),
-        ...(opp.type === 'courier' ? { rateKori: opp.rateKori, units: opp.units } : {}),
-        ...(opp.arrangement === 'apprenticeship' ? { learningPlan: f.learningPlan || '' } : {}),
-        ...(f.attendance ? { evidenceRequired: 'attendance' } : {}),
-      }, { stepUpToken, idempotencyKey: offerKey.current[app.id] });
-      delete offerKey.current[app.id];
-      showToast(opp.funding === 'prepaid' ? 'Offre envoyée — le montant est bloqué pour le travailleur' : 'Offre envoyée');
-      await loadApplicants(opp.id);
-      await load();
-    } catch (e) {
-      if (e.code === 'step_up_required') setStepUpFor({ opp, app });
-      else say(e, 'Offre impossible');
+      const out = await offerMoney.submit((key) => createBizOffer(bizId, body, { stepUpToken, idempotencyKey: key }), { instruction: { biz: bizId, ...body } });
+      if (out.state === 'needs_pin') {
+        setStepUpFor({ opp, app });
+        return;
+      }
+      if (out.state === 'done' || out.state === 'accepted_pending') {
+        showToast(opp.funding === 'prepaid' ? 'Offre envoyée — le montant est bloqué pour le travailleur' : 'Offre envoyée');
+        offerMoney.reset();
+        await loadApplicants(opp.id);
+        await load();
+      } else if (out.state !== 'checking') {
+        showToast(out.message ?? 'Offre impossible');
+      }
     } finally {
       setBusy(false);
     }
   };
 
+  const fundRule = async (rule, stepUpToken) => {
+    if (ruleMoney.busy) return;
+    const out = await ruleMoney.submit((key) => fundBizWorkRule(bizId, rule.id, 5000, { stepUpToken, idempotencyKey: key }), { instruction: { biz: bizId, rule: rule.id, amountKori: 5000 } });
+    if (out.state === 'needs_pin') return setStepUpFor({ rule });
+    if (out.state === 'done' || out.state === 'accepted_pending') {
+      showToast('Budget alimenté');
+      ruleMoney.reset();
+      load();
+    } else if (out.state !== 'checking') showToast(out.message ?? 'Impossible');
+  };
+
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
+      <MoneyPhaseBanner phase={offerMoney.phase} />
+      <MoneyPhaseBanner phase={ruleMoney.phase} />
       <View style={styles.header}>
         <PressScale onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Retour"><Text style={styles.big}>‹</Text></PressScale>
         <View style={{ flex: 1 }}>
@@ -272,7 +295,7 @@ export default function BusinessWorkScreen({ navigation }) {
                   <Text style={styles.cardTitle}>{r.kind === 'rep_first_received_order' ? 'Commission commerciale' : 'Frais point relais'} · {formatKori(r.amountKori)}</Text>
                   <Text style={styles.meta}>{r.status} · budget {formatKori(r.budgetKori)}</Text>
                   {r.status === 'proposed' ? <PressScale onPress={() => act(() => approveBizWorkRule(bizId, r.id), 'Règle approuvée')} style={styles.smallBtn}><Text style={styles.ghostText}>Approuver</Text></PressScale> : null}
-                  {['proposed', 'active'].includes(r.status) ? <PressScale onPress={() => fundBizWorkRule(bizId, r.id, 5000, { idempotencyKey: newActionKey('rule-fund') }).then(() => { showToast('Budget alimenté'); load(); }).catch((e) => (e.code === 'step_up_required' ? setStepUpFor({ rule: r }) : say(e, 'Impossible')))} style={styles.smallBtn}><Text style={styles.ghostText}>Alimenter 5 000 ₭</Text></PressScale> : null}
+                  {['proposed', 'active'].includes(r.status) ? <PressScale onPress={() => fundRule(r)} disabled={ruleMoney.busy} style={styles.smallBtn}><Text style={styles.ghostText}>Alimenter 5 000 ₭</Text></PressScale> : null}
                 </View>
               ))}
             </>
@@ -287,7 +310,7 @@ export default function BusinessWorkScreen({ navigation }) {
           const s = stepUpFor;
           setStepUpFor(null);
           if (s?.app) sendOffer(s.opp, s.app, token);
-          if (s?.rule) fundBizWorkRule(bizId, s.rule.id, 5000, { stepUpToken: token, idempotencyKey: newActionKey('rule-fund') }).then(() => { showToast('Budget alimenté'); load(); }).catch((e) => say(e, 'Impossible'));
+          if (s?.rule) fundRule(s.rule, token);
         }}
       />
     </SafeAreaView>

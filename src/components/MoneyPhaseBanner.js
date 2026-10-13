@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, fontFamily, radius, spacing } from '../theme';
+import { useLocale } from '../context/LocaleContext';
+import { safetyIdFor, safetyText } from '../i18n/money-safety';
 
 /**
  * J12 — shows the authoritative status of a money attempt whose outcome was unknown (lost response,
@@ -8,12 +10,13 @@ import { colors, fontFamily, radius, spacing } from '../theme';
 const TONE = { checking: 'pending', accepted_pending: 'pending', done: 'ok', failed_safe: 'muted', safe_to_retry: 'muted', blocked: 'muted' };
 
 export default function MoneyPhaseBanner({ phase }) {
+  const { langCode } = useLocale();
   // Only for attempts that went through a check (unknown outcome); normal results keep their own UI.
   if (!phase || !(phase.state === 'checking' || phase.resumed || phase.afterCheck)) return null;
   const tone = TONE[phase.state] ?? 'muted';
-  const text =
-    phase.message ??
-    (phase.state === 'checking' ? 'Vérification du paiement en cours… Ne le renouvelle pas.' : 'Consulte ton historique.');
+  // P-J12-2: reviewed text in the user's language when one exists, otherwise the reviewed French.
+  const id = safetyIdFor(phase);
+  const text = (langCode && langCode !== 'fr' && id ? safetyText(id, langCode) : null) ?? phase.message ?? safetyText(id ?? 'checking', 'fr');
   return (
     <View style={[styles.wrap, styles[tone]]} accessibilityRole="alert" accessibilityLiveRegion="polite" testID="money-phase-banner">
       <Text style={styles.text}>{text}</Text>

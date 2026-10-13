@@ -3,7 +3,8 @@ import { pendingIntentAction } from './offline-policy.js';
 /**
  * J12 — remembers money intents whose outcome is UNKNOWN (response lost, app killed, network gone),
  * so that after a restart the screen asks the server what happened instead of letting the user pay
- * again. Records are lookup handles only: no amount, no recipient, nothing spendable, never replayed.
+ * again. Records are lookup handles only: no amount, no recipient (only a one-way hash of the
+ * instruction), nothing spendable, never replayed.
  */
 const KEY = 'k21_pending_intents_v1';
 
@@ -30,10 +31,12 @@ async function readAll(storage) {
   }
 }
 
-export async function rememberPendingIntent({ key, userId, flow, now = Date.now() }, storage = defaultStorage) {
+export async function rememberPendingIntent({ key, userId, flow, fp = null, now = Date.now() }, storage = defaultStorage) {
   if (!key || !userId || !flow) return;
   const list = (await readAll(storage)).filter((r) => r.key !== key);
-  list.push({ key, userId, flow, createdAt: now });
+  // fp = a HASH of the instruction (never the amount/recipient): lets the same payment, re-entered after a
+  // restart, reuse this key — so even a late-arriving original request can never execute twice.
+  list.push({ key, userId, flow, ...(fp ? { fp } : {}), createdAt: now });
   await storage.set(JSON.stringify(list.slice(-20)));
 }
 

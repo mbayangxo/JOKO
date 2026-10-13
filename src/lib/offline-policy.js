@@ -77,10 +77,20 @@ export function outboxDecision(entry, { userId, now = Date.now() } = {}) {
   return 'send';
 }
 
-/** Canonical fingerprint of a money instruction (flow + every field that changes what is paid, to whom). */
+/**
+ * Fingerprint of a money instruction (flow + every field that changes what is paid, to whom), as a HASH:
+ * it is stored on the device next to a pending intent, so it must not reveal the amount or recipient.
+ * (FNV-1a 64-bit — a matching aid only; the server independently fingerprints the full request body.)
+ */
 export function instructionFingerprint(flow, instruction) {
   const canon = (v) => (Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
-  return `${flow}:${JSON.stringify(canon(instruction ?? {}))}`;
+  const text = `${flow}:${JSON.stringify(canon(instruction ?? {}))}`;
+  let h = 0xcbf29ce484222325n;
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= BigInt(text.charCodeAt(i));
+    h = (h * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return `fp1-${h.toString(16).padStart(16, '0')}`;
 }
 
 /**

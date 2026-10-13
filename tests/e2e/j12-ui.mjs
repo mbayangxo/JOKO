@@ -22,6 +22,8 @@ import { prisma } from '../helpers/db.js';
 import { serveWeb } from './serve-web.mjs';
 import { customer, signedIn } from '../j3/helpers.js';
 import { assertInvariants } from '../../lib/money-kernel/invariants.js';
+import { checkCollectiveInvariants } from '../../lib/collective/invariants.js';
+import * as Coll from '../../lib/collective/engine.js';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
 const log = (m) => process.stdout.write(`${m}\n`);
@@ -38,7 +40,8 @@ const step = async (name, fn) => {
   }
 };
 
-const api = await startApiServer();
+process.env.JOKKO_COLLECTIVE_ENABLED = 'true'; // the J11 engine is used below to set up a group (dark by default)
+const api = await startApiServer({ JOKKO_COLLECTIVE_ENABLED: 'true' });
 const web = await serveWeb({ dir: process.env.WEB_DIR, apiPort: Number(new URL(api.base).port) });
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM });
 const errors = [];
@@ -135,7 +138,9 @@ try {
     assert.equal(await bal(bC.id), b0 + 5000);
     const pending = await page.evaluate(() => JSON.parse(localStorage.getItem('k21_pending_intents_v1') ?? '[]'));
     assert.equal(pending.length, 1, 'the unknown outcome is remembered for lookup');
-    assert.deepEqual(Object.keys(pending[0]).sort(), ['createdAt', 'flow', 'key', 'userId'], 'a lookup handle only — no amount, no recipient');
+    assert.deepEqual(Object.keys(pending[0]).sort(), ['createdAt', 'flow', 'fp', 'key', 'userId'], 'a lookup handle + instruction hash only');
+    assert.match(pending[0].fp, /^fp1-[0-9a-f]{16}$/);
+    assert.ok(!JSON.stringify(pending[0]).includes(bC.handle), 'no recipient in clear (the fp is a hash — see tests/j12/money-safety-i18n.test.js)');
   });
 
   await step('restart while unknown: the app resumes the LOOKUP (never re-sends) and confirms only from the server', async () => {
@@ -182,10 +187,43 @@ try {
     assert.equal(lookups, 0, 'C’s session never looks up A’s intent');
   });
 
+  await step('J11 contribution, reply lost: shown as "vérification" then confirmed by the server — paid once', async () => {
+    const m1 = await customer({ koriBalance: 20_000 });
+    const m2 = await customer({ koriBalance: 20_000 });
+    const name = `Tontine J12 ${Date.now().toString(36).slice(-4)}`;
+    const g = await Coll.createGroup(m1.id, { kind: 'rotating', name, contributionKori: 1000, frequency: 'weekly', graceDays: 1, rotationMethod: 'fixed' });
+    await Coll.inviteMembers(g.id, m1.id, [m2.handle]);
+    await Coll.respondToInvite(g.id, m2.id, true);
+    const p = await Coll.proposeRules(g.id, m1.id, { order: [m2.id, m1.id], startAt: new Date(Date.now() + 1000) });
+    for (const u of [m1, m2]) await Coll.acceptRules(g.id, u.id, { rulesHash: p.rulesHash });
+    const M1 = await signedIn(api, m1);
+    const gctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const gp = await sessionPage(gctx, M1, 'M1');
+    let hits = 0;
+    await gp.route('**/api/collective/groups/*/contribute', async (route) => {
+      hits += 1;
+      if (hits === 1) await route.fetch(); // executes on the server …
+      await route.abort('failed'); // … the reply (and the client's auto-retry) is lost
+    });
+    const before = await bal(m1.id);
+    await tap(gp, 'Natta', { exact: true });
+    await tap(gp, 'Groupes d’épargne (nouveau)');
+    await tap(gp, name);
+    await tap(gp, 'Cotiser 1000 ₭', { exact: true });
+    await see(gp, 'Vérification du paiement en cours');
+    assert.ok(!(await visible(gp, 'Cotisation enregistrée')), 'never shown as paid before the server confirms');
+    await see(gp, 'Paiement effectué', 40_000); // the intent lookup — not a re-send — confirms it
+    assert.equal(await prisma.collectivePayment.count({ where: { groupId: g.id, userId: m1.id, kind: 'contribution' } }), 1, 'one contribution');
+    assert.equal(await bal(m1.id), before - 1000, 'debited exactly once');
+    await gctx.close();
+  });
+
   await step('no uncaught page errors', async () => {
     assert.deepEqual(errors, []);
   });
   await assertInvariants(prisma);
+  const ci = await checkCollectiveInvariants();
+  assert.ok(ci.ok, JSON.stringify(ci.violations));
   log('INVARIANTS OK');
 } finally {
   log(JSON.stringify({ passed: results.filter((r) => r[0] === 'PASS').length, failed: results.filter((r) => r[0] === 'FAIL').length }));
