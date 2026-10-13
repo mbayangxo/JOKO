@@ -588,7 +588,7 @@ export default function SendMoneyScreen({ navigation, route }) {
           mode === 'phone'
             ? toE164(country, trimmed)
             : resolveAccountQuery(trimmed).replace(/^@/, '');
-        const profile = await lookupUser(query);
+        const profile = await lookupUser(query, { mode: mode === 'phone' ? 'phone' : 'handle' });
         setRecipientProfile(profile);
       } catch (err) {
         setRecipientProfile(null);

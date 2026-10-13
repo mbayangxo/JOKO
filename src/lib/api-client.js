@@ -215,10 +215,11 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
   throw lastError;
 }
 
-export function lookupUser(query) {
+export function lookupUser(query, { mode } = {}) {
   const q = String(query).trim();
   if (q.length < 3) return Promise.reject(new Error('Query too short'));
-  return apiFetch(`/api/users/lookup?q=${encodeURIComponent(q)}`, { skipCache: true });
+  const m = mode === 'handle' || mode === 'phone' ? `&mode=${mode}` : '';
+  return apiFetch(`/api/users/lookup?q=${encodeURIComponent(q)}${m}`, { skipCache: true });
 }
 
 export function transferUndo(reference) {

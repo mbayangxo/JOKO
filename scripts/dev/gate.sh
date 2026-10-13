@@ -51,6 +51,8 @@ step web web.log env EXPO_NO_TELEMETRY=1 npx expo export --platform web --output
 for e in j8 j9 j10 j11 $(ls tests/e2e/ | sed -n 's/^\(j1[2-9]\)-ui\.mjs$/\1/p'); do
   step "e2e_$e" "e2e-$e.log" env WEB_DIR="$WEB" PLAYWRIGHT_CORE="$PW" CHROMIUM="$CHROME" node "tests/e2e/$e-ui.mjs"
 done
+# J12: SIMULATED weak-network / low-end lab (DevTools emulation — not a physical device); JSON report kept.
+[ -f tests/e2e/j12-lab.mjs ] && step lab_j12 lab.log env WEB_DIR="$WEB" PLAYWRIGHT_CORE="$PW" CHROMIUM="$CHROME" LAB_REPORT="$OUT/lab.json" node tests/e2e/j12-lab.mjs
 step rehearsal rehearsal.log env REHEARSAL_ADMIN_URL="$ADMIN" node scripts/rehearse-migration.mjs
 psql "$ADMIN" -q -c "DROP DATABASE IF EXISTS ${DB}_shadow" -c "CREATE DATABASE ${DB}_shadow"
 npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma \

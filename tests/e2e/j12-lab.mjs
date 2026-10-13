@@ -33,7 +33,9 @@ const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-cor
 const log = (m) => process.stdout.write(`${m}\n`);
 const report = { simulated: true, device: 'desktop Chromium with DevTools emulation — NOT a physical low-end Android', when: new Date().toISOString(), scenarios: {} };
 const results = [];
+const ONLY = process.env.LAB_ONLY ?? '';
 const step = async (name, fn) => {
+  if (ONLY && !name.includes(ONLY) && !name.startsWith('no uncaught')) return;
   const t0 = Date.now();
   try {
     const data = (await fn()) ?? {};
@@ -68,6 +70,7 @@ const sessionInit = ({ token, refresh, device }) => {
 async function open(ctx, person, label, { profile = null, cpu = 1, init = null } = {}) {
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push(`${label}: ${String(e).slice(0, 200)}`));
+  if (process.env.LAB_DEBUG) page.on('requestfailed', (r) => log(`  [${label}] failed ${r.url().replace(/^http:\/\/127\.0\.0\.1:\d+/, '').slice(0, 80)} ${r.failure()?.errorText}`));
   if (init) await page.addInitScript(init.fn, init.arg);
   await page.addInitScript(sessionInit, { token: person.token, refresh: person.refresh, device: person.device });
   const cdp = await ctx.newCDPSession(page);
@@ -81,7 +84,12 @@ async function open(ctx, person, label, { profile = null, cpu = 1, init = null }
 const tap = async (page, text, { exact = false, last = false, timeout = 60_000 } = {}) => {
   const all = page.getByText(text, { exact }).filter({ visible: true });
   const loc = last ? all.last() : all.first();
-  await loc.waitFor({ state: 'visible', timeout });
+  try {
+    await loc.waitFor({ state: 'visible', timeout });
+  } catch {
+    const body = (await page.innerText('body').catch(() => '')).replace(/\s+/g, ' ');
+    throw new Error(`tap "${text}" not visible; screen: …${body.slice(-500)}`);
+  }
   await loc.click();
 };
 const see = async (page, text, timeout = 60_000) => {
@@ -157,6 +165,29 @@ try {
     return { coldMs: cold, warmMs: warm };
   });
 
+  await step('first load interrupted mid-download: "Connexion interrompue" shown, then recovers by itself — never a blank page', async () => {
+    const { A } = await payer();
+    const ctx = await browser.newContext({ viewport: { width: 360, height: 740 } });
+    const { page, cdp } = await open(ctx, A, 'boot', { profile: '3G-unstable' });
+    let cut = 0;
+    await page.route('**/_expo/static/js/web/*.js', async (route) => {
+      if (cut === 0) {
+        cut += 1;
+        return route.abort('connectionreset'); // the bundle download is cut once
+      }
+      return route.continue();
+    });
+    const t0 = Date.now();
+    await page.goto(`http://127.0.0.1:${web.port}/`, { timeout: 300_000 });
+    await see(page, 'Connexion interrompue', 30_000);
+    const shownMs = Date.now() - t0;
+    await see(page, 'Yónnee', 300_000); // automatic retry
+    const recoveredMs = Date.now() - t0;
+    void cdp;
+    await ctx.close();
+    return { interruptedMessageAfterMs: shownMs, recoveredAfterMs: recoveredMs };
+  });
+
   await step('P2P under unstable 3G with 10 % seeded request loss: each payment at most once, never "sent" early', async () => {
     const { A, B } = await payer();
     const ctx = await browser.newContext({ viewport: { width: 360, height: 740 } });
@@ -176,24 +207,35 @@ try {
       }
       return route.continue();
     });
-    const flap = setInterval(async () => {
-      await cdp.send('Network.emulateNetworkConditions', { ...PROFILES['3G-unstable'], offline: true }).catch(() => {});
-      setTimeout(() => cdp.send('Network.emulateNetworkConditions', PROFILES['3G-unstable']).catch(() => {}), 2000);
-    }, 12_000);
+    let flap = null;
+    let paused = false;
     const a0 = await bal(A.id);
     const outcomes = [];
+    let loadMs = null;
     try {
+      const tLoad = Date.now();
       await page.goto(`http://127.0.0.1:${web.port}/`, { timeout: 300_000 });
+      await see(page, 'Yónnee', 300_000);
+      loadMs = Date.now() - tLoad;
+      // the app is on screen: now the connection keeps dropping for 2 s every 12 s
+      flap = setInterval(async () => {
+        if (paused) return; // (the scripted page reload between payments is not part of the test)
+        await cdp.send('Network.emulateNetworkConditions', { ...PROFILES['3G-unstable'], offline: true }).catch(() => {});
+        setTimeout(() => cdp.send('Network.emulateNetworkConditions', PROFILES['3G-unstable']).catch(() => {}), 2000);
+      }, 12_000);
       for (let i = 0; i < 3; i += 1) {
         await openSend(page, B.handle);
         await tap(page, 'Oui — Envoyer');
         await pinIfAsked(page);
         outcomes.push(await verdict(page));
+        paused = true;
+        await cdp.send('Network.emulateNetworkConditions', PROFILES['3G-unstable']).catch(() => {});
         await page.goto(`http://127.0.0.1:${web.port}/`, { timeout: 300_000 }).catch(() => {});
-        await page.waitForTimeout(1500);
+        await see(page, 'Yónnee', 300_000).catch(() => {});
+        paused = false;
       }
     } finally {
-      clearInterval(flap);
+      if (flap) clearInterval(flap);
     }
     await page.waitForTimeout(3000);
     const debits = (a0 - (await bal(A.id))) / 5000;
@@ -203,7 +245,7 @@ try {
     assert.ok(debits <= outcomes.length, `never more debits (${debits}) than payment attempts (${outcomes.length})`);
     assert.ok(debits >= sent && debits <= sent + unknown, `every "sent" is a real debit; no silent extra debit (debits ${debits}, sent ${sent}, unknown ${unknown})`);
     await ctx.close();
-    return { attempts: outcomes.length, outcomes, debits, droppedRequests: dropped, executedButReplyLost: executedAndLost };
+    return { firstScreenMs: loadMs, attempts: outcomes.length, outcomes, debits, droppedRequests: dropped, executedButReplyLost: executedAndLost };
   });
 
   for (const skewH of [+48, -12]) {
