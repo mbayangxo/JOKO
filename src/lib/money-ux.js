@@ -163,3 +163,15 @@ export function requestCreateProblem(error) {
   }
   return { kind: 'error', message: e.message ?? 'Demande impossible', nextStep: e.data?.nextStep ?? null };
 }
+
+/**
+ * J13: the ONLY way a money screen words its result toast. Success wording is used exclusively for a
+ * server-confirmed `done`; a held/under-review (`accepted_pending`), refused or unknown outcome gets the
+ * server's own status message — never a success phrase.
+ */
+export function outcomeToast(out, successText) {
+  if (out?.state === 'done') return successText;
+  if (out?.state === 'accepted_pending') return out.message ?? 'Opération enregistrée — en attente de confirmation. Ne la renouvelle pas.';
+  if (out?.state === 'checking') return out.message ?? 'Vérification du paiement en cours… Ne le renouvelle pas.';
+  return out?.message ?? 'Opération refusée — aucun argent n’a été débité.';
+}

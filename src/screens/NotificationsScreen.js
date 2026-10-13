@@ -22,6 +22,8 @@ function inferKind(notification) {
   if (notification.kind === 'gift_receive') return 'gift';
   if (notification.kind === 'affiliate') return 'affiliate';
   if (notification.kind === 'money_request') return 'money';
+  // J13-F3: Jëkkal notifications (new donation, goal reached) were mapped to 'generic' and opened nothing.
+  if (notification.kind === 'jekkal') return 'jekkal';
   const t = `${notification.title} ${notification.body}`
     .toLowerCase()
     .replace(/[''`´]/g, "'");
@@ -69,6 +71,8 @@ function NotifItem({ item, delay, onAction }) {
         <Text style={{ fontSize: 17 }}>{item.icon}</Text>
       </View>
       <View style={{ flex: 1 }}>
+        {/* J13-F2: the title carries the meaning ("Paiement reçu", "Objectif atteint"); it was dropped. */}
+        {item.title && item.title !== item.text ? <Text style={styles.itemTitle}>{item.title}</Text> : null}
         <Text style={styles.text}>{item.text}</Text>
         <Text style={styles.time}>{item.time}</Text>
       </View>
@@ -285,6 +289,7 @@ const styles = StyleSheet.create({
   itemCelebrate: { backgroundColor: 'rgba(250,216,54,0.08)', borderWidth: 1.5, borderColor: 'rgba(250,216,54,0.2)' },
   accentBar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   iconWrap: { width: 38, height: 38, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center' },
+  itemTitle: { fontSize: 12.5, lineHeight: 17, color: 'rgba(5,8,5,0.92)', fontFamily: fontFamily.bodySemiBold },
   text: { fontSize: 11, lineHeight: 16.5, color: 'rgba(5,8,5,0.7)' },
   time: { fontSize: 10, color: 'rgba(5,8,5,0.5)', marginTop: 2 },
   actionBtn: { height: 26, paddingHorizontal: spacing.lg, borderRadius: radius.round, alignItems: 'center', justifyContent: 'center' },

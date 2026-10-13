@@ -8,6 +8,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import StepUpOverlay from '../components/StepUpOverlay';
 import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
 import { useMoneySubmit } from '../hooks/useMoneySubmit';
+import { outcomeToast } from '../lib/money-ux';
 import { useToast } from '../components/Toast';
 import {
   acceptCollectiveRules, castCollectiveBallot, contributeCollective, declineCollectiveRules, getCollectiveGroup, inviteToCollective,
@@ -62,7 +63,7 @@ export default function CollectiveGroupScreen({ navigation, route }) {
     if (out.state === 'needs_pin') return setStepUp({});
     if (out.state === 'done' || out.state === 'accepted_pending') {
       const r = out.response ?? {};
-      showToast(r.payout ? `Cotisation enregistrée — le pot du cycle ${r.payout.cycle} a été versé` : out.state === 'done' ? 'Cotisation enregistrée' : out.message);
+      showToast(outcomeToast(out, r.payout ? `Cotisation enregistrée — le pot du cycle ${r.payout.cycle} a été versé` : 'Cotisation enregistrée'));
       if (!out.error) money.reset();
     } else if (out.state !== 'checking') {
       showToast(out.message ?? 'Cotisation impossible');

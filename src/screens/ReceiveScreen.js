@@ -13,7 +13,7 @@ import { colors, fontFamily, radius, spacing, type } from '../theme';
 import { useBlink, useEntrance, usePopIn, useSuccessHaptic } from '../hooks/animations';
 import { useToast } from '../components/Toast';
 import { transferRequest, getTransferRequests, acceptTransferRequest, denyTransferRequest, cancelTransferRequest } from '../lib/api-client';
-import { requestCreateProblem, requestRow } from '../lib/money-ux';
+import { outcomeToast, requestCreateProblem, requestRow } from '../lib/money-ux';
 import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import StepUpOverlay from '../components/StepUpOverlay';
 import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
@@ -267,7 +267,7 @@ export default function ReceiveScreen({ navigation }) {
       if (out.state === 'done' || out.state === 'accepted_pending') {
         await refreshWallet();
         // Only a server-confirmed payment is announced as sent; a held one says so.
-        showToast(out.state === 'done' ? 'Paiement envoyé ✓' : out.message);
+        showToast(outcomeToast(out, 'Paiement envoyé ✓'));
       } else {
         showToast(out.nextStep ? `${out.message} ${out.nextStep}` : out.message ?? 'Paiement impossible');
       }

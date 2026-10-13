@@ -8,6 +8,7 @@ import GlowButton from '../components/GlowButton';
 import StepUpOverlay from '../components/StepUpOverlay';
 import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
 import { useMoneySubmit } from '../hooks/useMoneySubmit';
+import { outcomeToast } from '../lib/money-ux';
 import { useToast } from '../components/Toast';
 import {
   acceptBizMilestone, acceptBizMilestonesBatch, appealBizWorkDispute, approveBizWorkRule, createBizOffer, createBizOpportunity, decideBizApplication, endBizAssignment, fundBizWorkRule,
@@ -144,7 +145,7 @@ export default function BusinessWorkScreen({ navigation }) {
       }
       if (out.state === 'done' || out.state === 'accepted_pending') {
         // Only a server-confirmed offer is announced; a held one (risk review) says it is pending.
-        showToast(out.state !== 'done' ? out.message : opp.funding === 'prepaid' ? 'Offre envoyée — le montant est bloqué pour le travailleur' : 'Offre envoyée');
+        showToast(outcomeToast(out, opp.funding === 'prepaid' ? 'Offre envoyée — le montant est bloqué pour le travailleur' : 'Offre envoyée'));
         offerMoney.reset();
         await loadApplicants(opp.id);
         await load();
@@ -161,7 +162,7 @@ export default function BusinessWorkScreen({ navigation }) {
     const out = await ruleMoney.submit((key) => fundBizWorkRule(bizId, rule.id, 5000, { stepUpToken, idempotencyKey: key }), { instruction: { biz: bizId, rule: rule.id, amountKori: 5000 } });
     if (out.state === 'needs_pin') return setStepUpFor({ rule });
     if (out.state === 'done' || out.state === 'accepted_pending') {
-      showToast(out.state === 'done' ? 'Budget alimenté' : out.message);
+      showToast(outcomeToast(out, 'Budget alimenté'));
       ruleMoney.reset();
       load();
     } else if (out.state !== 'checking') showToast(out.message ?? 'Impossible');
