@@ -76,7 +76,7 @@ export default function MbooloVaultScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <PressScale scaleTo={0.92} onPress={() => navigation.goBack()} style={styles.back}>
+        <PressScale scaleTo={0.92} onPress={() => navigation.goBack()} style={styles.back} accessibilityRole="button" accessibilityLabel="Retour">
           <Text style={styles.backText}>←</Text>
         </PressScale>
         <View style={{ flex: 1 }}>

@@ -355,7 +355,7 @@ export default function WelcomeScreen({ onComplete, onBack }) {
           <View style={styles.topBar}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
               {onBack ? (
-                <PressScale scaleTo={0.9} onPress={onBack} style={styles.topBackBtn}>
+                <PressScale scaleTo={0.9} onPress={onBack} style={styles.topBackBtn} accessibilityRole="button" accessibilityLabel="Retour">
                   <Text style={{ fontSize: 14, color: colors.ink }}>←</Text>
                 </PressScale>
               ) : null}

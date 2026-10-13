@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Animated, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import LoadErrorState from '../components/LoadErrorState';
 import ScreenBackground from '../components/ScreenBackground';
 import FlagMicroStripe from '../components/FlagMicroStripe';
 import PressScale from '../components/PressScale';
@@ -69,6 +70,7 @@ export default function AlertDetailScreen({ navigation, route }) {
   const alertId = route.params?.alertId;
   const [alert, setAlert] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const float = useFloatLoop(0, 3, 2200);
   const blink = useBlink(850, 0.4);
   const headerEntrance = useEntrance(0, 520, 18);
@@ -79,9 +81,11 @@ export default function AlertDetailScreen({ navigation, route }) {
     try {
       const data = await getTrendingAlert(alertId);
       setAlert(data);
-      await markTrendingAlertRead(alertId);
+      setLoadFailed(false);
+      markTrendingAlertRead(alertId).catch(() => {});
     } catch {
       setAlert(null);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -119,10 +123,14 @@ export default function AlertDetailScreen({ navigation, route }) {
       <View style={styles.root}>
         <ScreenBackground />
         <SafeAreaView style={styles.safe}>
-          <PressScale onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={styles.backText}>←</Text>
           </PressScale>
-          <Text style={styles.errorText}>{t(langCode, 'trendingAlertMissing')}</Text>
+          {loadFailed ? (
+            <LoadErrorState what="cette alerte" onRetry={load} />
+          ) : (
+            <Text style={styles.errorText}>{t(langCode, 'trendingAlertMissing')}</Text>
+          )}
         </SafeAreaView>
       </View>
     );
@@ -135,7 +143,7 @@ export default function AlertDetailScreen({ navigation, route }) {
       <ScreenBackground />
       <SafeAreaView style={styles.safe} edges={['top']}>
         <Animated.View style={[styles.topBar, headerEntrance]}>
-          <PressScale onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={styles.backText}>←</Text>
           </PressScale>
           <Text style={styles.topTitle}>{t(langCode, 'trendingAlertDetail')}</Text>

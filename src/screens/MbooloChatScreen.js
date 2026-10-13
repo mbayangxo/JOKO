@@ -920,7 +920,7 @@ export default function MbooloChatScreen({ navigation, route }) {
           </View>
         ) : null}
         <View style={styles.chatHead}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.chBack}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.chBack} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 15, color: '#fff' }}>←</Text>
           </PressScale>
           <View style={{ flex: 1 }}>
@@ -961,7 +961,7 @@ export default function MbooloChatScreen({ navigation, route }) {
 
         {searchOpen ? (
           <View style={styles.searchBar}>
-            <TextInput
+            <TextInput accessibilityLabel="Rechercher dans la conversation"
               style={styles.searchInput}
               placeholder="Rechercher dans la conversation…"
               placeholderTextColor={colors.mboolo.ink3}
@@ -1161,7 +1161,7 @@ export default function MbooloChatScreen({ navigation, route }) {
             <Text style={styles.modalHint}>
               À @{directPartner?.handle ?? '…'} · ils recevront une notification
             </Text>
-            <TextInput
+            <TextInput accessibilityLabel="Montant (F CFA)"
               style={styles.modalInput}
               placeholder="Montant (F CFA)"
               placeholderTextColor={colors.mboolo.ink3}
@@ -1169,7 +1169,7 @@ export default function MbooloChatScreen({ navigation, route }) {
               value={requestAmount}
               onChangeText={setRequestAmount}
             />
-            <TextInput
+            <TextInput accessibilityLabel="Raison (optionnel)"
               style={styles.modalInput}
               placeholder="Raison (optionnel)"
               placeholderTextColor={colors.mboolo.ink3}
@@ -1192,7 +1192,7 @@ export default function MbooloChatScreen({ navigation, route }) {
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>Envoyer de l'argent</Text>
             <Text style={styles.modalHint}>À @{directPartner?.handle ?? '…'}</Text>
-            <TextInput
+            <TextInput accessibilityLabel="Montant (F CFA)"
               style={styles.modalInput}
               placeholder="Montant (F CFA)"
               placeholderTextColor={colors.mboolo.ink3}
@@ -1200,7 +1200,7 @@ export default function MbooloChatScreen({ navigation, route }) {
               value={sendAmount}
               onChangeText={setSendAmount}
             />
-            <TextInput
+            <TextInput accessibilityLabel="Message (optionnel)"
               style={styles.modalInput}
               placeholder="Message (optionnel)"
               placeholderTextColor={colors.mboolo.ink3}

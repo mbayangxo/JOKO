@@ -187,7 +187,7 @@ export default function ScheduledPaymentsScreen({ navigation }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 18 }}>←</Text>
           </PressScale>
           <Text style={styles.title}>Épargne & planifiés</Text>
@@ -230,7 +230,7 @@ export default function ScheduledPaymentsScreen({ navigation }) {
               />
             </View>
             <View style={styles.rowInputs}>
-              <TextInput
+              <TextInput accessibilityLabel="Objectif en C (optionnel)"
                 style={[styles.input, { flex: 1 }]}
                 placeholder="Objectif en C (optionnel)"
                 keyboardType="number-pad"
@@ -258,7 +258,7 @@ export default function ScheduledPaymentsScreen({ navigation }) {
                   <View style={styles.block}>
                     <Text style={styles.sectionTitle}>Ajouter maintenant</Text>
                     <View style={styles.rowInputs}>
-                      <TextInput
+                      <TextInput accessibilityLabel="Montant (C)"
                         style={[styles.input, { flex: 1 }]}
                         placeholder="Montant (C)"
                         keyboardType="number-pad"
@@ -277,7 +277,7 @@ export default function ScheduledPaymentsScreen({ navigation }) {
 
                 <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>Épargne automatique</Text>
                 <Text style={styles.hint}>Prélèvement depuis ton wallet vers l'objectif sélectionné.</Text>
-                <TextInput
+                <TextInput accessibilityLabel="Montant par versement (C)"
                   style={styles.input}
                   placeholder="Montant par versement (C)"
                   keyboardType="number-pad"
@@ -349,14 +349,14 @@ export default function ScheduledPaymentsScreen({ navigation }) {
 
             {showSendForm ? (
               <View style={styles.block}>
-                <TextInput
+                <TextInput accessibilityLabel="@handle destinataire"
                   style={styles.input}
                   placeholder="@handle destinataire"
                   autoCapitalize="none"
                   value={recipient}
                   onChangeText={setRecipient}
                 />
-                <TextInput
+                <TextInput accessibilityLabel="Montant (C)"
                   style={styles.input}
                   placeholder="Montant (C)"
                   keyboardType="number-pad"

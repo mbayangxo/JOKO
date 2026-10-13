@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import PressScale from '../components/PressScale';
+import LoadErrorState from '../components/LoadErrorState';
 import ScreenBackground from '../components/ScreenBackground';
 import { useToast } from '../components/Toast';
 import { useAppState } from '../state/AppState';
@@ -49,6 +50,7 @@ export default function HubParcelScreen({ navigation }) {
   );
 
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [parcels, setParcels] = useState([]);
   const [hubs, setHubs] = useState([]);
@@ -74,8 +76,10 @@ export default function HubParcelScreen({ navigation }) {
       setOrigins(hubData?.originCountries ?? []);
       if (!selectedHubId && hubList[0]?.id) setSelectedHubId(hubList[0].id);
       setParcels(Array.isArray(mine?.parcels) ? mine.parcels : []);
+      setLoadFailed(false);
     } catch {
       setParcels([]);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -127,7 +131,7 @@ export default function HubParcelScreen({ navigation }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 18 }}>←</Text>
           </PressScale>
           <View style={{ flex: 1 }}>
@@ -159,7 +163,7 @@ export default function HubParcelScreen({ navigation }) {
           </ScrollView>
 
           <Text style={styles.label}>Expéditeur (optionnel)</Text>
-          <TextInput
+          <TextInput accessibilityLabel="Ex. Amazon, famille à Lagos"
             style={styles.input}
             value={originLabel}
             onChangeText={setOriginLabel}
@@ -168,7 +172,7 @@ export default function HubParcelScreen({ navigation }) {
           />
 
           <Text style={styles.label}>Description du colis</Text>
-          <TextInput
+          <TextInput accessibilityLabel="Ex. Vêtements, téléphone, documents"
             style={styles.input}
             value={description}
             onChangeText={setDescription}
@@ -177,7 +181,7 @@ export default function HubParcelScreen({ navigation }) {
           />
 
           <Text style={styles.label}>N° suivi transporteur (optionnel)</Text>
-          <TextInput
+          <TextInput accessibilityLabel="DHL, FedEx, DHL Africa"
             style={styles.input}
             value={externalRef}
             onChangeText={setExternalRef}
@@ -219,14 +223,14 @@ export default function HubParcelScreen({ navigation }) {
 
           {fulfillment === 'last_mile' ? (
             <>
-              <TextInput
+              <TextInput accessibilityLabel="Quartier"
                 style={styles.input}
                 value={dropoffArea}
                 onChangeText={setDropoffArea}
                 placeholder="Quartier"
                 placeholderTextColor={colors.appCanvas.textFaint}
               />
-              <TextInput
+              <TextInput accessibilityLabel="Adresse complète"
                 style={[styles.input, { minHeight: 72 }]}
                 value={dropoffAddress}
                 onChangeText={setDropoffAddress}
@@ -248,7 +252,8 @@ export default function HubParcelScreen({ navigation }) {
 
           <Text style={[styles.sectionLabel, { marginTop: spacing.xl }]}>Mes colis</Text>
           {loading ? <ActivityIndicator color={colors.greenDark} /> : null}
-          {!loading && parcels.length === 0 ? (
+          {!loading && loadFailed ? <LoadErrorState what="tes colis" onRetry={load} /> : null}
+          {!loading && !loadFailed && parcels.length === 0 ? (
             <Text style={styles.empty}>Aucun colis — enregistre un envoi pour obtenir l’adresse K21.</Text>
           ) : null}
           {parcels.map((p) => (

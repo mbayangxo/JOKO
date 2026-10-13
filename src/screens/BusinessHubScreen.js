@@ -506,7 +506,7 @@ export default function BusinessHubScreen({ navigation, route }) {
         <SafeAreaView style={{ flex: 1 }} edges={['top']}>
           <ScrollView contentContainerStyle={styles.createWrap} keyboardShouldPersistTaps="handled">
             <View style={styles.createHeadRow}>
-              <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.createBack}>
+              <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.createBack} accessibilityRole="button" accessibilityLabel="Retour">
                 <Text style={{ fontSize: 14, color: colors.ink }}>←</Text>
               </PressScale>
               <Text style={styles.createEyebrow}>KEBU</Text>
@@ -518,7 +518,7 @@ export default function BusinessHubScreen({ navigation, route }) {
             </Text>
 
             <Text style={styles.createLabel}>Nom du commerce</Text>
-            <TextInput
+            <TextInput accessibilityLabel="Ex : Dibiterie Chez Awa"
               style={styles.createInput}
               value={newBizName}
               onChangeText={setNewBizName}
@@ -648,7 +648,7 @@ export default function BusinessHubScreen({ navigation, route }) {
                 </SectionCard>
               ) : null}
               <SectionCard title="✦ Statut — visible sur ta page publique" delay={70}>
-                <TextInput
+                <TextInput accessibilityLabel="Ex : Inscriptions ouvertes, on recrute, promo ce week-end"
                   style={styles.input}
                   placeholder="Ex : Inscriptions ouvertes, on recrute, promo ce week-end…"
                   placeholderTextColor={'rgba(5,8,5,0.45)'}
@@ -692,7 +692,7 @@ export default function BusinessHubScreen({ navigation, route }) {
                 </PressScale>
               </SectionCard>
               <SectionCard title="⚡ Offre flash — visible dans Discover" delay={140}>
-                <TextInput
+                <TextInput accessibilityLabel="Plat ou produit (ex: Dibi 500g)"
                   style={styles.input}
                   placeholder="Plat ou produit (ex: Dibi 500g)"
                   placeholderTextColor={'rgba(5,8,5,0.45)'}
@@ -701,7 +701,7 @@ export default function BusinessHubScreen({ navigation, route }) {
                   maxLength={60}
                 />
                 <View style={{ flexDirection: 'row', gap: spacing.md }}>
-                  <TextInput
+                  <TextInput accessibilityLabel="Prix normal (F)"
                     style={[styles.input, { flex: 1 }]}
                     placeholder="Prix normal (F)"
                     placeholderTextColor={'rgba(5,8,5,0.45)'}
@@ -709,7 +709,7 @@ export default function BusinessHubScreen({ navigation, route }) {
                     value={flashNormalPrice}
                     onChangeText={setFlashNormalPrice}
                   />
-                  <TextInput
+                  <TextInput accessibilityLabel="Prix flash (F)"
                     style={[styles.input, { flex: 1 }]}
                     placeholder="Prix flash (F)"
                     placeholderTextColor={'rgba(5,8,5,0.45)'}
@@ -756,8 +756,8 @@ export default function BusinessHubScreen({ navigation, route }) {
           {tab === 'wallet' && (
             <View style={styles.panel}>
               <SectionCard title="Alimenter depuis ton AFRI">
-                <TextInput style={styles.input} placeholder="Montant C" placeholderTextColor={'rgba(5,8,5,0.45)'} keyboardType="number-pad" value={transferAmount} onChangeText={setTransferAmount} />
-                <TextInput style={styles.input} placeholder="Note (optionnel)" placeholderTextColor={'rgba(5,8,5,0.45)'} value={transferNote} onChangeText={setTransferNote} />
+                <TextInput accessibilityLabel="Montant C" style={styles.input} placeholder="Montant C" placeholderTextColor={'rgba(5,8,5,0.45)'} keyboardType="number-pad" value={transferAmount} onChangeText={setTransferAmount} />
+                <TextInput accessibilityLabel="Note (optionnel)" style={styles.input} placeholder="Note (optionnel)" placeholderTextColor={'rgba(5,8,5,0.45)'} value={transferNote} onChangeText={setTransferNote} />
                 <GlowButton label="AFRI → KEBU" onPress={fundKebuFromPersonal} disabled={loading} />
               </SectionCard>
               <SectionCard title="Retirer vers ton AFRI">
@@ -765,7 +765,7 @@ export default function BusinessHubScreen({ navigation, route }) {
               </SectionCard>
               <SectionCard title="Payer un autre KEBU (B2B)">
                 <Text style={styles.rowSub}>Ex: laitier → coopérative · KEBU ID destinataire</Text>
-                <TextInput style={styles.input} placeholder="KEBU-XXXXXX" placeholderTextColor={'rgba(5,8,5,0.45)'} autoCapitalize="characters" value={transferKebu} onChangeText={setTransferKebu} />
+                <TextInput accessibilityLabel="KEBU-XXXXXX" style={styles.input} placeholder="KEBU-XXXXXX" placeholderTextColor={'rgba(5,8,5,0.45)'} autoCapitalize="characters" value={transferKebu} onChangeText={setTransferKebu} />
                 <GlowButton label="Payer B2B" onPress={payKebuB2B} disabled={loading} />
               </SectionCard>
               <SectionCard title="Historique KEBU">
@@ -785,8 +785,8 @@ export default function BusinessHubScreen({ navigation, route }) {
           {tab === 'team' && (
             <View style={styles.panel}>
               <SectionCard title="Inviter un membre">
-                <TextInput style={styles.input} placeholder="@handle K21" placeholderTextColor={'rgba(5,8,5,0.45)'} value={memberHandle} onChangeText={setMemberHandle} autoCapitalize="none" />
-                <TextInput style={styles.input} placeholder="Rôle (cfo, warehouse, staff…)" placeholderTextColor={'rgba(5,8,5,0.45)'} value={memberRole} onChangeText={setMemberRole} />
+                <TextInput accessibilityLabel="@handle K21" style={styles.input} placeholder="@handle K21" placeholderTextColor={'rgba(5,8,5,0.45)'} value={memberHandle} onChangeText={setMemberHandle} autoCapitalize="none" />
+                <TextInput accessibilityLabel="Rôle (cfo, warehouse, staff)" style={styles.input} placeholder="Rôle (cfo, warehouse, staff…)" placeholderTextColor={'rgba(5,8,5,0.45)'} value={memberRole} onChangeText={setMemberRole} />
                 <GlowButton label="Inviter" onPress={inviteMember} disabled={loading} />
               </SectionCard>
               <SectionCard title={`Membres (${members.length})`}>
@@ -805,9 +805,9 @@ export default function BusinessHubScreen({ navigation, route }) {
           {tab === 'payroll' && (
             <View style={styles.panel}>
               <SectionCard title="Ajouter un employé">
-                <TextInput style={styles.input} placeholder="@handle K21" placeholderTextColor={'rgba(5,8,5,0.45)'} value={newHandle} onChangeText={setNewHandle} autoCapitalize="none" />
-                <TextInput style={styles.input} placeholder="Rôle (staff, CEO…)" placeholderTextColor={'rgba(5,8,5,0.45)'} value={newRole} onChangeText={setNewRole} />
-                <TextInput style={styles.input} placeholder="Salaire XOF" placeholderTextColor={'rgba(5,8,5,0.45)'} keyboardType="number-pad" value={newPay} onChangeText={setNewPay} />
+                <TextInput accessibilityLabel="@handle K21" style={styles.input} placeholder="@handle K21" placeholderTextColor={'rgba(5,8,5,0.45)'} value={newHandle} onChangeText={setNewHandle} autoCapitalize="none" />
+                <TextInput accessibilityLabel="Rôle (staff, CEO)" style={styles.input} placeholder="Rôle (staff, CEO…)" placeholderTextColor={'rgba(5,8,5,0.45)'} value={newRole} onChangeText={setNewRole} />
+                <TextInput accessibilityLabel="Salaire XOF" style={styles.input} placeholder="Salaire XOF" placeholderTextColor={'rgba(5,8,5,0.45)'} keyboardType="number-pad" value={newPay} onChangeText={setNewPay} />
                 <GlowButton label="Ajouter" onPress={addEmployee} disabled={loading} />
               </SectionCard>
               <SectionCard title={`Équipe (${employees.length})`}>
@@ -829,13 +829,13 @@ export default function BusinessHubScreen({ navigation, route }) {
           {tab === 'school' && (
             <View style={styles.panel}>
               <SectionCard title="Inscrire un élève">
-                <TextInput style={styles.input} placeholder="Nom de l'enfant" placeholderTextColor={'rgba(5,8,5,0.45)'} value={newStudentName} onChangeText={setNewStudentName} />
-                <TextInput style={styles.input} placeholder="@handle du parent" placeholderTextColor={'rgba(5,8,5,0.45)'} value={newParentHandle} onChangeText={setNewParentHandle} autoCapitalize="none" />
+                <TextInput accessibilityLabel="Nom de l'enfant" style={styles.input} placeholder="Nom de l'enfant" placeholderTextColor={'rgba(5,8,5,0.45)'} value={newStudentName} onChangeText={setNewStudentName} />
+                <TextInput accessibilityLabel="@handle du parent" style={styles.input} placeholder="@handle du parent" placeholderTextColor={'rgba(5,8,5,0.45)'} value={newParentHandle} onChangeText={setNewParentHandle} autoCapitalize="none" />
                 <GlowButton label="Inscrire" onPress={enrollStudent} disabled={loading} />
               </SectionCard>
               <SectionCard title="Frais mensuels">
-                <TextInput style={styles.input} placeholder="Ex: Mars 2026" placeholderTextColor={'rgba(5,8,5,0.45)'} value={periodLabel} onChangeText={setPeriodLabel} />
-                <TextInput style={styles.input} placeholder="Montant XOF" placeholderTextColor={'rgba(5,8,5,0.45)'} keyboardType="number-pad" value={periodAmount} onChangeText={setPeriodAmount} />
+                <TextInput accessibilityLabel="Ex: Mars 2026" style={styles.input} placeholder="Ex: Mars 2026" placeholderTextColor={'rgba(5,8,5,0.45)'} value={periodLabel} onChangeText={setPeriodLabel} />
+                <TextInput accessibilityLabel="Montant XOF" style={styles.input} placeholder="Montant XOF" placeholderTextColor={'rgba(5,8,5,0.45)'} keyboardType="number-pad" value={periodAmount} onChangeText={setPeriodAmount} />
                 <GlowButton label="Ouvrir la période" onPress={openPeriod} disabled={loading} />
                 {periods[0] ? (
                   <>
@@ -859,8 +859,8 @@ export default function BusinessHubScreen({ navigation, route }) {
           {tab === 'coop' && (
             <View style={styles.panel}>
               <SectionCard title="Log livraison (offline OK)">
-                <TextInput style={styles.input} placeholder="ID ou @handle paysan" placeholderTextColor={'rgba(5,8,5,0.45)'} value={farmerHandle} onChangeText={setFarmerHandle} />
-                <TextInput style={styles.input} placeholder="Tonnes" placeholderTextColor={'rgba(5,8,5,0.45)'} keyboardType="decimal-pad" value={deliveryTons} onChangeText={setDeliveryTons} />
+                <TextInput accessibilityLabel="ID ou @handle paysan" style={styles.input} placeholder="ID ou @handle paysan" placeholderTextColor={'rgba(5,8,5,0.45)'} value={farmerHandle} onChangeText={setFarmerHandle} />
+                <TextInput accessibilityLabel="Tonnes" style={styles.input} placeholder="Tonnes" placeholderTextColor={'rgba(5,8,5,0.45)'} keyboardType="decimal-pad" value={deliveryTons} onChangeText={setDeliveryTons} />
                 <GlowButton label="Enregistrer" onPress={logDelivery} disabled={loading} />
               </SectionCard>
               <SectionCard title="Livraisons">

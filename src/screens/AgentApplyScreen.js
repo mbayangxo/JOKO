@@ -72,14 +72,14 @@ export default function AgentApplyScreen({ navigation }) {
           ) : null}
           {!application || application.status === 'rejected' ? (
             <>
-          <TextInput
+          <TextInput accessibilityLabel="Nom du point (ex: Boutique Awa)"
             value={displayName}
             onChangeText={setDisplayName}
             placeholder="Nom du point (ex: Boutique Awa)"
             style={styles.input}
             placeholderTextColor="rgba(5,8,5,0.35)"
           />
-          <TextInput
+          <TextInput accessibilityLabel="Adresse / quartier"
             value={locationLabel}
             onChangeText={setLocationLabel}
             placeholder="Adresse / quartier"

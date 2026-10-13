@@ -46,7 +46,7 @@ function ProductRow({ product, qty, onChangeQty, onShare, delay = 0 }) {
         ) : null}
       </View>
       {onShare ? (
-        <PressScale scaleTo={0.9} onPress={onShare} style={styles.productShareBtn}>
+        <PressScale scaleTo={0.9} onPress={onShare} style={styles.productShareBtn} accessibilityRole="button" accessibilityLabel="Partager dans Mboolo">
           <Text style={{ fontSize: 14 }}>💬</Text>
         </PressScale>
       ) : null}
@@ -233,7 +233,7 @@ export default function ShopDetailScreen({ navigation, route }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <Animated.View style={[styles.header, headerEntrance]}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 18 }}>←</Text>
           </PressScale>
           <View style={{ flex: 1 }}>
@@ -349,7 +349,7 @@ export default function ShopDetailScreen({ navigation, route }) {
             {fulfillment === 'delivery' ? (
               <View style={{ gap: spacing.sm }}>
                 <Text style={styles.sheetLabel}>Quartier</Text>
-                <TextInput
+                <TextInput accessibilityLabel="Ex. Médina"
                   style={styles.sheetInput}
                   value={dropoffArea}
                   onChangeText={setDropoffArea}
@@ -357,7 +357,7 @@ export default function ShopDetailScreen({ navigation, route }) {
                   placeholderTextColor={colors.appCanvas.textFaint}
                 />
                 <Text style={styles.sheetLabel}>Adresse</Text>
-                <TextInput
+                <TextInput accessibilityLabel="Rue, repère, téléphone"
                   style={[styles.sheetInput, { minHeight: 72 }]}
                   value={dropoffAddress}
                   onChangeText={setDropoffAddress}

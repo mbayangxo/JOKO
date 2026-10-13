@@ -119,8 +119,8 @@ export default function JekkalDetailScreen({ navigation, route }) {
 
           {campaign.status === 'active' ? (
             <View style={styles.form}>
-              <TextInput value={amount} onChangeText={setAmount} keyboardType="number-pad" style={styles.input} placeholder="Montant" placeholderTextColor="rgba(5,8,5,0.35)" />
-              <TextInput value={message} onChangeText={setMessage} style={styles.input} placeholder="Message (optionnel)" placeholderTextColor="rgba(5,8,5,0.35)" />
+              <TextInput accessibilityLabel="Montant" value={amount} onChangeText={setAmount} keyboardType="number-pad" style={styles.input} placeholder="Montant" placeholderTextColor="rgba(5,8,5,0.35)" />
+              <TextInput accessibilityLabel="Message (optionnel)" value={message} onChangeText={setMessage} style={styles.input} placeholder="Message (optionnel)" placeholderTextColor="rgba(5,8,5,0.35)" />
               <GlowButton label={submitting ? 'Envoi…' : 'Contribuer'} onPress={donate} disabled={submitting} />
             </View>
           ) : null}

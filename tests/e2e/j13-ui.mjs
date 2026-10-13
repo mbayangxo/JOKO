@@ -5,6 +5,10 @@
  *      The screen shows "vérification", never "Merci pour ton don"; a second tap sends nothing; the intent
  *      lookup — not a re-send — confirms; exactly one contribution, donor debited once.
  *   2. A donation the server answers 202 (held for review) is announced as pending, never as a success.
+ *   3. Wallet history status chips; a failed history load is an error with retry, never "no operations".
+ *   4. A balance that could not be refreshed is flagged until it refreshes.
+ *   5. A trade-invoice notification routes to the invoices.
+ *   6. A slow-network double tap on a GlowButton sends one request.
  *
  *   WEB_DIR=… PLAYWRIGHT_CORE=… CHROMIUM=… DATABASE_URL=… node tests/e2e/j13-ui.mjs
  */
@@ -154,6 +158,77 @@ try {
     await see(page, 'Opération en vérification par K21');
     await page.waitForTimeout(1500);
     assert.equal(await seenEver(page, 'Merci pour ton don'), false, 'a held donation is never thanked as completed');
+    await ctx.close();
+  });
+
+  await step('wallet history: a completed send reads "✓ Effectué"; a failed load is an error with retry — never "Aucune opération"', async () => {
+    const a = await customer({ koriBalance: 20_000 });
+    const A = await signedIn(api, a);
+    const b = await customer();
+    const sent = await A.call('POST', 'transfers/send', { recipientHandle: b.handle, amount: 700 }, { headers: { 'idempotency-key': `e2e-j13-${Date.now()}` } });
+    assert.equal(sent.status, 201, JSON.stringify(sent.body));
+    const { ctx, page } = await sessionPage(A, 'wallet');
+    let cut = true;
+    await page.route('**/api/money/activity**', (route) => (cut ? route.abort('failed') : route.continue()));
+    await tap(page, 'Mon portefeuille');
+    await see(page, 'Impossible de charger ton historique');
+    assert.equal(await seenEver(page, 'Aucune opération'), false, 'a failed load never claims an empty history');
+    cut = false;
+    await tap(page, 'Réessayer', { exact: true });
+    await see(page, '✓ Effectué');
+    await see(page, '−700 ₭');
+    await ctx.close();
+  });
+
+  await step('a balance that could not be refreshed is flagged, and the flag clears once it refreshes', async () => {
+    const a = await customer({ koriBalance: 5_000 });
+    const A = await signedIn(api, a);
+    const { ctx, page } = await sessionPage(A, 'stale');
+    await see(page, 'Mon portefeuille');
+    let cut = true;
+    await page.route('**/api/wallet', (route) => (cut ? route.abort('failed') : route.continue()));
+    await tap(page, 'Mon portefeuille');
+    await tap(page, 'Retour', { exact: true }).catch(async () => page.goBack());
+    await see(page, 'Solde peut-être pas à jour');
+    cut = false;
+    await tap(page, 'Solde peut-être pas à jour');
+    await page.getByText('Solde peut-être pas à jour').first().waitFor({ state: 'detached', timeout: 20_000 });
+    await ctx.close();
+  });
+
+  await step('a trade-invoice notification opens the invoices (J13-F5) instead of falling back to Home', async () => {
+    const a = await customer();
+    const A = await signedIn(api, a);
+    await prisma.notification.create({ data: { userId: a.id, title: 'Facture B2B à payer', body: 'Une facture t’attend.', kind: 'trade_invoice', category: 'money' } });
+    const { ctx, page } = await sessionPage(A, 'notif');
+    await tap(page, 'Alertes', { exact: true });
+    await see(page, 'Facture B2B à payer');
+    await tap(page, 'Voir', { exact: true });
+    await see(page, 'Factures B2B');
+    await ctx.close();
+  });
+
+  await step('slow network: a double tap on "Lancer la collecte" creates exactly one campaign (J13-F11)', async () => {
+    const a = await customer();
+    const A = await signedIn(api, a);
+    const { ctx, page } = await sessionPage(A, 'double');
+    let posts = 0;
+    await page.route('**/api/jekkal/campaigns', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      posts += 1;
+      await new Promise((r) => setTimeout(r, 2500)); // a slow 2G round trip
+      return route.continue();
+    });
+    await tap(page, 'Plus', { exact: true });
+    await tap(page, 'Jëkkal', { exact: true });
+    const title = `Puits ${Date.now().toString(36).slice(-4)}`;
+    await page.getByPlaceholder('Ex: Frais médicaux pour Awa').filter({ visible: true }).first().fill(title);
+    const btn = page.getByText('Lancer la collecte', { exact: true }).filter({ visible: true }).first();
+    await btn.click();
+    await btn.click({ timeout: 1500 }).catch(() => {});
+    await page.waitForTimeout(4000);
+    assert.equal(posts, 1, `one request on the wire (posts ${posts})`);
+    assert.equal(await prisma.solidarityCampaign.count({ where: { title } }), 1, 'exactly one campaign');
     await ctx.close();
   });
 

@@ -234,7 +234,7 @@ export default function ChannelsScreen({ navigation, route }) {
             <View style={{ gap: spacing.md }}>
               <View style={styles.mineCard}>
                 <Text style={styles.sectionLabel}>{mine ? 'Ta chaîne' : 'Crée ta chaîne — une par compte'}</Text>
-                <TextInput
+                <TextInput accessibilityLabel="Nom de la chaîne (ex: Awa Cuisine)"
                   style={styles.input}
                   value={name}
                   onChangeText={setName}
@@ -242,7 +242,7 @@ export default function ChannelsScreen({ navigation, route }) {
                   placeholderTextColor={'rgba(5,8,5,0.4)'}
                   maxLength={60}
                 />
-                <TextInput
+                <TextInput accessibilityLabel="Bio courte (optionnel)"
                   style={styles.input}
                   value={bio}
                   onChangeText={setBio}
@@ -261,7 +261,7 @@ export default function ChannelsScreen({ navigation, route }) {
               {mine ? (
                 <View style={styles.mineCard}>
                   <Text style={styles.sectionLabel}>Publier</Text>
-                  <TextInput
+                  <TextInput accessibilityLabel="Quoi de neuf sur ta chaîne ?"
                     style={[styles.input, styles.draftInput]}
                     value={draft}
                     onChangeText={setDraft}

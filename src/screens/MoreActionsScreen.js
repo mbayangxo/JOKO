@@ -18,6 +18,8 @@ const SECTIONS = [
       { key: 'pay', icon: '🏪', title: 'Fey', route: 'PayMerchant', tint: 'rgba(232,92,26,0.14)' },
       { key: 'cash', icon: '🏧', title: 'Cash', route: 'Cash', feature: ['cash', 'available'], tint: 'rgba(26,240,96,0.14)' },
       { key: 'tontine', icon: '🏦', title: 'Natta', route: 'Tontine', tint: 'rgba(250,216,54,0.18)' },
+      // J13-F4: the scheduler cron runs recurring payments, but users had no way to see or pause them.
+      { key: 'scheduled', icon: '🗓️', title: 'Paiements programmés', route: 'ScheduledPayments', tint: 'rgba(26,240,96,0.14)' },
       { key: 'scan', icon: '📷', title: 'Scanner', route: 'QrScan', tint: 'rgba(232,92,26,0.14)' },
       { key: 'myqr', icon: '📲', title: 'Mon QR', route: 'MyQr', tint: 'rgba(26,240,96,0.14)' },
       { key: 'business', icon: '🏪', title: 'Mon business', route: 'BusinessMain', tint: 'rgba(250,216,54,0.18)' },
@@ -39,6 +41,8 @@ const SECTIONS = [
     tiles: [
       { key: 'friends', icon: '🧑‍🤝‍🧑', title: 'Contacts', route: 'Friends', tint: 'rgba(26,240,96,0.14)' },
       { key: 'channels', icon: '📣', title: 'Chaînes', route: 'Channels', tint: 'rgba(250,216,54,0.18)' },
+      // J13-F3: Jëkkal (direct gifts, P-J11-9) had no entry point at all.
+      { key: 'jekkal', icon: '🤝', title: 'Jëkkal', route: 'Jekkal', tint: 'rgba(232,92,26,0.14)' },
       { key: 'charts', icon: '🎶', title: 'Wey yu 221 bëgg', route: 'Charts', tint: 'rgba(250,216,54,0.18)' },
     ],
   },
@@ -68,7 +72,7 @@ export default function MoreActionsScreen({ navigation }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 14, color: colors.ink }}>←</Text>
           </PressScale>
           <View>

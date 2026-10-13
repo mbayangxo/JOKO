@@ -77,7 +77,7 @@ export default function QrScanScreen({ navigation, route }) {
 
           <Text style={styles.orLabel}>ou colle un code</Text>
 
-          <TextInput
+          <TextInput accessibilityLabel="k21://pay/@fatou ou @fatou"
             style={styles.input}
             value={raw}
             onChangeText={setRaw}

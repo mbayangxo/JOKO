@@ -216,7 +216,7 @@ export default function AgentHomeScreen({ navigation, route }) {
               </>
             ) : (
               <>
-                <TextInput
+                <TextInput accessibilityLabel="Montant demandé (F CFA)"
                   value={topUpAmount}
                   onChangeText={setTopUpAmount}
                   placeholder="Montant demandé (F CFA)"
@@ -224,7 +224,7 @@ export default function AgentHomeScreen({ navigation, route }) {
                   keyboardType="number-pad"
                   style={[styles.input, { marginBottom: spacing.sm }]}
                 />
-                <TextInput
+                <TextInput accessibilityLabel="Note (optionnel)"
                   value={topUpNote}
                   onChangeText={setTopUpNote}
                   placeholder="Note (optionnel)"
@@ -296,7 +296,7 @@ export default function AgentHomeScreen({ navigation, route }) {
           ) : (
             <>
               <Text style={styles.scanLabel}>Scanner le QR du client</Text>
-              <TextInput
+              <TextInput accessibilityLabel="jokko://cash/"
                 value={qrInput}
                 onChangeText={setQrInput}
                 placeholder="jokko://cash/…"

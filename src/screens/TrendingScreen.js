@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Animated, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import LoadErrorState from '../components/LoadErrorState';
 import ScreenBackground from '../components/ScreenBackground';
 import FlagMicroStripe from '../components/FlagMicroStripe';
 import PressScale from '../components/PressScale';
@@ -175,6 +176,7 @@ export default function TrendingScreen({ navigation, route }) {
   const [query, setQuery] = useState('');
   const [feed, setFeed] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const titleEntrance = useEntrance(0, 500, 14);
 
   const load = useCallback(async () => {
@@ -182,8 +184,10 @@ export default function TrendingScreen({ navigation, route }) {
     try {
       const data = await getTrendingFeed(tab, query);
       setFeed(data);
+      setLoadFailed(false);
     } catch {
       setFeed(null);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -243,6 +247,8 @@ export default function TrendingScreen({ navigation, route }) {
 
         {loading && !feed ? (
           <ActivityIndicator color={colors.greenDark} style={{ marginTop: spacing.giant }} />
+        ) : loadFailed && !feed ? (
+          <LoadErrorState what="le fil d’actualité" onRetry={load} />
         ) : (
           <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollBody} showsVerticalScrollIndicator={false}>
             {feed?.featuredAlert && tab !== 'news' && tab !== 'causes' && (

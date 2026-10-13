@@ -146,7 +146,7 @@ export default function MarcheScreen({ navigation }) {
           </Text>
           <View style={styles.searchRow}>
             <Text style={styles.searchIcon}>🔍</Text>
-            <TextInput
+            <TextInput accessibilityLabel="Ex. riz, huile, lait"
               style={styles.searchInput}
               placeholder="Ex. riz, huile, lait…"
               placeholderTextColor={colors.appCanvas.textFaint}

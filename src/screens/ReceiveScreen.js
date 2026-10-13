@@ -71,7 +71,7 @@ function RequestStep({ amount, setAmount, reason, setReason, handle, setHandle, 
 
         <View style={styles.section}>
           <Text style={styles.lbl}>À qui demander ? (@handle K21)</Text>
-          <TextInput
+          <TextInput accessibilityLabel="@handle"
             style={styles.handleField}
             placeholder="@handle"
             placeholderTextColor={'rgba(5,8,5,0.45)'}
@@ -83,7 +83,7 @@ function RequestStep({ amount, setAmount, reason, setReason, handle, setHandle, 
 
         <View style={styles.section}>
           <Text style={styles.lbl}>Pour quoi ? (optionnel)</Text>
-          <TextInput
+          <TextInput accessibilityLabel="Pour le taxi, pour manger..."
             style={styles.reasonField}
             placeholder="Pour le taxi, pour manger..."
             placeholderTextColor={'rgba(5,8,5,0.45)'}

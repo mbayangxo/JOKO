@@ -62,7 +62,7 @@ export default function MbooloBroadcastScreen({ navigation }) {
     <View style={styles.root}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 16 }}>←</Text>
           </PressScale>
           <View style={{ flex: 1 }}>
@@ -95,7 +95,7 @@ export default function MbooloBroadcastScreen({ navigation }) {
         )}
 
         <View style={styles.composer}>
-          <TextInput
+          <TextInput accessibilityLabel="Ton message"
             style={styles.input}
             placeholder="Ton message…"
             placeholderTextColor={colors.mboolo.ink3}

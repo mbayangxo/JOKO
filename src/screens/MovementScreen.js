@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import PressScale from '../components/PressScale';
+import LoadErrorState from '../components/LoadErrorState';
 import ScreenBackground from '../components/ScreenBackground';
 import { useToast } from '../components/Toast';
 import { useLocale } from '../context/LocaleContext';
@@ -151,6 +152,7 @@ function DrivePanel({ onRequestCourier, refreshKey, navigation, coords }) {
   const [online, setOnline] = useState(false);
   const [activating, setActivating] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [activeTasks, setActiveTasks] = useState([]);
   const [acceptingId, setAcceptingId] = useState(null);
@@ -184,8 +186,10 @@ function DrivePanel({ onRequestCourier, refreshKey, navigation, coords }) {
         loadActive(),
       ]);
       setJobs(Array.isArray(list) ? list : []);
+      setLoadFailed(false);
     } catch {
       setJobs([]);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -326,7 +330,8 @@ function DrivePanel({ onRequestCourier, refreshKey, navigation, coords }) {
       ) : null}
 
       {online && loading && <Text style={styles.emptyText}>Recherche de courses…</Text>}
-      {online && !loading && jobs.length === 0 && (
+      {online && !loading && loadFailed ? <LoadErrorState what="les courses" onRetry={loadJobs} /> : null}
+      {online && !loading && !loadFailed && jobs.length === 0 && (
         <Text style={styles.emptyText}>Aucune course disponible pour le moment.</Text>
       )}
       {online &&
@@ -396,7 +401,7 @@ export default function MovementScreen({ navigation, route }) {
         <View style={styles.header}>
           <View style={styles.headerTop}>
             {navigation.canGoBack() ? (
-              <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+              <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
                 <Text style={{ fontSize: 16, color: colors.ink }}>←</Text>
               </PressScale>
             ) : null}

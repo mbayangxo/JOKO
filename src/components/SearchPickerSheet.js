@@ -40,7 +40,7 @@ export default function SearchPickerSheet({
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>{title}</Text>
-          <PressScale scaleTo={0.92} onPress={onClose} style={styles.closeBtn}>
+          <PressScale scaleTo={0.92} onPress={onClose} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Fermer">
             <Text style={styles.closeText}>✕</Text>
           </PressScale>
         </View>

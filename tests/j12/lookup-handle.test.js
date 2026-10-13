@@ -24,8 +24,10 @@ test('digit-heavy handles are found in handle mode or with "@"; digits alone sti
   assert.equal(byMode.body.handle?.replace(/^@/, ''), handle);
   const byAt = await a.call('GET', `users/lookup?q=${encodeURIComponent(`@${handle}`)}`);
   assert.equal(byAt.status, 200);
-  const legacy = await a.call('GET', `users/lookup?q=${handle}`);
-  assert.equal(legacy.status, 404, 'unchanged legacy guess for a bare digit-heavy query (old clients)');
+  // J13-F12 supersedes the J12 "legacy guess": a query with letters is a handle, also without "@" or mode.
+  const bare = await a.call('GET', `users/lookup?q=${handle}`);
+  assert.equal(bare.status, 200, JSON.stringify(bare.body));
+  assert.equal(bare.body.handle?.replace(/^@/, ''), handle);
   const phoneMode = await a.call('GET', `users/lookup?q=${encodeURIComponent(b.phone)}&mode=phone`);
   assert.ok([200, 404, 429].includes(phoneMode.status), 'phone search keeps its own rules (budget, find-me-by-number)');
 });

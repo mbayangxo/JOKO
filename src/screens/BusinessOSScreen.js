@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import LoadErrorState from '../components/LoadErrorState';
 import ScreenBackground from '../components/ScreenBackground';
+import { usePressGuard } from '../hooks/usePressGuard';
 import PressScale from '../components/PressScale';
 import K21QrCode from '../components/K21QrCode';
 import { useToast } from '../components/Toast';
@@ -52,8 +54,9 @@ function Card({ children, style }) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
 function Btn({ label, onPress, primary, disabled }) {
+  const guard = usePressGuard(disabled ? undefined : onPress);
   return (
-    <PressScale scaleTo={0.96} onPress={disabled ? undefined : onPress} style={[styles.btn, primary && styles.btnPrimary, disabled && { opacity: 0.4 }]}>
+    <PressScale scaleTo={0.96} onPress={guard.busy ? undefined : guard.onPress} accessibilityState={{ disabled: Boolean(disabled), busy: guard.busy }} style={[styles.btn, primary && styles.btnPrimary, (disabled || guard.busy) && { opacity: 0.4 }]}>
       <Text style={[styles.btnText, primary && styles.btnTextPrimary]}>{label}</Text>
     </PressScale>
   );
@@ -93,7 +96,9 @@ function Payments({ id, access, toast }) {
   const [ref, setRef] = useState('');
   const [current, setCurrent] = useState(null);
   const [list, setList] = useState([]);
-  const load = useCallback(() => getBusinessCharges(id).then(setList).catch(() => {}), [id]);
+  const [listFailed, setListFailed] = useState(false);
+  // J13-F7: a failed load is shown as such — an empty "Derniers QR" would hide charges the merchant is waiting on.
+  const load = useCallback(() => getBusinessCharges(id).then((l) => { setList(l); setListFailed(false); }).catch(() => setListFailed(true)), [id]);
   useEffect(() => { load(); }, [load]);
   const create = async () => {
     const n = Number(amount);
@@ -132,6 +137,7 @@ function Payments({ id, access, toast }) {
       ) : null}
       {can(access, 'business.charges.create') ? <CashSale id={id} toast={toast} /> : null}
       <Text style={styles.section}>Derniers QR</Text>
+      {listFailed ? <LoadErrorState what="les derniers QR" onRetry={load} /> : null}
       {list.map((c) => {
         const s = chargeState(c);
         return (
@@ -463,7 +469,7 @@ export default function BusinessOSScreen({ navigation, route }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.back}><Text>←</Text></PressScale>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.back} accessibilityRole="button" accessibilityLabel="Retour"><Text>←</Text></PressScale>
           <View style={{ flex: 1 }}>
             <Text style={styles.title} numberOfLines={1}>{profile.name}{profile.verification.verified ? ' ✓' : ''}</Text>
             <Text style={styles.meta}>{access.roles.map((r) => ROLE_LABEL[r] ?? r).join(', ')}</Text>

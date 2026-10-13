@@ -59,7 +59,7 @@ export default function HomeScreen({ navigation }) {
   const balanceEntrance = useEntrance(0, 1000, 12);
   const balanceGlow = useGlowPulse(3400, 0.4);
   const walletPulse = useGlowPulse(2800, 1);
-  const { profile, balance, refreshWallet } = useAppState();
+  const { profile, balance, refreshWallet, walletRefreshError } = useAppState();
   const firstName = profile.name.split(' ')[0];
 
   // J10: the bell only signals something real (unread, not muted) — no permanent attention dot.
@@ -107,6 +107,12 @@ export default function HomeScreen({ navigation }) {
             <Animated.View style={balanceEntrance}>
               <KoriAmount value={balance} textStyle={styles.balanceAmount} style={{ justifyContent: 'center' }} />
             </Animated.View>
+            {walletRefreshError ? (
+              // J13-F8: a balance that could not be refreshed is flagged — never silently shown as current.
+              <PressScale onPress={() => refreshWallet().catch(() => {})} accessibilityRole="button" accessibilityLabel="Actualiser le solde">
+                <Text style={styles.staleBalance}>⚠️ Solde peut-être pas à jour — touche pour actualiser</Text>
+              </PressScale>
+            ) : null}
             <View style={styles.zeroFeesPill}>
               <Text style={styles.zeroFeesText}>✦ Zéro frais sur tous tes envois</Text>
             </View>
@@ -167,6 +173,7 @@ const styles = StyleSheet.create({
   notifDot: { position: 'absolute', top: 8, right: 9, width: 6, height: 6, borderRadius: 3, backgroundColor: colors.orange, borderWidth: 1.5, borderColor: colors.appCanvas.base },
 
   balanceDisplay: { alignItems: 'center', marginBottom: spacing.giant, marginTop: spacing.giant },
+  staleBalance: { marginTop: spacing.sm, fontSize: 12.5, color: '#8a5a00', textAlign: 'center', fontFamily: fontFamily.bodyMedium },
   balanceGlow: {
     position: 'absolute', top: -20, width: 220, height: 100, borderRadius: 100,
     backgroundColor: colors.green, alignSelf: 'center',

@@ -5,6 +5,8 @@ import { useFocusEffect, useRoute } from '@react-navigation/native';
 import PressScale from '../components/PressScale';
 import ScreenBackground from '../components/ScreenBackground';
 import { colors, fontFamily, radius, spacing } from '../theme';
+import { inferKind, routeForKind } from '../lib/notification-route';
+import LoadErrorState from '../components/LoadErrorState';
 import { useEntrance, useScalePulse } from '../hooks/animations';
 import { getCommunitySettings, getNotificationsFeed, markAllNotificationsRead, markNotificationRead, saveCommunitySettings } from '../lib/api-client';
 
@@ -13,34 +15,10 @@ const CATEGORY_LABELS = { money: 'Argent', orders: 'Commandes', deliveries: 'Liv
 
 const ACCENT_COLORS = { g: colors.green, o: colors.terracotta, r: colors.terracotta, y: colors.flagGold };
 
-function inferKind(notification) {
-  if (String(notification.kind ?? '').startsWith('shipment_')) return 'delivery';
-  if (String(notification.kind ?? '').startsWith('work_')) return 'work';
-  if (notification.kind === 'alert') return 'alert';
-  if (notification.kind === 'friend') return 'friend';
-  if (notification.kind === 'call') return 'call';
-  if (notification.kind === 'gift_receive') return 'gift';
-  if (notification.kind === 'affiliate') return 'affiliate';
-  if (notification.kind === 'money_request') return 'money';
-  // J13-F3: Jëkkal notifications (new donation, goal reached) were mapped to 'generic' and opened nothing.
-  if (notification.kind === 'jekkal') return 'jekkal';
-  const t = `${notification.title} ${notification.body}`
-    .toLowerCase()
-    .replace(/[''`´]/g, "'");
-  if (t.includes("demande d'ami") || t.includes('ajouter sur k21')) return 'friend';
-  if (t.includes('appel entrant') || t.includes('appel vidéo') || t.includes('t’appelle sur mboolo')) return 'call';
-  if (t.includes('demande')) return 'money';
-  if (t.includes('mboolo') || t.includes('message')) return 'mboolo';
-  if (t.includes('événement') || t.includes('event') || t.includes('concert')) return 'event';
-  if (t.includes('tontine')) return 'tontine';
-  if (t.includes('ngor') || t.includes('kersa') || t.includes('wakhna')) return 'ngor';
-  return 'generic';
-}
-
 function mapNotification(n) {
   const kind = inferKind(n);
-  const icons = { delivery: '📦', work: '🧰', money: '💸', gift: '🎁', jekkal: '🤝', affiliate: '🛍️', mboolo: '💬', event: '🎉', tontine: '🏦', ngor: '✦', alert: '🌊', friend: '🧑‍🤝‍🧑', call: '📞', generic: '🔔' };
-  const accents = { delivery: 'g', work: 'o', money: 'g', gift: 'g', jekkal: 'o', mboolo: 'r', event: 'o', tontine: 'y', ngor: 'g', alert: 'o', friend: 'g', call: 'o', generic: 'g' };
+  const icons = { delivery: '📦', work: '🧰', money: '💸', gift: '🎁', jekkal: '🤝', affiliate: '🛍️', mboolo: '💬', event: '🎉', tontine: '🏦', ngor: '✦', alert: '🌊', friend: '🧑‍🤝‍🧑', call: '📞', parcel: '📦', order: '🛍️', stock: '📉', support: '🛟', trade: '🧾', scheduled: '🗓️', agent: '🏧', business: '🏪', generic: '🔔' };
+  const accents = { delivery: 'g', work: 'o', money: 'g', gift: 'g', jekkal: 'o', mboolo: 'r', event: 'o', tontine: 'y', ngor: 'g', alert: 'o', friend: 'g', call: 'o', parcel: 'g', order: 'g', stock: 'o', support: 'o', trade: 'y', scheduled: 'g', agent: 'g', business: 'o', generic: 'g' };
   const time = new Date(n.createdAt).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   return {
     id: n.id,
@@ -53,7 +31,7 @@ function mapNotification(n) {
     iconBg: colors.greenA10,
     text: n.body || n.title,
     time,
-    action: kind === 'delivery' || kind === 'work' ? 'Voir' : kind === 'money' ? '✓' : kind === 'gift' ? 'Ouvrir' : kind === 'jekkal' ? 'Voir' : kind === 'friend' ? 'Voir' : kind === 'call' ? 'Rejoindre' : kind === 'mboolo' ? 'Répondre' : kind === 'event' || kind === 'alert' ? 'Voir' : null,
+    action: routeForKind(kind, n.refId) ? 'Voir' : kind === 'delivery' || kind === 'work' ? 'Voir' : kind === 'money' ? '✓' : kind === 'gift' ? 'Ouvrir' : kind === 'jekkal' ? 'Voir' : kind === 'friend' ? 'Voir' : kind === 'call' ? 'Rejoindre' : kind === 'mboolo' ? 'Répondre' : kind === 'event' || kind === 'alert' ? 'Voir' : null,
     actionStyle: kind === 'money' ? 'g' : 'o',
     refId: n.refId ?? null,
     read: n.read,
@@ -97,13 +75,17 @@ export default function NotificationsScreen({ navigation }) {
   const [category, setCategory] = useState(null);
   const [muted, setMuted] = useState([]);
 
+  // J13-F7: a failed load is an error with retry, not "Aucune notification".
+  const [loadFailed, setLoadFailed] = useState(false);
   const load = useCallback(async () => {
     try {
       const feed = await getNotificationsFeed({ category });
       setItems((feed?.items ?? []).map(mapNotification));
+      setLoadFailed(false);
       getCommunitySettings().then((st) => setMuted(st.mutedCategories ?? [])).catch(() => {});
     } catch {
       setItems([]);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -207,9 +189,14 @@ export default function NotificationsScreen({ navigation }) {
       case 'wakhna':
         navigation.navigate('Main', { screen: 'MoiTab' });
         break;
-      default:
-        navigation.navigate('Main', { screen: 'HomeTab' });
+      default: {
+        // J13-F5: parcels, orders, stock, support, trade invoices, scheduled payments, agent and business
+        // notices used to open nothing useful (they fell back to Home).
+        const r = routeForKind(item.kind, item.refId);
+        if (r) navigation.navigate(r.screen, r.params);
+        else navigation.navigate('Main', { screen: 'HomeTab' });
         break;
+      }
     }
   };
 
@@ -219,7 +206,7 @@ export default function NotificationsScreen({ navigation }) {
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
           {!isTabRoot ? (
-            <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
               <Text style={{ fontSize: 14, color: colors.ink }}>←</Text>
             </PressScale>
           ) : (
@@ -254,7 +241,8 @@ export default function NotificationsScreen({ navigation }) {
           </View>
         )}
 
-        {!loading && items.length === 0 && (
+        {!loading && items.length === 0 && loadFailed ? <LoadErrorState what="tes notifications" onRetry={() => { setLoading(true); load(); }} /> : null}
+        {!loading && items.length === 0 && !loadFailed && (
           <Text style={styles.empty}>Aucune notification pour l'instant.</Text>
         )}
 

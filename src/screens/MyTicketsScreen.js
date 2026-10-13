@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import LoadErrorState from '../components/LoadErrorState';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -19,12 +20,15 @@ export default function MyTicketsScreen({ navigation }) {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const [loadFailed, setLoadFailed] = useState(false); // J13-F7
   const load = useCallback(async () => {
     try {
       const rows = await getMyTickets();
       setTickets(Array.isArray(rows) ? rows : []);
+      setLoadFailed(false);
     } catch {
       setTickets([]);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -39,7 +43,8 @@ export default function MyTicketsScreen({ navigation }) {
         <ScreenHeader onBack={() => navigation.goBack()} title="Mes billets" style={styles.header} />
         <ScrollView contentContainerStyle={styles.scroll}>
           {loading ? <ActivityIndicator color={colors.green} /> : null}
-          {!loading && tickets.length === 0 ? (
+          {!loading && tickets.length === 0 && loadFailed ? <LoadErrorState what="tes billets" onRetry={() => { setLoading(true); load(); }} /> : null}
+          {!loading && tickets.length === 0 && !loadFailed ? (
             <Text style={styles.empty}>Tu n'as pas encore de billet.</Text>
           ) : null}
           {tickets.map((t) => (

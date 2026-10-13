@@ -117,7 +117,7 @@ export default function HubParcelDetailScreen({ navigation, route }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 18 }}>←</Text>
           </PressScale>
           <Text style={styles.title}>{parcel.reference}</Text>
@@ -161,14 +161,14 @@ export default function HubParcelDetailScreen({ navigation, route }) {
           {canLastMile ? (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Livraison à domicile</Text>
-              <TextInput
+              <TextInput accessibilityLabel="Quartier"
                 style={styles.input}
                 value={dropoffArea}
                 onChangeText={setDropoffArea}
                 placeholder="Quartier"
                 placeholderTextColor={colors.appCanvas.textFaint}
               />
-              <TextInput
+              <TextInput accessibilityLabel="Adresse"
                 style={[styles.input, { minHeight: 72 }]}
                 value={dropoffAddress}
                 onChangeText={setDropoffAddress}
@@ -185,7 +185,7 @@ export default function HubParcelDetailScreen({ navigation, route }) {
           {canPickup && parcel.fulfillmentPlan === 'pickup' ? (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Retirer au point</Text>
-              <TextInput
+              <TextInput accessibilityLabel="Code à 6 chiffres"
                 style={styles.input}
                 value={pickupCode}
                 onChangeText={setPickupCode}

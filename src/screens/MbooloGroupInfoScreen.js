@@ -102,7 +102,7 @@ export default function MbooloGroupInfoScreen({ navigation, route }) {
     <View style={styles.root}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 16 }}>←</Text>
           </PressScale>
           <Text style={styles.title}>{thread?.name ?? 'Groupe'}</Text>
@@ -138,7 +138,7 @@ export default function MbooloGroupInfoScreen({ navigation, route }) {
 
             {!roster || manager ? (<>
             <Text style={[styles.sectionLabel, { marginTop: spacing.xl }]}>Ajouter des membres</Text>
-            <TextInput
+            <TextInput accessibilityLabel="@fatou @ibou"
               style={styles.input}
               placeholder="@fatou @ibou"
               placeholderTextColor="rgba(5,8,5,0.4)"

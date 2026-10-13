@@ -15,7 +15,7 @@ export default function NuLekkScreen({ navigation }) {
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           <LinearGradient colors={['#ffe08a', '#ffb347', '#ff8c52']} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={styles.hero}>
             <View style={styles.heroBackRow}>
-              <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.heroBack}>
+              <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.heroBack} accessibilityRole="button" accessibilityLabel="Retour">
                 <Text style={{ fontSize: 14, color: '#fff' }}>←</Text>
               </PressScale>
               <Text style={styles.heroTitle}>Ñu Lekk 🍖</Text>

@@ -116,3 +116,18 @@ test('money requests: pending shows expiry; expired / answered are visible but n
   assert.equal(requestCreateProblem({ status: 429, code: 'request_limit', message: 'Trop' }).kind, 'limit');
   assert.equal(requestCreateProblem({ status: 403, code: 'recipient_unavailable' }).kind, 'unavailable');
 });
+
+test('J13-F6: each money state has its own tone and glyph — none can be mistaken for another; unknown is never "done"', () => {
+  const row = (status) => activityRow({ reference: status, direction: 'out', amountKori: 5, status, statusLabel: status });
+  const states = ['pending', 'in_review', 'completed', 'failed', 'reversed'];
+  const tones = states.map((s) => row(s).tone);
+  const glyphs = states.map((s) => row(s).glyph);
+  assert.equal(new Set(tones).size, states.length, `distinct tones: ${tones}`);
+  assert.equal(new Set(glyphs).size, states.length, `distinct glyphs: ${glyphs}`);
+  assert.equal(row('completed').tone, 'ok');
+  assert.equal(row('failed').struck, true);
+  assert.equal(row('reversed').struck, true);
+  assert.equal(row('completed').struck, false);
+  assert.equal(row('pending').struck, false);
+  assert.notEqual(row('something_new').tone, 'ok', 'an unknown status is never shown as completed');
+});

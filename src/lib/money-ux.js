@@ -71,7 +71,10 @@ export function classifyIntent(intent) {
   }
 }
 
-const TONES = { completed: 'ok', pending: 'pending', in_review: 'pending', failed: 'muted', reversed: 'muted', refunded: 'muted', partially_refunded: 'muted' };
+// J13-F6: every money state has its own tone AND glyph (never colour alone), so pending / under review /
+// completed / failed / reversed can never be read as one another — not even in greyscale.
+const TONES = { completed: 'ok', pending: 'pending', in_review: 'review', failed: 'failed', reversed: 'reversed', refunded: 'reversed', partially_refunded: 'reversed' };
+const GLYPHS = { ok: '✓', pending: '⏳', review: '🔎', failed: '✕', reversed: '↩' };
 
 /** One history row for display (no ledger jargon; reversal/refund links kept). */
 export function activityRow(item) {
@@ -90,7 +93,10 @@ export function activityRow(item) {
     title: item.title,
     amountLabel: `${sign}${item.amountKori} ₭`,
     statusLabel: item.statusLabel,
-    tone: TONES[item.status] ?? 'ok',
+    tone: TONES[item.status] ?? 'pending',
+    glyph: GLYPHS[TONES[item.status] ?? 'pending'],
+    // Failed: no money moved. Reversed/refunded: it moved and came back. Either way the amount is not a live movement.
+    struck: item.status === 'failed' || item.status === 'reversed',
     spendable: item.status === 'completed' || item.direction === 'out',
     linkedNote: linked,
     pendingNote: item.status === 'pending' && item.type === 'cash_in' ? 'Pas encore disponible' : item.held ? 'Montant réservé' : null,

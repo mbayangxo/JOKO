@@ -52,12 +52,12 @@ export default function EventCreateScreen({ navigation }) {
         <ScreenHeader onBack={() => navigation.goBack()} title="Créer un événement" style={styles.header} />
         <ScrollView contentContainerStyle={styles.scroll}>
           <Text style={styles.hero}>Ton event,{'\n'}tes billets.</Text>
-          <TextInput value={title} onChangeText={setTitle} placeholder="Titre" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
-          <TextInput value={venue} onChangeText={setVenue} placeholder="Lieu" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
-          <TextInput value={description} onChangeText={setDescription} placeholder="Description" style={[styles.input, styles.multi]} multiline placeholderTextColor="rgba(5,8,5,0.35)" />
-          <TextInput value={dateStr} onChangeText={setDateStr} placeholder="Date ISO (2026-08-01T20:00:00Z)" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
-          <TextInput value={ticketPrice} onChangeText={setTicketPrice} placeholder="Prix billet (C̶)" keyboardType="number-pad" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
-          <TextInput value={capacity} onChangeText={setCapacity} placeholder="Capacité (optionnel)" keyboardType="number-pad" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
+          <TextInput accessibilityLabel="Titre" value={title} onChangeText={setTitle} placeholder="Titre" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
+          <TextInput accessibilityLabel="Lieu" value={venue} onChangeText={setVenue} placeholder="Lieu" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
+          <TextInput accessibilityLabel="Description" value={description} onChangeText={setDescription} placeholder="Description" style={[styles.input, styles.multi]} multiline placeholderTextColor="rgba(5,8,5,0.35)" />
+          <TextInput accessibilityLabel="Date ISO (2026-08-01T20:00:00Z)" value={dateStr} onChangeText={setDateStr} placeholder="Date ISO (2026-08-01T20:00:00Z)" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
+          <TextInput accessibilityLabel="Prix billet (C̶)" value={ticketPrice} onChangeText={setTicketPrice} placeholder="Prix billet (C̶)" keyboardType="number-pad" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
+          <TextInput accessibilityLabel="Capacité (optionnel)" value={capacity} onChangeText={setCapacity} placeholder="Capacité (optionnel)" keyboardType="number-pad" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
           <GlowButton label={submitting ? 'Publication…' : 'Publier l\'événement'} onPress={submit} disabled={submitting} tone="orange" />
         </ScrollView>
       </SafeAreaView>

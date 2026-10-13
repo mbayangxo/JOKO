@@ -37,7 +37,7 @@ function FriendRow({ friend, onSend, onMbolo, delay = 0 }) {
           <Text style={styles.rowName}>{friend.name}</Text>
           <Text style={styles.rowMeta}>@{String(friend.handle ?? '').replace(/^@+/, '')}</Text>
         </View>
-        <PressScale scaleTo={0.9} onPress={onMbolo} style={styles.mboloBtn}>
+        <PressScale scaleTo={0.9} onPress={onMbolo} style={styles.mboloBtn} accessibilityRole="button" accessibilityLabel="Écrire dans Mboolo">
           <Text style={styles.mboloBtnText}>💬</Text>
         </PressScale>
       </PressScale>
@@ -60,7 +60,7 @@ function IncomingRequestRow({ request, onAccept, onDecline, responding, delay = 
       <PressScale scaleTo={0.92} onPress={onAccept} style={[styles.acceptBtn, responding && { opacity: 0.5 }]}>
         <Text style={styles.acceptBtnText}>Accepter</Text>
       </PressScale>
-      <PressScale scaleTo={0.92} onPress={onDecline} style={[styles.declineBtn, responding && { opacity: 0.5 }]}>
+      <PressScale scaleTo={0.92} onPress={onDecline} style={[styles.declineBtn, responding && { opacity: 0.5 }]} accessibilityRole="button" accessibilityLabel="Refuser la demande">
         <Text style={styles.declineBtnText}>✕</Text>
       </PressScale>
     </Animated.View>
@@ -138,7 +138,8 @@ export default function FriendsScreen({ navigation, route }) {
     setAdding(true);
     try {
       const digits = query.replace(/\D/g, '');
-      const looksLikePhone = !query.startsWith('@') && digits.length >= 8;
+      // J13-F12: letters mean a handle ("awa77123456"), never a phone number.
+      const looksLikePhone = !query.startsWith('@') && /^[+\d\s().-]+$/.test(query.trim()) && digits.length >= 8;
       // A handle from a link/code or typed directly goes straight to
       // addFriend; a phone number needs resolving to a handle first —
       // handles and phones both point at the same K21 account.
@@ -218,7 +219,7 @@ export default function FriendsScreen({ navigation, route }) {
           <Animated.View style={findEntrance}>
             <Text style={styles.addLbl}>Trouver un compte</Text>
             <View style={styles.addRow}>
-              <TextInput
+              <TextInput accessibilityLabel="@handle, numéro, ou lien k21://"
                 style={styles.input}
                 value={handle}
                 onChangeText={setHandle}

@@ -101,7 +101,7 @@ function ReceivingForm({ lines, atDoor, busy, onSubmit }) {
           </View>
         );
       })}
-      <TextInput style={styles.input} value={note} onChangeText={setNote} placeholder="Note (facultatif)" maxLength={300} />
+      <TextInput accessibilityLabel="Note (facultatif)" style={styles.input} value={note} onChangeText={setNote} placeholder="Note (facultatif)" maxLength={300} />
       <GlowButton label={busy ? '…' : 'Enregistrer la réception'} disabled={busy || !balanced} onPress={() => onSubmit(lines.map((l) => ({ productId: l.productId, ...rows[l.productId] })), note)} />
     </View>
   );
@@ -243,7 +243,7 @@ export default function ShipmentScreen({ route, navigation }) {
         {role === 'source' && ['requested', 'accepted', 'ready_for_pickup', 'assigned', 'pickup_arrived'].includes(s) ? (
           panel === 'cancel' ? (
             <View style={styles.block}>
-              <TextInput style={styles.input} value={text} onChangeText={setText} placeholder="Motif d’annulation" maxLength={300} />
+              <TextInput accessibilityLabel="Motif d’annulation" style={styles.input} value={text} onChangeText={setText} placeholder="Motif d’annulation" maxLength={300} />
               <GlowButton tone="orange" label="Annuler l’expédition" disabled={busy || text.trim().length < 3} onPress={() => act('cancel', () => cancelShipment(shipmentId, text.trim()), { ok: 'Expédition annulée' })} />
             </View>
           ) : <PressScale onPress={() => setPanel('cancel')} style={styles.ghost}><Text style={styles.ghostText}>Annuler (avant enlèvement)</Text></PressScale>

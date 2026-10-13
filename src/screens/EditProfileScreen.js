@@ -209,7 +209,7 @@ export default function EditProfileScreen({ navigation }) {
     <AppScreen>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 16, color: colors.appCanvas.text }}>←</Text>
           </PressScale>
           <Text style={styles.headerTitle}>Mon compte</Text>
@@ -240,7 +240,7 @@ export default function EditProfileScreen({ navigation }) {
           <Text style={styles.sectionLabel}>Profil public — ce que les autres voient</Text>
           <View style={styles.card}>
             <Text style={styles.fieldLabel}>✨ Ce que tu fais en ce moment</Text>
-            <TextInput
+            <TextInput accessibilityLabel="En ataya à Médina"
               style={styles.input}
               value={statusText}
               onChangeText={setStatusText}
@@ -249,7 +249,7 @@ export default function EditProfileScreen({ navigation }) {
               maxLength={80}
             />
             <Text style={styles.fieldLabel}>🎵 Ta chanson du moment</Text>
-            <TextInput
+            <TextInput accessibilityLabel="Titre — Artiste"
               style={styles.input}
               value={currentSong}
               onChangeText={setCurrentSong}
@@ -274,7 +274,7 @@ export default function EditProfileScreen({ navigation }) {
                 </PressScale>
               ))}
               {pinnedPhotos.length < 3 ? (
-                <PressScale scaleTo={0.95} onPress={addPinnedPhoto} style={[styles.pinnedSlot, styles.pinnedAdd]}>
+                <PressScale scaleTo={0.95} onPress={addPinnedPhoto} style={[styles.pinnedSlot, styles.pinnedAdd]} accessibilityRole="button" accessibilityLabel="Ajouter une photo">
                   <Text style={{ fontSize: 22, color: 'rgba(5,8,5,0.45)' }}>+</Text>
                 </PressScale>
               ) : null}
@@ -284,7 +284,7 @@ export default function EditProfileScreen({ navigation }) {
             </Text>
 
             <Text style={[styles.fieldLabel, { marginTop: spacing.lg }]}>🤔 Pose une question à tes amis</Text>
-            <TextInput
+            <TextInput accessibilityLabel="Sortie samedi : on fait quoi ?"
               style={styles.input}
               value={pollQuestion}
               onChangeText={setPollQuestion}
@@ -336,7 +336,7 @@ export default function EditProfileScreen({ navigation }) {
                 <Text style={[styles.fieldLabel, { marginTop: spacing.lg }]}>Nouveau numéro</Text>
                 <View style={styles.phoneRow}>
                   <Text style={styles.dial}>{country?.dial ?? '+221'}</Text>
-                  <TextInput
+                  <TextInput accessibilityLabel="77 000 00 00"
                     style={styles.input}
                     placeholder="77 000 00 00"
                     placeholderTextColor={'rgba(5,8,5,0.4)'}
@@ -361,7 +361,7 @@ export default function EditProfileScreen({ navigation }) {
                     <Text style={styles.devOtpCode}>{devOtp}</Text>
                   </View>
                 ) : null}
-                <TextInput
+                <TextInput accessibilityLabel="000000"
                   style={styles.input}
                   placeholder="000000"
                   placeholderTextColor={'rgba(5,8,5,0.4)'}
@@ -381,7 +381,7 @@ export default function EditProfileScreen({ navigation }) {
           <Text style={styles.sectionLabel}>Email</Text>
           <View style={styles.card}>
             <Text style={styles.hint}>Utilise ton email pour te reconnecter si tu changes de numéro.</Text>
-            <TextInput
+            <TextInput accessibilityLabel="ton@email.com"
               style={styles.input}
               placeholder="ton@email.com"
               placeholderTextColor={'rgba(5,8,5,0.4)'}

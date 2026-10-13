@@ -3,6 +3,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import PressScale from '../components/PressScale';
+import LoadErrorState from '../components/LoadErrorState';
 import ScreenBackground from '../components/ScreenBackground';
 import ScreenHeader from '../components/ScreenHeader';
 import GlowButton from '../components/GlowButton';
@@ -51,6 +52,7 @@ export default function AgentDiscoveryScreen({ navigation, route }) {
   );
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -61,8 +63,11 @@ export default function AgentDiscoveryScreen({ navigation, route }) {
         amount: prefilledAmount,
       });
       setAgents(Array.isArray(data.servicePoints) ? data.servicePoints : []);
+      setLoadFailed(false);
     } catch {
+      // J13-F7: a failed lookup is not "no agent near you".
       setAgents([]);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -96,7 +101,10 @@ export default function AgentDiscoveryScreen({ navigation, route }) {
           </Text>
 
           {loading ? <ActivityIndicator color={colors.green} style={{ marginVertical: spacing.xl }} /> : null}
-          {!loading && agents.length === 0 ? (
+          {!loading && loadFailed ? (
+            <LoadErrorState what="les points de service" onRetry={() => { setLoading(true); load(); }} />
+          ) : null}
+          {!loading && !loadFailed && agents.length === 0 ? (
             <View style={styles.empty}>
               <Text style={styles.emptyText}>Aucun point de service actif dans ta zone pour l'instant.</Text>
               <GlowButton

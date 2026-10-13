@@ -185,7 +185,7 @@ function AmountStep({
                 <View style={styles.recAva}>
                   <Text style={{ fontSize: 20 }}>{recipientProfile?.avatarEmoji ?? '🧑🏾'}</Text>
                 </View>
-                <TextInput
+                <TextInput accessibilityLabel="k21://pay/@fatou ou @fatou"
                   style={styles.handleField}
                   placeholder="k21://pay/@fatou ou @fatou"
                   placeholderTextColor={'rgba(5,8,5,0.4)'}
@@ -202,7 +202,7 @@ function AmountStep({
               <View style={styles.dialBadge}>
                 <Text style={styles.dialBadgeText}>{countryDial}</Text>
               </View>
-              <TextInput
+              <TextInput accessibilityLabel="77 000 00 00"
                 style={styles.handleField}
                 placeholder="77 000 00 00"
                 placeholderTextColor={'rgba(5,8,5,0.4)'}
@@ -217,7 +217,7 @@ function AmountStep({
               <View style={styles.recAva}>
                 <Text style={{ fontSize: 20 }}>{recipientProfile?.avatarEmoji ?? '🧑🏾'}</Text>
               </View>
-              <TextInput
+              <TextInput accessibilityLabel="@handle"
                 style={styles.handleField}
                 placeholder="@handle"
                 placeholderTextColor={'rgba(5,8,5,0.4)'}
@@ -247,7 +247,7 @@ function AmountStep({
 
         <Animated.View style={[styles.reasonWrap, reasonEntrance]}>
           <Text style={styles.lbl}>Pour quoi ? (optionnel)</Text>
-          <TextInput
+          <TextInput accessibilityLabel="Pour le taxi, pour manger..."
             style={styles.reasonField}
             placeholder="Pour le taxi, pour manger..."
             placeholderTextColor={'rgba(5,8,5,0.4)'}
@@ -271,16 +271,16 @@ function AmountStep({
                 {attachmentType === 'video' && 'Vidéo jointe'}
                 {attachmentType === 'voice' && 'Message vocal joint'}
               </Text>
-              <PressScale scaleTo={0.9} onPress={onRemoveAttachment} style={styles.attachRemove}>
+              <PressScale scaleTo={0.9} onPress={onRemoveAttachment} style={styles.attachRemove} accessibilityRole="button" accessibilityLabel="Retirer la pièce jointe">
                 <Text style={{ fontSize: 12, color: colors.terracotta }}>✕</Text>
               </PressScale>
             </View>
           ) : (
             <View style={styles.attachRow}>
-              <PressScale scaleTo={0.95} onPress={onAttachPhoto} style={styles.attachBtn} disabled={attaching}>
+              <PressScale scaleTo={0.95} onPress={onAttachPhoto} style={styles.attachBtn} disabled={attaching} accessibilityRole="button" accessibilityLabel="Joindre une photo">
                 <Text style={{ fontSize: 16 }}>📷</Text>
               </PressScale>
-              <PressScale scaleTo={0.95} onPress={onAttachVideo} style={styles.attachBtn} disabled={attaching}>
+              <PressScale scaleTo={0.95} onPress={onAttachVideo} style={styles.attachBtn} disabled={attaching} accessibilityRole="button" accessibilityLabel="Joindre une vidéo">
                 <Text style={{ fontSize: 16 }}>🎬</Text>
               </PressScale>
               <PressScale

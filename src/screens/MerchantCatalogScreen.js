@@ -58,7 +58,7 @@ function ProductEditor({ product, onSave, onDelete, brandMode }) {
           </View>
           <View style={styles.inlineRow}>
             <Text style={styles.miniLbl}>Unité</Text>
-            <TextInput style={styles.miniInput} value={unitLabel} onChangeText={setUnitLabel} placeholder="sac, carton…" />
+            <TextInput accessibilityLabel="sac, carton" style={styles.miniInput} value={unitLabel} onChangeText={setUnitLabel} placeholder="sac, carton…" />
           </View>
           <View style={styles.channelRow}>
             {['b2c', 'b2b', 'both'].map((ch) => (
@@ -259,7 +259,7 @@ export default function MerchantCatalogScreen({ navigation, route }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 18 }}>←</Text>
           </PressScale>
           <Text style={styles.title}>Mon catalogue</Text>
@@ -354,13 +354,13 @@ export default function MerchantCatalogScreen({ navigation, route }) {
                 </>
               )}
             </PressScale>
-            <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Ex. Riz brisé 1 kg" placeholderTextColor={colors.appCanvas.textFaint} />
-            <TextInput style={styles.input} value={price} onChangeText={setPrice} keyboardType="number-pad" placeholder="Prix détail (C)" placeholderTextColor={colors.appCanvas.textFaint} />
+            <TextInput accessibilityLabel="Ex. Riz brisé 1 kg" style={styles.input} value={title} onChangeText={setTitle} placeholder="Ex. Riz brisé 1 kg" placeholderTextColor={colors.appCanvas.textFaint} />
+            <TextInput accessibilityLabel="Prix détail (C)" style={styles.input} value={price} onChangeText={setPrice} keyboardType="number-pad" placeholder="Prix détail (C)" placeholderTextColor={colors.appCanvas.textFaint} />
             {brandMode ? (
               <>
-                <TextInput style={styles.input} value={b2bPrice} onChangeText={setB2bPrice} keyboardType="number-pad" placeholder="Prix gros B2B (C)" placeholderTextColor={colors.appCanvas.textFaint} />
-                <TextInput style={styles.input} value={b2bMinQty} onChangeText={setB2bMinQty} keyboardType="number-pad" placeholder="Quantité min gros" placeholderTextColor={colors.appCanvas.textFaint} />
-                <TextInput style={styles.input} value={unitLabel} onChangeText={setUnitLabel} placeholder="Unité (sac, carton…)" placeholderTextColor={colors.appCanvas.textFaint} />
+                <TextInput accessibilityLabel="Prix gros B2B (C)" style={styles.input} value={b2bPrice} onChangeText={setB2bPrice} keyboardType="number-pad" placeholder="Prix gros B2B (C)" placeholderTextColor={colors.appCanvas.textFaint} />
+                <TextInput accessibilityLabel="Quantité min gros" style={styles.input} value={b2bMinQty} onChangeText={setB2bMinQty} keyboardType="number-pad" placeholder="Quantité min gros" placeholderTextColor={colors.appCanvas.textFaint} />
+                <TextInput accessibilityLabel="Unité (sac, carton)" style={styles.input} value={unitLabel} onChangeText={setUnitLabel} placeholder="Unité (sac, carton…)" placeholderTextColor={colors.appCanvas.textFaint} />
                 <View style={styles.channelRow}>
                   {['b2c', 'b2b', 'both'].map((ch) => (
                     <PressScale key={ch} scaleTo={0.95} onPress={() => setSaleChannel(ch)} style={[styles.channelChip, saleChannel === ch && styles.channelChipOn]}>
@@ -370,7 +370,7 @@ export default function MerchantCatalogScreen({ navigation, route }) {
                 </View>
               </>
             ) : null}
-            <TextInput style={styles.input} value={inventory} onChangeText={setInventory} keyboardType="number-pad" placeholder="Stock initial" placeholderTextColor={colors.appCanvas.textFaint} />
+            <TextInput accessibilityLabel="Stock initial" style={styles.input} value={inventory} onChangeText={setInventory} keyboardType="number-pad" placeholder="Stock initial" placeholderTextColor={colors.appCanvas.textFaint} />
             <PressScale scaleTo={0.98} onPress={submit} disabled={submitting} style={[styles.submit, submitting && { opacity: 0.6 }]}>
               <Text style={styles.submitText}>{submitting ? 'Publication…' : 'Publier le produit'}</Text>
             </PressScale>

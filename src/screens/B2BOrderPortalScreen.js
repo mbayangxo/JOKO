@@ -468,14 +468,14 @@ export default function B2BOrderPortalScreen({ navigation }) {
                       );
                     })}
                   </ScrollView>
-                  <TextInput
+                  <TextInput accessibilityLabel="Quartier"
                     style={styles.input}
                     value={dropoffArea}
                     onChangeText={setDropoffArea}
                     placeholder="Quartier"
                     placeholderTextColor="rgba(5,8,5,0.4)"
                   />
-                  <TextInput
+                  <TextInput accessibilityLabel="Adresse de livraison"
                     style={[styles.input, { minHeight: 72 }]}
                     value={dropoffAddress}
                     onChangeText={setDropoffAddress}

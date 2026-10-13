@@ -267,7 +267,7 @@ function MemberPreviewCard({ profile, onAdd, onDismiss, adding }) {
         <PressScale scaleTo={0.94} onPress={onAdd} disabled={adding} style={styles.memberPreviewAdd}>
           <Text style={styles.memberPreviewAddText}>{adding ? '…' : '+ Ajouter'}</Text>
         </PressScale>
-        <PressScale scaleTo={0.94} onPress={onDismiss}>
+        <PressScale scaleTo={0.94} onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Fermer">
           <Text style={styles.memberPreviewDismiss}>✕</Text>
         </PressScale>
       </View>

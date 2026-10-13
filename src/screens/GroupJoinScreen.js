@@ -46,7 +46,7 @@ export default function GroupJoinScreen({ navigation, route }) {
         </View>
         <View style={styles.body}>
           <Text style={styles.hint}>Colle le code d'invitation qu'on t'a partagé</Text>
-          <TextInput
+          <TextInput accessibilityLabel="ABCD1234"
             style={styles.input}
             value={code}
             onChangeText={setCode}

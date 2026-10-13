@@ -145,7 +145,7 @@ const SearchBar = ({ query, setQuery, inputRef }) => {
   return (
     <Animated.View style={[styles.searchBar, { borderColor }]}>
       <Text style={{ fontSize: 14, color: colors.mboolo.ink3 }}>🔍</Text>
-      <TextInput
+      <TextInput accessibilityLabel="Rechercher..."
         ref={inputRef}
         style={styles.searchInput}
         placeholder="Rechercher..."
@@ -364,14 +364,14 @@ export default function MbooloHomeScreen({ navigation }) {
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>Nouvelle conversation</Text>
             <Text style={styles.modalHint}>Nom du groupe (optionnel) et @handles séparés par des espaces</Text>
-            <TextInput
+            <TextInput accessibilityLabel="Nom du groupe"
               style={styles.modalInput}
               placeholder="Nom du groupe"
               placeholderTextColor={colors.mboolo.ink3}
               value={newName}
               onChangeText={setNewName}
             />
-            <TextInput
+            <TextInput accessibilityLabel="@fatou @ibou"
               style={styles.modalInput}
               placeholder="@fatou @ibou"
               placeholderTextColor={colors.mboolo.ink3}
