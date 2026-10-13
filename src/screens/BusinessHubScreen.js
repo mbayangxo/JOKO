@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import PressScale from '../components/PressScale';
 import ScreenBackground from '../components/ScreenBackground';
 import GlowButton from '../components/GlowButton';
+import RecipientConfirmCard from '../components/RecipientConfirmCard';
 import { useToast } from '../components/Toast';
 import { useAppState } from '../state/AppState';
 import { createBusiness, createFlashDeal, setBusinessStatus } from '../lib/api-client';
@@ -16,6 +17,7 @@ import {
   getMyBusinesses,
   getPayrollEmployees,
   addPayrollEmployee,
+  lookupUser,
   payPayrollEmployee,
   getSchoolStudents,
   createSchoolFeePeriod,
@@ -111,6 +113,7 @@ export default function BusinessHubScreen({ navigation, route }) {
 
   const [employees, setEmployees] = useState([]);
   const [newHandle, setNewHandle] = useState('');
+  const [pendingEmployee, setPendingEmployee] = useState(null); // J14-S0: verified person awaiting confirmation
   const [newPay, setNewPay] = useState('50000');
   const [newRole, setNewRole] = useState('staff');
 
@@ -317,19 +320,36 @@ export default function BusinessHubScreen({ navigation, route }) {
     return base;
   };
 
-  const addEmployee = async () => {
+  // J14-S0: look the person up and confirm who they are BEFORE enrolling them (the account, not the handle).
+  const checkEmployee = async () => {
     if (!business?.id || !newHandle.trim()) return;
     setLoading(true);
     try {
+      setPendingEmployee(await lookupUser(newHandle.trim().replace(/^@/, ''), { mode: 'handle' }));
+    } catch (err) {
+      setPendingEmployee(null);
+      showToast(err.message ?? 'Personne introuvable');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addEmployee = async () => {
+    if (!business?.id || !pendingEmployee?.recipientRef) return;
+    setLoading(true);
+    try {
       await addPayrollEmployee(business.id, {
-        userHandle: newHandle.trim(),
+        userHandle: String(pendingEmployee.handle).replace(/^@/, ''),
+        recipientRef: pendingEmployee.recipientRef,
         jobTitle: newRole,
         payAmount: parseInt(newPay, 10) || undefined,
       });
+      setPendingEmployee(null);
       setNewHandle('');
       showToast('Employé ajouté ✓');
       setEmployees(await getPayrollEmployees(business.id));
     } catch (err) {
+      if (err.category === 'recipient_changed' || err.category === 'confirmation_required') setPendingEmployee(null);
       showToast(err.message ?? 'Ajout impossible');
     } finally {
       setLoading(false);
@@ -808,7 +828,18 @@ export default function BusinessHubScreen({ navigation, route }) {
                 <TextInput accessibilityLabel="@handle K21" style={styles.input} placeholder="@handle K21" placeholderTextColor={'rgba(5,8,5,0.45)'} value={newHandle} onChangeText={setNewHandle} autoCapitalize="none" />
                 <TextInput accessibilityLabel="Rôle (staff, CEO)" style={styles.input} placeholder="Rôle (staff, CEO…)" placeholderTextColor={'rgba(5,8,5,0.45)'} value={newRole} onChangeText={setNewRole} />
                 <TextInput accessibilityLabel="Salaire XOF" style={styles.input} placeholder="Salaire XOF" placeholderTextColor={'rgba(5,8,5,0.45)'} keyboardType="number-pad" value={newPay} onChangeText={setNewPay} />
-                <GlowButton label="Ajouter" onPress={addEmployee} disabled={loading} />
+                {pendingEmployee ? (
+                  <RecipientConfirmCard
+                    profile={pendingEmployee}
+                    question={`Ajouter ${pendingEmployee.name || pendingEmployee.handle} à la paie ?`}
+                    confirmLabel="Oui, ajouter à la paie"
+                    onConfirm={addEmployee}
+                    onCancel={() => setPendingEmployee(null)}
+                    busy={loading}
+                  />
+                ) : (
+                  <GlowButton label="Vérifier la personne" onPress={checkEmployee} disabled={loading} />
+                )}
               </SectionCard>
               <SectionCard title={`Équipe (${employees.length})`}>
                 {employees.map((emp) => (

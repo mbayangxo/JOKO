@@ -46,7 +46,21 @@
 
 **Proposed order:** S0 → S1 → S6 → S3 → S2 → S5. S4 waits for D-J14-1.
 
-## 4. Decisions needed (none taken here)
+## 4. Decisions (recorded 2026-10-13)
+
+- **D-J14-1 → option A.** Every partner-initiated business-wallet debit needs explicit approval inside Jokko by the owner or an authorized financial approver. There are no automatic partner debits and no standing mandates in J14.
+- **D-J14-2 → approved.** A minimal allowlist of order, payment, settlement and fulfilment events, for explicitly linked and authorized businesses only. Requirements:
+  - signed webhooks with replay protection;
+  - scoped credentials;
+  - minimal personal information;
+  - 30-day operational delivery logs.
+
+  Financial audit records keep their own, separate retention.
+- **D-J14-3 → conditional.** Close legacy unmapped settlement for **new** partners only, and only after the mapped replacement passes complete reconciliation and migration tests. Existing partners and production behaviour are unchanged.
+
+Order: S0 → S1 → S6 → S3 → S2 → S5 (S4 under option A).
+
+### Original questions
 
 | ID | Question | Why it matters |
 |---|---|---|
