@@ -53,6 +53,25 @@ async function sessionPage(person, label) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push(`${label}: ${String(e).slice(0, 200)}`));
+  // Evidence recorder: every text that appears on screen (toasts, banners, statuses) with a timestamp, so a
+  // missed transient message can be explained (shown and gone? replaced by an error? never shown?).
+  await page.addInitScript(() => {
+    window.__seen = [];
+    const t0 = performance.now();
+    new MutationObserver((ms) => {
+      for (const m of ms) {
+        for (const n of m.addedNodes) {
+          const t = (n.textContent ?? '').trim();
+          if (t && t.length < 160) window.__seen.push(`${Math.round(performance.now() - t0)}ms ${t}`);
+        }
+        if (m.type === 'characterData') {
+          const t = (m.target.textContent ?? '').trim();
+          if (t && t.length < 160) window.__seen.push(`${Math.round(performance.now() - t0)}ms ~${t}`);
+        }
+      }
+      if (window.__seen.length > 400) window.__seen.splice(0, 200);
+    }).observe(document, { childList: true, subtree: true, characterData: true });
+  });
   await page.addInitScript(({ token, refresh, device }) => {
     sessionStorage.setItem('k21_access_token', token);
     sessionStorage.setItem('k21_refresh_token', refresh);
@@ -86,7 +105,8 @@ const see = async (page, text) => {
     await page.getByText(text).filter({ visible: true }).first().waitFor({ state: 'visible', timeout: 20_000 });
   } catch {
     const body = (await page.innerText('body').catch(() => '')).replace(/\s+/g, ' ');
-    throw new Error(`"${text}" not visible; screen: …${body.slice(-600)}`);
+    const seen = await page.evaluate(() => (window.__seen ?? []).slice(-15)).catch(() => []);
+    throw new Error(`"${text}" not visible; screen: …${body.slice(-600)} | last texts seen: ${JSON.stringify(seen)}`);
   }
 };
 const fill = async (page, label, value) => {
@@ -146,7 +166,12 @@ try {
     await see(emp, w.user.name ?? w.handle);
     const body = await emp.innerText('body');
     assert.ok(!body.includes(w.phone), 'no phone on the applicant card');
+    // The persistent "Offre reçue" status used below can only be THIS offer's: one application, no offer yet.
     assert.ok(!body.includes('Offre reçue'), 'not yet offered before the offer is sent');
+    const apps = await prisma.workApplication.findMany({ where: { opportunityId: opp.id } });
+    assert.equal(apps.length, 1, 'exactly one applicant on this opportunity');
+    assert.equal(await prisma.workOffer.count({ where: { opportunityId: opp.id } }), 0, 'no earlier offer');
+    const tSend = new Date();
     await tap(emp, 'Faire une offre');
     await see(emp, 'Confirme ton PIN');
     for (const d of PIN.slice(0, -1)) await tap(emp, d, { exact: true, last: true });
@@ -157,6 +182,10 @@ try {
     await tap(emp, PIN.at(-1), { exact: true, last: true });
     await Promise.any([see(emp, 'Offre envoyée'), see(emp, 'Offre reçue')]).catch(() => see(emp, 'Offre reçue'));
     offer = await until(() => prisma.workOffer.findFirst({ where: { opportunityId: opp.id } }), 'offer');
+    assert.equal(await prisma.workOffer.count({ where: { opportunityId: opp.id } }), 1, 'exactly one offer');
+    assert.equal(offer.applicationId, apps[0].id, 'the offer is for this applicant');
+    assert.ok(offer.createdAt >= new Date(tSend.getTime() - 1000), 'created by this submission');
+    assert.equal((await prisma.workApplication.findUnique({ where: { id: apps[0].id } })).status, 'offered', 'the on-screen "Offre reçue" is this application’s new state');
     assert.equal(offer.fundingStatus, 'held');
     assert.equal(Number((await prisma.ledgerAccount.findUnique({ where: { code: `escrow:work:${offer.id}` } })).balance), 2000);
     assert.equal((await prisma.businessWallet.findUnique({ where: { businessId: e.b.id } })).balance, before - 2000);
@@ -166,8 +195,9 @@ try {
     await tap(wrk, 'Candidatures', { exact: true });
     await tap(wrk, 'Actualiser', { exact: true, last: true });
     await see(wrk, 'bloqué pour toi ✓');
+    const accepted = see(wrk, 'Offre acceptée'); // armed before the tap: the toast lasts ~2.5 s
     await tap(wrk, 'Accepter ces conditions');
-    await see(wrk, 'Offre acceptée');
+    await accepted;
     assignment = await until(() => prisma.workAssignment.findUnique({ where: { offerId: offer.id } }), 'assignment');
     assert.equal(assignment.status, 'active');
   });
