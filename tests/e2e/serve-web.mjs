@@ -6,10 +6,12 @@
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
+import { gzipSync } from 'node:zlib';
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
 
-export function serveWeb({ dir, apiPort, port = 0 }) {
+export function serveWeb({ dir, apiPort, port = 0, compress = false, cache = false }) {
+  const gz = new Map();
   const server = http.createServer(async (req, res) => {
     if (req.url.startsWith('/api/')) {
       const p = http.request({ host: '127.0.0.1', port: apiPort, path: req.url, method: req.method, headers: { ...req.headers, host: `127.0.0.1:${apiPort}`, 'x-forwarded-proto': 'https', 'x-forwarded-for': req.headers['x-test-ip'] ?? '10.200.0.1' } }, (r) => {
@@ -31,7 +33,17 @@ export function serveWeb({ dir, apiPort, port = 0 }) {
       file = join(dir, 'index.html');
     }
     const body = await readFile(file);
-    res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
+    const headers = { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' };
+    // J12 network lab: like the production static host — gzip, and immutable caching of hashed bundles.
+    if (cache && /\/_expo\/static\//.test(req.url)) headers['cache-control'] = 'public, max-age=31536000, immutable';
+    if (compress && /gzip/.test(req.headers['accept-encoding'] ?? '') && /\.(js|css|html|json|svg)$/.test(file)) {
+      if (!gz.has(file)) gz.set(file, gzipSync(body, { level: 9 }));
+      headers['content-encoding'] = 'gzip';
+      res.writeHead(200, headers);
+      res.end(gz.get(file));
+      return;
+    }
+    res.writeHead(200, headers);
     res.end(body);
   });
   return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve({ port: server.address().port, close: () => server.close() })));

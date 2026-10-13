@@ -52,7 +52,9 @@ model User {
   dateOfBirth               DateTime?
   cniHash                   String?   @unique
   smsAlertsEnabled          Boolean   @default(true)
-  smsBalanceQueryEnabled    Boolean   @default(true)
+  /// J12-F12 / P-J12-4: balance-by-SMS is OPT-IN (PIN-confirmed). Existing rows are NOT changed by the
+  /// migration — switching current users off is a production data decision.
+  smsBalanceQueryEnabled    Boolean   @default(false)
   email                     String?   @unique
   emailVerifiedAt           DateTime?
   afriId                    String?   @unique
