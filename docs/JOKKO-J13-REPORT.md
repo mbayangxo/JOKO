@@ -96,7 +96,7 @@ Between gates (`a287efa` code):
 - Payroll `employeeHandle` and scheduled-payment *creation* to adopt the same recipient binding (tracked, same policy).
 - Production rollout of J13-4 in phases, each needing separate authorization (binding doc §6).
 - P-J9-4 (Affiliate entry point).
-- J13-F17: "not received" must stay provisional and self-correct (§7). Scheduling (J13 follow-up vs J14) is a user decision.
+- J13-F17: **fixed in the separately tracked follow-up**, gate clean at `a6adf97`. See [`JOKKO-J13-F17-REPORT.md`](JOKKO-J13-F17-REPORT.md). This J13 milestone (`86ee972`) is unchanged.
 
 ## 7. Final gate (fresh database)
 

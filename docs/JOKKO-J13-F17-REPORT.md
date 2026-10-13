@@ -4,7 +4,7 @@
 
 **Original J13 milestone:** `86ee972` (accepted; unchanged by this work).
 
-**Tested follow-up commit:** see §6.
+**Tested follow-up commit: `a6adf97`**: fresh-database gate fully clean (§6). Later commits on this branch are documentation only.
 
 ## 1. The defect
 
@@ -52,7 +52,7 @@ The wording follows the app's existing convention ("Ne le renouvelle pas"). The 
 
 | File | Covers |
 |---|---|
-| `tests/j13/f17-reconciler-unit.test.js` (12, deterministic: fake API, storage and clocks) | Young "not found" stays unknown; overdue by wall clock or by monotonic time → closed once; clock moved −12 h / +48 h; lost reply (never closed); a close racing a late original; risk-review hold; confirmed refusal; unreachable server (never closed); account switching; repeated restarts (new instances, closed exactly once); eventual settlement (one event); lookup and close are the only server operations |
+| `tests/j13/f17-reconciler-unit.test.js` (19, deterministic: fake API, storage and clocks) + `f17-handoff-unit.test.js` (5) | Young "not found" stays unknown; overdue by wall clock or by monotonic time → closed once; clock moved −12 h / +48 h; lost reply (never closed); a close racing a late original; risk-review hold; confirmed refusal; unreachable server (never closed); account switching; repeated restarts (new instances, closed exactly once); eventual settlement (one event); lookup and close are the only server operations |
 | `tests/j13/f17-reconciliation.test.js` (8, real HTTP, invariants after each) | Provisional `not_found` then delayed settlement shown in history and balance; close → delayed original refused, nothing moves; lost reply never closed and replays the original; refusal kept; 202 hold never closed; **20 concurrent original-vs-close races**: never both, money moved exactly once per execution; per-account isolation (another user's identical key unaffected, nothing leaked, no existence oracle); invalid / unauthenticated |
 | `tests/e2e/j13-ui.mjs` (+3 browser steps) | Lost reply: provisional, never "aucun argent" / "pas été reçu" / "Envoyé !" / "Paiement effectué" early; settles after lookups return; paid once; history "✓ Effectué". Never arrived: provisional ≥ 20 s, then closed and final; the captured delayed original (same key, body and PIN token) is refused; no money. 202 hold: "En vérification", never "Envoyé !", never closed |
 | `tests/e2e/j12-ui.mjs` | Airplane mode now requires provisional wording first and **no** early "pas été reçu"; account switch: the other user's pending attempt is never looked up |
@@ -73,7 +73,42 @@ Authorization sweep: `POST money/intents/:id/void` is classified "self-scoped by
 
 ## 6. Gate
 
-_Pending: complete fresh-database gate on the follow-up commit._
+**CLEAN at `a6adf97`** (fresh database, `scripts/dev/gate.sh`, 2026-10-13).
+
+| Check | Result |
+|---|---|
+| Unit / integration / HTTP / J3–J13 suites | **845/845** |
+| Ledger invariants (money, logistics, work, collective; after each suite and after all) | OK |
+| Load / sweeps | 5/5 / 5/5 |
+| Browser E2E | J8 12/12 · J9 11/11 · J10 7/7 · J11 8/8 · J12 9/9 · **J13 12/12** |
+| J12 weak-network lab (**simulated**) | **11/11**. Clock moved **+48 h** and **−12 h**: pass under the original J12 conditions (lab file unchanged). Lossy 3G: 3 attempts → sent / not received (closed) / sent, **2 debits for 2 "sent"** |
+| Migration rehearsal / schema diff | OK / empty |
+| Dependency audit | 0 critical (20 high / 8 moderate, unchanged) |
+| Deploy-inert | yes |
+| Postgres | no restart during the run (started 18:17:45 UTC, before the gate) |
+
+### Path to this commit (each step validated before the next)
+
+| Commit | What | Result |
+|---|---|---|
+| `4ffe3d0` | Provisional states, close-on-overdue, reconciliation, held ≠ sent | J13 E2E 12/12. **J12 lab 9/11**: both clock-change steps failed. The app-wide reconciler resolved the payment before the screen opened, so the screen showed no outcome (money correct: one debit) |
+| `d7632e6` | Hand a recent outcome to the next screen; toast background answers | Lab 11/11, J13 12/12, J12 9/9. **Rejected on review**: the handoff was keyed by user + payment type, so two same-type payments resolved out of order could show the older outcome on the newer attempt, and banners/toasts didn't name the attempt |
+| `a6adf97` | Handoff keyed by the exact attempt (key, account id, operation type, start time); one announcement per attempt; never over the screen's own attempt; every earlier outcome labelled "Paiement commencé à HH:MM : …" | Unit 24/24; lab 11/11, J13 12/12, J12 9/9; **full gate CLEAN** |
+
+### Attribution tests (`tests/j13/f17-reconciler-unit.test.js`, `tests/j13/f17-handoff-unit.test.js`)
+
+- two consecutive same-type payments resolved out of order (each keeps its own key and start time, ordered by start);
+- duplicate notifications (screen and background resolving the same attempt → one event);
+- account switching (never handed to another account);
+- operation type (a merchant payment never handed to the P2P screen);
+- 10-minute expiry;
+- screen unmount/remount (consumed once);
+- a payment settling after an earlier handoff expired (fresh entry for its own attempt only);
+- never applied over the screen's own attempt;
+- a still-pending attempt is resumed, not replaced;
+- labels always name the attempt.
+
+The status endpoint, the ledger and the transaction history remain the source of truth: banners and toasts only relay the server's answer for a named attempt and point to the history.
 
 ## 7. Production
 
