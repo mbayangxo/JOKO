@@ -2,7 +2,7 @@
 
 **Scope:** local engineering only. **Nothing deployed.** J11 and J12 are **not activated** in production: all J11 money flags stay off, and the two J12 migrations are additive and not deployed. Production incidents are reported separately in §9 and were never bundled with J12.
 
-**Final tested commit:** see §8. The report itself is committed after the gate; that commit is docs only.
+**Final tested commit: `9f6c7fd`**: fresh-database J1–J12 gate fully clean (§8). The report itself is committed after the gate; that commit is docs only.
 
 **Every result marked "simulated" comes from desktop Chromium with DevTools emulation, not a physical device** (§6).
 
@@ -64,6 +64,7 @@
 | J12-F13 | User lookup guessed "phone" for any query with 8+ digits; digit-heavy handles were "introuvable" | Functional; also a ~2 % test-flake source | Fixed (explicit mode) |
 | J12-F14 | **Web app stuck forever on the loading screen on slow links** (expo-font 3 s timeout) | Availability (web) | Fixed on J12; **also present in production `b0318b5`**: separate package (§9) |
 | J12-F15 | An interrupted bundle download left a blank page | Availability (web) | Fixed (boot message + bounded retry) |
+| J12-F16 | A confirmation toast shown during the previous toast's fade-out was erased (e.g. "Offre acceptée" never seen) | UX: lost confirmations | Fixed (`9f6c7fd`); found by the final gate's evidence recorder |
 
 ## 5. Senegal-first languages and accessibility
 - The safety-message catalogue and reviewed-only mechanism are in place; screens show reviewed French until reviewed translations exist.
@@ -105,8 +106,64 @@ The JSON report is written by the gate (`lab.json`). Results at the final gate a
 - **Dormant SMS receipts:** the P-J12-7 design, flag off.
 - **Offline drafts:** extend to dispute and support forms (the allowlist is ready).
 
-## 8. Final gate (fresh database, J1–J12)
-(filled below after the run)
+## 8. Final gate (fresh database, J1–J12): **CLEAN at `9f6c7fd`**
+
+**Tested commit:** `9f6c7fd`. Script: `scripts/dev/gate.sh`, fresh database, isolated worktree with its own `node_modules`; the generated client matched the schema at the start and the end.
+**Database health:** the Postgres start time was unchanged from start to end (`2026-10-13 00:09:58 UTC`). No restart; the run is not VOID.
+**Every step exited 0.**
+
+| Check | Result |
+|---|---|
+| Full regression `npm test` (J1–J12 unit, integration, security, HTTP, money, J3–J12) | **774 / 774** |
+| J2 money invariants after the suite / after everything | **OK / OK** (2,026 → 4,237 ledger entries; 8,626 postings) |
+| J8 logistics, J9 work, J11 collective invariants (after the suite and after everything) | **OK** (all six checks) |
+| Load tests (J4–J10 suites) | **5 / 5** (p95 0.88 s and 1.87 s, local) |
+| Authorization-boundary, mutation, data-exposure and admin sweeps | **5 / 5** |
+| Concurrency and idempotency (inside the suite) | PIN × idempotency 6 (real HTTP), chat dedupe 6, intents incl. the reply-order test, J11 authority race (proof in the next table), toast scheduling |
+| Web build | **OK** |
+| Browser E2E J8 / J9 / J10 / J11 / J12 | **12/12, 11/11, 7/7, 8/8, 9/9** |
+| Low-bandwidth / offline lab (**simulated**) | **11 / 11**: bundle 9.4 MB raw / 2.1 MB gzip; 2G + 6× CPU cold load 83.6 s, warm 19.3 s; interrupted first load recovered by itself in 39.8 s; unstable 3G with loss: 3 attempts, 3 sends, 3 debits; clock +48 h / −12 h paid once; page killed: at most one debit; full storage OK; background freeze OK; reconnect storm 120 requests: 0 × 5xx, 0 × 429, 0 duplicates, p95 1.5 s |
+| Migration rehearsal on the production shape (includes both J12 migrations) | **20 / 20 steps** |
+| Migrations ⇄ `schema.prisma` | **empty diff** |
+| `npm audit --omit=dev --audit-level=critical` | **0 critical** (20 high / 8 moderate in build tooling, unchanged) |
+| Production-inert | **yes**: crons only `/api/cron/daily` and `/api/cron/scheduled-payments`. J9/J11 money flags (`JOKKO_WORK_MONEY_ENABLED`, `JOKKO_COLLECTIVE_ENABLED`, `JOKKO_PROTECTED_FUNDS_ENABLED`) default **off** in code. J12 adds **no** money flag, cron or server money path. Nothing is deployed: production still serves `b0318b5`, which contains none of J11 or J12. |
+
+### Honest record: the runs before this one
+
+| Run | Result | Cause | Fix |
+|---|---|---|---|
+| `caeeb63` | 770/771, E2E J9 3/4 | J11 authority-race test used a fixed 100 ms sleep; under load B had not locked yet (a test race). The J9 offer toast was missed. | The test now proves the interleaving (next table); the J9 step is tied to the new offer |
+| `50c9c76` | 771/771, E2E J9 3/4 | The "Offre acceptée" toast was missed (the acceptance itself succeeded) | Evidence recorder added |
+| `3c85a83` | 771/771, E2E J9 3/4 | The recorder proved the toast was **never rendered**: **J12-F16**, a real product bug: a toast shown during the previous toast's fade-out was erased by the old fade's completion callback | Fixed in `9f6c7fd` (generation-checked scheduler + regression test that reproduces the old behaviour) |
+
+No assertion was weakened:
+- The J9 database checks (escrow held, business debited once, exactly one offer created by this submission for the only application) are unchanged or stronger.
+
+### J11 authority-race proof (requested verification)
+
+| Property | How it is proven | Result |
+|---|---|---|
+| B holds the lock before A acts | A third session's `SELECT … FOR UPDATE NOWAIT` on the member row → `lock_not_available` | proven every run |
+| A actually waits for B | `pg_stat_activity` where B's backend pid ∈ `pg_blocking_pids(pid)`; A has not decided while blocked | proven every run |
+| The decision uses the updated state | After B (removal) commits, A is `refused` (`OrgAccessError`); the row reads `removed` | pass |
+| Fails on the vulnerable code, passes on the fix | `lib/business-access.js` from `34f79d3~1` (locking re-check ignored): **3/3 runs fail** at the final assertion ("authorized"), after the lock and blocking proofs passed. Fixed code: **5/5 pass** standalone, plus the gate | proven |
+
+### Follow-up after the gate (not part of this gated commit)
+`bb10ac2` hardens:
+- toast unmount safety;
+- no success message for operations held for review (Receive, offers, budget top-ups);
+- Jekkal donations onto the intent flow (each tap used to carry a new key).
+
+Its unit tests pass. Its browser runs and its own gate are pending; it is tracked as the first item of J13.
+
+## J12 status: **COMPLETE as a local engineering milestone** (gate clean at `9f6c7fd`)
+
+**Outstanding validation, explicitly not covered by this milestone:**
+- testing on a physical low-end Android device (§6 lists what emulation cannot show);
+- native-speaker review of Wolof, Pulaar and Serer payment-safety copy;
+- compliance, operator and data-protection reviews for SMS and USSD;
+- decisions P-J12-6 … 8;
+- production activation of anything in J11 or J12 (not authorized).
 
 ## 9. Production (separate from J12; nothing deployed)
 
