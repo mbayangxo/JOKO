@@ -4,6 +4,7 @@ import { getAccessToken } from '../lib/secure-storage';
 import { instructionFingerprint, sameKeyRetryAllowed, subjectOf } from '../lib/offline-policy';
 import { pendingIntentsToLookUp, rememberPendingIntent } from '../lib/pending-intents';
 import { intentReconciler } from '../lib/intent-reconciliation';
+import { attemptLabel, handoffDecision } from '../lib/intent-handoff';
 
 /**
  * J4 — one money submission = one intent key, reused for every retry of that
@@ -35,6 +36,8 @@ export function useMoneySubmit(flow = 'money') {
   const keyRef = useRef(newIntentKey());
   const attemptRef = useRef(null); // { userId, fingerprint, createdAt } of the first use of keyRef
   const [phase, setPhase] = useState({ state: 'idle' });
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
 
   const rotate = useCallback(() => {
     keyRef.current = newIntentKey();
@@ -49,8 +52,8 @@ export function useMoneySubmit(flow = 'money') {
   // J13-F17: an answer found later (app resume, history refresh, foreground interval) replaces the provisional
   // banner of the attempt it belongs to — and only that one.
   useEffect(() => intentReconciler.subscribe((event) => {
-    if (event.key !== keyRef.current) return;
-    setPhase((p) => ({ ...event, afterCheck: true, ...(p.resumed ? { resumed: true } : {}) }));
+    if (event.key !== keyRef.current) return; // only THIS attempt's answer (keys are unique per attempt)
+    setPhase((p) => ({ ...event, afterCheck: true, ...(p.resumed ? { resumed: true, attemptLabel: attemptLabel(event.createdAt) } : {}) }));
     if (event.newIntentAllowed) rotate();
   }), [rotate]);
 
@@ -61,7 +64,7 @@ export function useMoneySubmit(flow = 'money') {
       // Lookup only (and, once overdue, closing a key nothing ran under) — never a re-submission.
       const out = await intentReconciler.reconcileOne(rec);
       if (FINAL.has(out.state)) {
-        setPhase({ ...out, afterCheck: true, ...(resumed ? { resumed: true } : {}) }); // shown by MoneyPhaseBanner
+        setPhase({ ...out, afterCheck: true, ...(resumed ? { resumed: true, attemptLabel: attemptLabel(rec.createdAt) } : {}) }); // shown by MoneyPhaseBanner
         if (out.newIntentAllowed) rotate();
         return out;
       }
@@ -80,10 +83,12 @@ export function useMoneySubmit(flow = 'money') {
       if (!userId) return;
       const [rec] = await pendingIntentsToLookUp({ userId, flow }).catch(() => []);
       if (!alive) return;
-      if (!rec) {
-        // J13-F17: the app-wide reconciler may have found the answer before this screen opened — show it once.
-        const done = intentReconciler.takeRecent(userId, flow);
-        if (done) setPhase({ ...done, afterCheck: true, resumed: true });
+      // J13-F17: an earlier attempt's answer found before this screen opened is shown once, labelled with that
+      // attempt's start time — never over an attempt this screen has started, never as the current payment.
+      const decision = handoffDecision({ phaseState: phaseRef.current.state, pending: rec ?? null, recent: rec ? [] : intentReconciler.takeRecent(userId, flow) });
+      if (!decision) return;
+      if (decision.kind === 'show') {
+        setPhase(decision.phase);
         return;
       }
       keyRef.current = rec.key;

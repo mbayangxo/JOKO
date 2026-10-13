@@ -185,23 +185,72 @@ test('the reconciler has no way to pay: its only server operations are lookup an
   assert.ok(!w.calls.some(([op, k]) => op === 'void' && k === 'k2'), 'in-progress is never closed');
 });
 
-test('an answer found before the flow\'s screen opened is handed to that screen once (same user + flow only)', async () => {
+// ── Handoff: keyed by the EXACT attempt, account (token subject) and operation type ──
+
+test('two consecutive payments of the same type, resolved OUT OF ORDER: each keeps its own key and start time; ordered by start', async () => {
+  const w = world({ records: [rec('kOld', 'u1', 1_000_000), rec('kNew', 'u1', 1_060_000)], server: { kOld: 'in_progress', kNew: 'completed' } });
+  const r = createIntentReconciler(w.deps);
+  await r.reconcileAll(); // the NEWER attempt resolves first
+  w.server.kOld = 'refused';
+  await r.reconcileAll(); // then the older one
+  const got = r.takeRecent('u1', 'p2p');
+  assert.deepEqual(got.map((e) => [e.key, e.state, e.createdAt]), [['kOld', 'failed_safe', 1_000_000], ['kNew', 'done', 1_060_000]]);
+  assert.ok(got.every((e) => e.userId === 'u1' && e.flow === 'p2p'));
+});
+
+test('duplicate notifications: the same attempt resolved by the screen AND the background is announced once', async () => {
   const w = world({ records: [rec('k1')], server: { k1: 'completed' } });
   const r = createIntentReconciler(w.deps);
   const events = [];
   r.subscribe((e) => events.push(e));
-  await r.reconcileAll(); // app start, before any screen
-  assert.equal(events[0].source, 'background');
-  assert.equal(r.takeRecent('u2', 'p2p'), null, 'another user never gets it');
-  assert.equal(r.takeRecent('u1', 'merchant_pay'), null, 'another flow never gets it');
-  assert.equal(r.takeRecent('u1', 'p2p').state, 'done');
-  assert.equal(r.takeRecent('u1', 'p2p'), null, 'consumed once');
+  const [a, b] = await Promise.all([r.reconcileOne(rec('k1')), r.reconcileAll()]);
+  await r.reconcileOne(rec('k1'));
+  assert.equal(events.length, 1, `announced once (${events.length})`);
+  assert.equal(r.takeRecent('u1', 'p2p').length, 1);
+  void a; void b;
 });
 
-test('a handed-over answer expires after 10 minutes of monotonic time', async () => {
+test('account switching: an answer for u1 is never handed to u2, and u2\'s reconciliation never touches u1', async () => {
+  const w = world({ records: [rec('kA', 'u1'), rec('kB', 'u2')], server: { kA: 'completed', kB: 'completed' } });
+  const r = createIntentReconciler(w.deps);
+  await r.reconcileAll(); // u1 signed in
+  assert.deepEqual(r.takeRecent('u2', 'p2p'), [], 'u2 gets nothing of u1');
+  w.user = 'u2';
+  await r.reconcileAll();
+  assert.deepEqual(r.takeRecent('u2', 'p2p').map((e) => e.key), ['kB']);
+  assert.deepEqual(r.takeRecent('u1', 'p2p').map((e) => e.key), ['kA'], 'u1\'s own answer is still u1\'s');
+});
+
+test('operation type: a merchant payment\'s answer is never handed to the P2P screen (and vice versa)', async () => {
+  const w = world({ records: [{ ...rec('kM'), flow: 'merchant_pay' }], server: { kM: 'completed' } });
+  const r = createIntentReconciler(w.deps);
+  await r.reconcileAll();
+  assert.deepEqual(r.takeRecent('u1', 'p2p'), []);
+  assert.deepEqual(r.takeRecent('u1', 'merchant_pay').map((e) => e.key), ['kM']);
+});
+
+test('expiration: a handed-over answer is dropped after 10 minutes of monotonic time', async () => {
   const w = world({ records: [rec('k1')], server: { k1: 'refused' } });
   const r = createIntentReconciler(w.deps);
   await r.reconcileAll();
   w.mono += 10 * 60_000 + 1;
-  assert.equal(r.takeRecent('u1', 'p2p'), null);
+  assert.deepEqual(r.takeRecent('u1', 'p2p'), []);
+});
+
+test('screen unmount/remount: consumed on read — a remounted screen never shows the same answer again', async () => {
+  const w = world({ records: [rec('k1')], server: { k1: 'completed' } });
+  const r = createIntentReconciler(w.deps);
+  await r.reconcileAll();
+  assert.equal(r.takeRecent('u1', 'p2p').length, 1); // first mount
+  assert.equal(r.takeRecent('u1', 'p2p').length, 0); // remount
+});
+
+test('settles AFTER an earlier handoff expired: the late settlement gets its own fresh entry; the expired one never resurfaces', async () => {
+  const w = world({ records: [rec('kA', 'u1', 1_000_000), rec('kB', 'u1', 1_030_000)], server: { kA: 'completed', kB: 'in_progress' } });
+  const r = createIntentReconciler(w.deps);
+  await r.reconcileAll(); // kA final now; kB still unknown
+  w.mono += 11 * 60_000; // kA's handoff expires
+  w.server.kB = 'completed';
+  await r.reconcileAll(); // kB settles late
+  assert.deepEqual(r.takeRecent('u1', 'p2p').map((e) => e.key), ['kB'], 'only the fresh settlement, attributed to its own attempt');
 });

@@ -35,8 +35,11 @@ export function createIntentReconciler(deps) {
   const firstNotFoundMono = new Map(); // key → monotonic ms of the first "not_found" seen in this session
   const listeners = new Set();
   // A final answer found before the screen of that flow was open (e.g. right after a restart) is kept briefly so
-  // that screen can still show it once — per user and flow, monotonic time, consumed on read.
-  const recent = new Map(); // `${userId}:${flow}` → { event, mono }
+  // that screen can still show it once. Keyed by the EXACT attempt (its intent key); each entry carries the
+  // account id (token subject, immutable), the operation type and the attempt's start time, so an outcome can
+  // never be attributed to another attempt, account or operation. Monotonic time; consumed on read.
+  const recent = new Map(); // intentKey → { event, mono }
+  const settled = new Set(); // intent keys whose final answer was already announced (no duplicate events)
   let running = null;
   let pendingCount = 0;
 
@@ -74,8 +77,10 @@ export function createIntentReconciler(deps) {
     if (FINAL.has(out.state)) {
       firstNotFoundMono.delete(rec.key);
       await deps.forget(rec.key);
-      const event = { key: rec.key, flow: rec.flow, source, ...out };
-      if (rec.userId && rec.flow) recent.set(`${rec.userId}:${rec.flow}`, { event, mono: deps.mono() });
+      const event = { key: rec.key, flow: rec.flow, userId: rec.userId, createdAt: Number(rec.createdAt), source, ...out };
+      if (settled.has(rec.key)) return { ...event, duplicate: true }; // already announced: never twice
+      settled.add(rec.key);
+      if (rec.userId && rec.flow) recent.set(rec.key, { event, mono: deps.mono() });
       emit(event);
       return event;
     }
@@ -103,13 +108,25 @@ export function createIntentReconciler(deps) {
     }
   }
 
-  /** The final answer of this user's most recent unknown attempt in `flow`, if found in the last 10 min (once). */
+  /**
+   * Final answers of THIS account's earlier attempts of THIS operation type found in the last 10 min, oldest
+   * attempt first (ordered by when each attempt STARTED, not when it was resolved). Each carries its own key
+   * and start time; consumed on read (a remounted screen never shows them again). Expired ones are dropped.
+   */
   function takeRecent(userId, flow) {
-    const k = `${userId}:${flow}`;
-    const r = recent.get(k);
-    if (!r) return null;
-    recent.delete(k);
-    return deps.mono() - r.mono <= RECENT_OUTCOME_MS ? r.event : null;
+    const now = deps.mono();
+    const out = [];
+    for (const [k, r] of recent) {
+      if (now - r.mono > RECENT_OUTCOME_MS) {
+        recent.delete(k);
+        continue;
+      }
+      if (r.event.userId === userId && r.event.flow === flow) {
+        out.push(r.event);
+        recent.delete(k);
+      }
+    }
+    return out.sort((a, b) => a.createdAt - b.createdAt);
   }
 
   return {
