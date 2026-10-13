@@ -23,22 +23,27 @@ test('a removal that commits while the payment is between its read and its lock 
   const m = await prisma.businessMember.create({ data: { businessId: biz.id, userId: cfo.id, role: 'cfo', status: 'active', acceptedAt: new Date() } });
 
   let releaseB;
+  let bLocked;
   const gate = new Promise((r) => { releaseB = r; });
+  const locked = new Promise((r) => { bLocked = r; });
   const b = other.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT id FROM "BusinessMember" WHERE id = ${m.id} FOR UPDATE`;
+    bLocked();
     await gate;
     await tx.businessMember.update({ where: { id: m.id }, data: { status: 'removed', removedAt: new Date() } });
   }, { timeout: 20_000 });
-  await new Promise((r) => setTimeout(r, 100)); // B holds the lock
+  await locked; // B really holds the row lock before A starts (a fixed sleep raced under load)
 
   const a = prisma.$transaction((tx) => assertBusinessAuthorityInTx(tx, cfo.id, biz.id, 'business.pay'), { timeout: 20_000 }).then(() => 'authorized', (e) => (e instanceof OrgAccessError ? 'refused' : `error:${e.message}`));
   // Wait until A is really blocked on B's row lock (deterministic, not a sleep race).
-  for (let i = 0; i < 100; i += 1) {
+  let blocked = false;
+  for (let i = 0; i < 200 && !blocked; i += 1) {
     const waiting = await prisma.$queryRaw`SELECT COUNT(*)::int AS n FROM pg_locks WHERE NOT granted AND locktype IN ('transactionid','tuple')`;
-    if (waiting[0].n > 0) break;
-    await new Promise((r) => setTimeout(r, 50));
+    blocked = waiting[0].n > 0;
+    if (!blocked) await new Promise((r) => setTimeout(r, 50));
   }
   releaseB();
+  assert.ok(blocked, 'A must have been blocked on B’s lock (otherwise the interleaving under test did not happen)');
   await b;
   assert.equal(await a, 'refused', 'the authority re-check must see the removal');
 });

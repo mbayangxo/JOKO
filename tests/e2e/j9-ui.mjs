@@ -146,14 +146,16 @@ try {
     await see(emp, w.user.name ?? w.handle);
     const body = await emp.innerText('body');
     assert.ok(!body.includes(w.phone), 'no phone on the applicant card');
+    assert.ok(!body.includes('Offre reçue'), 'not yet offered before the offer is sent');
     await tap(emp, 'Faire une offre');
     await see(emp, 'Confirme ton PIN');
     for (const d of PIN.slice(0, -1)) await tap(emp, d, { exact: true, last: true });
-    // The toast is transient (~4.6 s): arm the watcher BEFORE the final digit submits, so a slow click
-    // under load cannot let it appear and vanish unobserved. Same assertion, no race.
-    const toast = see(emp, 'Offre envoyée');
+    // UI success signal: the transient toast (~4.6 s) OR the applicant's persistent, server-reloaded status
+    // "Offre reçue" (it reads "Envoyée" before the offer). The toast alone could vanish unobserved under gate
+    // load (seen twice in-gate, never standalone); the persistent status is the stronger evidence. The money
+    // is then checked in the database (escrow held, business debited once).
     await tap(emp, PIN.at(-1), { exact: true, last: true });
-    await toast;
+    await Promise.any([see(emp, 'Offre envoyée'), see(emp, 'Offre reçue')]).catch(() => see(emp, 'Offre reçue'));
     offer = await until(() => prisma.workOffer.findFirst({ where: { opportunityId: opp.id } }), 'offer');
     assert.equal(offer.fundingStatus, 'held');
     assert.equal(Number((await prisma.ledgerAccount.findUnique({ where: { code: `escrow:work:${offer.id}` } })).balance), 2000);
