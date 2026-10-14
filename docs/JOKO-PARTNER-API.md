@@ -285,6 +285,25 @@ function verify(secret, { timestamp, eventId, rawBody, header }) {
 
 A delivery succeeds only on a `2xx` response. Redirects are not followed. On failure, Jokko retries with backoff (0 s, 30 s, 2 min, 10 min, 30 min, 1 h, 3 h, 6 h). After 8 attempts the delivery is dead-lettered. An authorized operator can replay it, with a reason that is audited; the replay carries the same event id. Delivery logs are purged after 30 days. Events and financial audit records keep their own retention. A delivery never changes money on either side.
 
+## Scoped partner keys (J14-S6, disabled by default)
+
+**Status:** local engineering only. Off unless `PARTNER_SCOPED_KEYS_ENABLED=true`. With the flag off, nothing changes: environment keys (`JOKO_API_KEYS`) authenticate exactly as before, at 60 requests/min per partner.
+
+With the flag on:
+
+- **Database keys** look like `jk_live_…` or `jk_test_…`. Only a SHA-256 hash is stored, and the key is shown once, at issue.
+- **Issuing a key is maker/checker:**
+  1. An operator with `partner_keys.issue` (role `integration_ops`) issues the key with its scopes, environment, and an optional rate limit and expiry.
+  2. The key stays **unusable** until a *different* operator with `partner_keys.approve` (role `risk`) approves it through `POST admin/approvals/:id/approve`.
+- **Scopes** are the route-policy permissions (for example `partner.collect`, `partner.payment.read`, `partner.events.subscribe`). A key calling a route outside its scopes gets `403 scope_required`. The check runs centrally for every partner route.
+- **Environment:** a `sandbox` key is refused while the server is live (`403 environment_mismatch`). A `live` key never reaches a sandbox-only route.
+- **Rotation:** `POST admin/partner-keys/:id/rotate` creates a new pending key with the same scopes. Once that key is approved, the old one expires after the overlap: at most 24 h, and 0 cuts it at approval.
+- **Revocation** (`POST admin/partner-keys/:id/revoke`, reason required) is immediate and audited. A revoked pending key can never be activated.
+- **Rate limits** apply per partner (`JOKO_PARTNER_RATE_LIMITS=kebu:120,rect:30`, default 60/min, shared by all of that partner's keys) and per key (`rate_limit_per_min`). Exceeding either returns `429`.
+- **Partner audit trail:** each mutating call writes one row recording partner, key, route and status code. No request body and no personal data are stored. Read it through `GET admin/partners/:partnerId/audit`. Environment keys are recorded too, as `credential=env`.
+
+Environment keys stay valid with every scope, so existing partners are never cut off. Moving a partner to a scoped key is a separate, authorized step.
+
 ## Sandbox checklist
 
 1. Set `JOKO_API_KEY`, `JOKO_WEBHOOK_SECRET`, `PUBLIC_APP_URL` on Joko  

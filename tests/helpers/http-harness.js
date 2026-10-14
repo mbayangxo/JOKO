@@ -32,6 +32,8 @@ const SCRUB = [
   'LEMFI_API_KEY', 'LEMFI_API_KEY_SANDBOX', 'STRIPE_SECRET_KEY',
   // J14-S1: a dormant feature is enabled only by an explicit override, never inherited from the test process.
   'PARTNER_EVENTS_ENABLED', 'PARTNER_EVENTS_ALLOW_LOCAL',
+  // J14-S6
+  'PARTNER_SCOPED_KEYS_ENABLED', 'JOKO_PARTNER_RATE_LIMITS', 'PARTNER_PRODUCT_MAPPING_ENABLED', 'PARTNER_FULFILLMENT_ENABLED',
 ];
 
 export async function startApiServer(overrides = {}) {

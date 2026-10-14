@@ -5141,3 +5141,50 @@ model PartnerEventDelivery {
   @@index([status, nextAttemptAt])
   @@index([createdAt])
 }
+
+/// J14-S6: a database-managed partner API key (dormant unless PARTNER_SCOPED_KEYS_ENABLED=true). Only the
+/// SHA-256 of the key is stored; the key is shown once. A key is usable only after a DIFFERENT operator
+/// approves it (maker/checker), only for its scopes (= route policy permissions), only in its environment.
+model PartnerApiKey {
+  id                String    @id @default(cuid())
+  partnerId         String
+  keyHash           String    @unique
+  /// First characters of the key, for identification in logs and lists (never enough to use it).
+  keyPrefix         String
+  scopesJson        String
+  /// sandbox | live
+  environment       String
+  /// pending → active → revoked (pending → revoked when rejected or cancelled)
+  status            String    @default("pending")
+  rateLimitPerMin   Int?
+  expiresAt         DateTime?
+  /// The key this one replaces; the old key expires after the overlap once this one is activated.
+  rotatesKeyId      String?
+  rotationOverlapMs Int?
+  createdBy         String
+  activatedBy       String?
+  activatedAt       DateTime?
+  revokedBy         String?
+  revokedAt         DateTime?
+  revokeReason      String?
+  lastUsedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([partnerId, status])
+}
+
+/// J14-S6: partner audit trail — one row per mutating partner API call (who, which key, which route, outcome).
+/// No request bodies, no personal data.
+model PartnerAuditLog {
+  id         String   @id @default(cuid())
+  partnerId  String
+  keyId      String?
+  /// env (legacy key from the environment) | db (PartnerApiKey)
+  credential String
+  routeKey   String
+  statusCode Int
+  createdAt  DateTime @default(now())
+
+  @@index([partnerId, createdAt])
+}

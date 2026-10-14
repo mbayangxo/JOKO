@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**735 routes.** Column legend:
+**740 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -99,6 +99,11 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST admin/work/feedback/:id/rule` | admin | work.feedback.rule | operator_scope |  |  |  |  | admin+identity |  |
 | `GET admin/partner-events/deliveries` | admin | partner_events.read | operator_scope |  |  |  |  |  |  |
 | `POST admin/partner-events/deliveries/:id/replay` | admin | partner_events.replay | operator_scope |  |  |  |  | admin; reason required; never money |  |
+| `POST admin/partners/:partnerId/keys` | admin | partner_keys.issue | operator_scope |  |  |  |  | approval; key shown once; disabled unless PARTNER_SCOPED_KEYS_ENABLED |  |
+| `GET admin/partners/:partnerId/keys` | admin | partner_keys.read | operator_scope |  |  |  |  |  | no hashes, no keys |
+| `GET admin/partners/:partnerId/audit` | admin | partner_keys.read | operator_scope |  |  |  |  |  |  |
+| `POST admin/partner-keys/:id/rotate` | admin | partner_keys.issue | operator_scope |  |  |  |  | approval; old key expires ≤ 24 h after the new one is approved |  |
+| `POST admin/partner-keys/:id/revoke` | admin | partner_keys.revoke | operator_scope |  |  |  |  | admin; reason required; immediate |  |
 | `POST admin/auth/logout` | admin | (authenticated) | operator_scope |  |  |  |  |  | any authenticated operator |
 | `GET admin/me` | admin | (authenticated) | operator_scope |  |  |  |  |  | own roles and permissions |
 | `GET admin/dashboard` | admin | ops.dashboard.read | operator_scope |  |  |  |  |  |  |
@@ -1084,7 +1089,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | Role | Permissions |
 |---|---|
 | `support` | `ops.dashboard.read`, `support.tickets.read`, `support.tickets.write`, `support.calls`, `users.search`, `users.read`, `users.freeze`, `money.transactions.read`, `agents.read`, `distributors.read`, `businesses.read` |
-| `risk` | `ops.dashboard.read`, `risk.held.read`, `risk.held.decide`, `risk.alerts.read`, `risk.alerts.ack`, `users.search`, `users.read`, `users.read.sensitive`, `users.freeze`, `users.unfreeze.request`, `users.unfreeze.approve`, `users.credentials.invalidate`, `money.transactions.read`, `audit.read`, `agents.read`, `agents.suspend`, `couriers.suspend`, `deliveries.disputes.resolve`, `approvals.read`, `businesses.read`, `businesses.suspend` |
+| `risk` | `ops.dashboard.read`, `partner_keys.approve`, `partner_keys.read`, `partner_keys.revoke`, `risk.held.read`, `risk.held.decide`, `risk.alerts.read`, `risk.alerts.ack`, `users.search`, `users.read`, `users.read.sensitive`, `users.freeze`, `users.unfreeze.request`, `users.unfreeze.approve`, `users.credentials.invalidate`, `money.transactions.read`, `audit.read`, `agents.read`, `agents.suspend`, `couriers.suspend`, `deliveries.disputes.resolve`, `approvals.read`, `businesses.read`, `businesses.suspend` |
 | `compliance` | `ops.dashboard.read`, `kyc.review`, `users.search`, `users.read`, `users.read.sensitive`, `users.unfreeze.approve`, `agents.read`, `agents.onboard`, `agents.activate`, `agents.manage`, `agents.suspend`, `couriers.onboard`, `couriers.suspend`, `distributors.read`, `distributors.manage`, `audit.read`, `approvals.read`, `businesses.read`, `businesses.suspend`, `merchants.verify`, `pickup_points.approve` |
 | `finance_ops` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.statements.import`, `finance.reports.read`, `finance.refund`, `finance.rails.release`, `finance.adjust.request`, `finance.adjust.low`, `finance.agent_float`, `finance.commission.propose`, `risk.held.read`, `agents.read`, `approvals.read`, `logistics.disputes.reverse`, `work.disputes.settle`, `collective.disputes.settle`, `protected.settle` |
 | `finance_approver` | `ops.dashboard.read`, `money.transactions.read`, `finance.position.read`, `finance.reports.read`, `finance.adjust.approve`, `finance.agent_float.approve`, `finance.commission.approve`, `finance.refund.approve`, `approvals.read` |
@@ -1092,7 +1097,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `work_ops` | `ops.dashboard.read`, `work.read`, `work.review`, `work.qualifications.verify`, `work.disputes.resolve`, `work.feedback.rule`, `approvals.read` |
 | `trust_safety` | `ops.dashboard.read`, `community.reports.read`, `community.reports.decide`, `community.appeals.decide` |
 | `collective_ops` | `ops.dashboard.read`, `collective.read`, `collective.disputes.resolve`, `collective.freeze`, `protected.settle.request`, `approvals.read` |
-| `integration_ops` | `ops.dashboard.read`, `partner_events.read`, `partner_events.replay` |
+| `integration_ops` | `ops.dashboard.read`, `partner_events.read`, `partner_events.replay`, `partner_keys.read`, `partner_keys.issue`, `partner_keys.revoke` |
 | `sysadmin` | `ops.health.read`, `ops.dashboard.read`, `admin.roles.read`, `admin.roles.manage`, `audit.read`, `approvals.read` |
 
 **Separation-of-duty conflicts:** these pairs can never be held by one operator.
@@ -1116,6 +1121,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 
 | Action | Request permission | Approve permission |
 |---|---|---|
+| `partner_key_activate` | `partner_keys.issue` | `partner_keys.approve` |
 | `admin_role_grant` | `admin.roles.manage` | `admin.roles.manage` |
 | `user_unfreeze` | `users.unfreeze.request` | `users.unfreeze.approve` |
 | `agent_float_topup` | `finance.agent_float` | `finance.agent_float.approve` |
