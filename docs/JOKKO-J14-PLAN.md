@@ -1,6 +1,6 @@
 # J14: Ecosystem integration (plan)
 
-**Status:** plan, local engineering only. **Nothing deployed.** Nothing in J14 activates a production money route, a production webhook endpoint, or any partner credential. Kebu Supabase is never touched. The production emergency track (P0-A verification, P0-B, F1) stays separate and is not bundled with J14.
+**Status:** S0, S1, S6, S3, S2, S5 and D-J14-3 BUILT and gated locally, all off by default (results: `docs/JOKKO-J14-REPORT.md`). S4 not started (needs the option-A approval design). Local engineering only. **Nothing deployed.** Nothing in J14 activates a production money route, a production webhook endpoint, or any partner credential. Kebu Supabase is never touched. The production emergency track (P0-A verification, P0-B, F1) stays separate and is not bundled with J14.
 
 **Baseline:**
 - J13 milestone `86ee972`;
