@@ -349,6 +349,23 @@ With the flag on:
 
 Environment keys stay valid with every scope, so existing partners are never cut off. Moving a partner to a scoped key is a separate, authorized step.
 
+## Legacy unmapped settlement for new partners (D-J14-3)
+
+Unmapped payments (no `merchant.external_business_id`) settle to the platform settlement wallet (legacy, D23). **Default: unchanged.**
+
+`PARTNER_LEGACY_SETTLEMENT_PARTNERS=<existing partners>`, for example `kebu,rect`, keeps the legacy path for those partners only. Any other (new) partner must send mapped payments; an unmapped one gets `400 merchant_required` and nothing is created.
+
+The rule is applied at payment creation. A payment already created settles exactly as it was created, including a new partner's legacy payment from before the switch. `PARTNER_LEGACY_PLATFORM_SETTLEMENT=false` still closes the legacy path for everyone.
+
+Before switching, run the read-only settlement reconciliation (`reconcilePartnerSettlements`). Each completed payment must be booked exactly once, through one confirmed operation and one `-CONFIRM` entry, to the account its target names:
+- the business wallet, with one PaymentRecord;
+- the partner's unallocated account;
+- or the legacy settlement wallet.
+
+Mapped and legacy payments never mix.
+
+A new partner gets mapped merchants through the same consented link: the owner creates a one-time code naming that partner (`POST businesses/:id/os/integrations/link-code {system}`), and the partner redeems it with its key. A code for one partner is useless to another.
+
 ## Sandbox checklist
 
 1. Set `JOKO_API_KEY`, `JOKO_WEBHOOK_SECRET`, `PUBLIC_APP_URL` on Joko  
