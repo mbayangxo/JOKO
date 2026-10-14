@@ -5188,3 +5188,36 @@ model PartnerAuditLog {
 
   @@index([partnerId, createdAt])
 }
+
+/// J14-F1 (S4): a partner's REQUEST to debit a business wallet (payout or payroll batch). Dormant unless
+/// PARTNER_DEBIT_INSTRUCTIONS_ENABLED=true. Nothing moves until an authorized business financial approver
+/// approves it in Jokko (fresh step-up, matching detailsHash) within 15 minutes; then executed exactly once.
+/// Request details (kind, lines, total, hash, business) are immutable (DB trigger).
+model PartnerDebitInstruction {
+  id             String    @id @default(cuid())
+  partnerId      String
+  businessId     String
+  externalLinkId String
+  externalRef    String
+  /// payout | payroll_batch
+  kind           String
+  /// Immutable lines: [{ i, recipientUserId, employeeId, handleAtRequest, amountKori, reference }]
+  linesJson      String    @db.Text
+  lineCount      Int
+  totalKori      Int
+  detailsHash    String
+  memo           String?
+  /// requested → executed | rejected | cancelled | expired | invalidated | failed
+  status         String    @default("requested")
+  expiresAt      DateTime
+  decidedBy      String?
+  decidedAt      DateTime?
+  decisionReason String?
+  failureCode    String?
+  executedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([partnerId, externalRef])
+  @@index([businessId, status])
+}

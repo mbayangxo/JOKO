@@ -330,6 +330,51 @@ Rules:
 
 Use `GET /v1/fulfillment-requests/:reference` for status. It returns your own requests only; any other request reads as `404`. Status changes also arrive as signed `shipment.*` events (S1), only for shipments **you** requested.
 
+## Debit instructions — request only, approved in Jokko (J14-F1 / S4, disabled by default)
+
+**Status:** local engineering only. Off unless `PARTNER_DEBIT_INSTRUCTIONS_ENABLED=true`. Scopes `partner.debits.request` and `partner.debits.read`.
+
+A partner can **request** a debit of a linked business's wallet. **Nothing moves** until an authorized financial approver of that business (`business.pay`: owner, finance, HR admin) approves **that** instruction inside Jokko (D-J14-1 option A). There are no automatic debits and no standing mandates.
+
+`POST /v1/debit-instructions`
+
+```json
+{
+  "external_business_id": "your shop id",
+  "external_ref": "your idempotency / instruction ref",
+  "kind": "payroll_batch",
+  "lines": [{ "recipient_handle": "awa", "amount_kori": 25000, "reference": "may-2026" }],
+  "memo": "Salaires mai"
+}
+```
+
+- `kind` is `payout` (exactly one line) or `payroll_batch` (1–200 lines; every recipient must be an active employee of that business).
+- Recipients are bound to their **account** at request time. A handle that changed owner in the last 30 days, a frozen account or an unknown handle refuses the whole request (`422 recipients_refused` with `problems`).
+- **Immutable:** the same `external_ref` with the same details returns the same instruction. Different details → `409 instruction_immutable`. A changed request is a new instruction.
+- `201 { id, status: "requested", total_kori, line_count, expires_at }`. The approval window is **15 minutes**; after that the status is `expired`.
+- `GET /v1/debit-instructions/:id` returns `requested | executed | rejected | cancelled | expired | invalidated | failed`, and `POST /v1/debit-instructions/:id/cancel` cancels while still requested. Outcomes also arrive as signed `debit_instruction.*` events (S1).
+
+**In Jokko, the approver:**
+- sees **every** recipient (name, current handle, the handle the partner sent, amount) and the instruction's `detailsHash`;
+- must pass a **fresh step-up** and send that exact `detailsHash`, so the approval applies only to what was shown.
+
+**Re-checked before anything moves:**
+- the link is still active and the business is still active;
+- no recipient is frozen;
+- for a payroll batch, the roster is unchanged (any change → `invalidated`);
+- the approver is not a recipient;
+- the daily limits per business hold.
+
+**Execution:** all lines in one money transaction, exactly once, with references `pdi-<id>-<i>`. Insufficient funds → `failed`, and nothing moves.
+
+Limits are configurable. These defaults are proposals:
+
+| Limit | Variable | Default |
+|---|---|---|
+| Per line | `PARTNER_DEBIT_LINE_MAX_KORI` | 500 000 ₭ |
+| Per instruction | `PARTNER_DEBIT_INSTRUCTION_MAX_KORI` | 5 000 000 ₭ |
+| Per business per 24 h | `PARTNER_DEBIT_DAILY_MAX_KORI` / `PARTNER_DEBIT_DAILY_MAX_COUNT` | 10 000 000 ₭ / 20 |
+
 ## Scoped partner keys (J14-S6, disabled by default)
 
 **Status:** local engineering only. Off unless `PARTNER_SCOPED_KEYS_ENABLED=true`. With the flag off, nothing changes: environment keys (`JOKO_API_KEYS`) authenticate exactly as before, at 60 requests/min per partner.

@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**751 routes.** Column legend:
+**758 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -215,6 +215,9 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST v1/event-subscriptions/:id/rotate-secret` | partner | partner.events.subscribe | partner_key |  |  |  |  |  | own subscription only (another partner's reads as not found) |
 | `POST v1/event-subscriptions/:id/disable` | partner | partner.events.subscribe | partner_key |  |  |  |  |  |  |
 | `GET v1/event-deliveries` | partner | partner.events.read | partner_key |  |  |  |  |  | own delivery log; no payloads |
+| `POST v1/debit-instructions` | partner | partner.debits.request | partner_key |  |  |  |  | commerce | request only — no money moves; recipients bound at request; 15-min expiry |
+| `GET v1/debit-instructions/:id` | partner | partner.debits.read | partner_key |  |  |  |  |  | own instructions only; no recipient detail |
+| `POST v1/debit-instructions/:id/cancel` | partner | partner.debits.request | partner_key |  |  |  |  |  | own, while requested |
 | `POST v1/fulfillment-requests` | partner | partner.fulfillment.request | partner_key |  |  |  |  |  | idempotent per partner order; JOKKO_LOGISTICS refused (fee = business-wallet debit, D-J14-1) |
 | `GET v1/fulfillment-requests/:reference` | partner | partner.fulfillment.read | partner_key |  |  |  |  |  | own requests only |
 | `POST v1/product-links` | partner | partner.products.map | partner_key |  |  |  |  |  | active business link + product of that business; idempotent |
@@ -338,6 +341,10 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 
 | Route | Actor | Permission | Resource relationship | Role | KYC | Step-up | Risk | Audit | Note |
 |---|---|---|---|---|---|---|---|---|---|
+| `GET businesses/:id/partner-debits` | user | business.partner_debits.read | business:business.pay |  |  |  |  |  |  |
+| `GET businesses/:id/partner-debits/:subId` | user | business.partner_debits.read | business:business.pay |  |  |  |  |  | every recipient shown + detailsHash to approve |
+| `POST businesses/:id/partner-debits/:subId/approve` | user | business.partner_debits.approve | business:business.pay |  |  |  |  | ledger | fresh step-up; detailsHash must match; exactly-once; re-validates roster / link / freezes / limits |
+| `POST businesses/:id/partner-debits/:subId/reject` | user | business.partner_debits.approve | business:business.pay |  |  |  |  | commerce |  |
 | `GET businesses/:id/coop/capital` | user | coop.capital.register | business:business.admin of a cooperative (in-tx authority) |  |  |  |  |  |  |
 | `POST businesses/:id/coop/capital` | user | coop.capital.record | business:business.admin of a cooperative; records only — no money, shares or dividends |  |  |  |  | record |  |
 | `GET businesses` | user | businesses.read | public |  |  |  |  |  |  |

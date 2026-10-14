@@ -7,6 +7,8 @@
 export function sourceFor(routeKey) {
   const path = routeKey.split(' ')[1];
   const map = [
+    // J14-F1: partner debit instructions of a business the attacker does not belong to (a placeholder id if none exist).
+    [/^businesses\/:id\/partner-debits/, `SELECT b."id" || '|' || COALESCE((SELECT i."id" FROM "PartnerDebitInstruction" i WHERE i."businessId" = b."id" LIMIT 1), 'pdi_none') FROM "Business" b WHERE b."id" NOT IN ($MYBIZ)`],
     [/^payment-funds\/:id/, `SELECT "id" FROM "PaymentFund" WHERE "userId" <> $ME`],
     [/^scheduled-payments\/:id/, `SELECT "id" FROM "ScheduledPayment" WHERE "userId" <> $ME`],
     [/^hubs\/parcels\/:id/, `SELECT "id" FROM "HubParcel"`],

@@ -398,3 +398,29 @@ CREATE TRIGGER "CollectiveClaim_append_only" BEFORE UPDATE OR DELETE ON "Collect
 ALTER TABLE "CollectiveClaim" DROP CONSTRAINT IF EXISTS "CollectiveClaim_shape";
 ALTER TABLE "CollectiveClaim" ADD CONSTRAINT "CollectiveClaim_shape" CHECK ("amountKori" > 0 AND direction IN ('owes','owed') AND "paidKori" >= 0 AND "receivedKori" >= 0
   AND "amountKori" = abs("receivedKori" - "paidKori") AND (direction = 'owes') = ("receivedKori" > "paidKori"));
+
+-- J14-F1 (mirrors migration 20261030000000_j14_partner_debit_instructions): request details are immutable, never deleted, and
+-- a decided instruction never changes state again.
+CREATE OR REPLACE FUNCTION joko_partner_debit_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'partner debit instructions are never deleted' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW."partnerId" IS DISTINCT FROM OLD."partnerId" OR NEW."businessId" IS DISTINCT FROM OLD."businessId"
+     OR NEW."externalLinkId" IS DISTINCT FROM OLD."externalLinkId" OR NEW."externalRef" IS DISTINCT FROM OLD."externalRef"
+     OR NEW.kind IS DISTINCT FROM OLD.kind OR NEW."linesJson" IS DISTINCT FROM OLD."linesJson" OR NEW."lineCount" IS DISTINCT FROM OLD."lineCount"
+     OR NEW."totalKori" IS DISTINCT FROM OLD."totalKori" OR NEW."detailsHash" IS DISTINCT FROM OLD."detailsHash"
+     OR NEW.memo IS DISTINCT FROM OLD.memo OR NEW."expiresAt" IS DISTINCT FROM OLD."expiresAt" OR NEW."createdAt" IS DISTINCT FROM OLD."createdAt" THEN
+    RAISE EXCEPTION 'partner debit instruction details are immutable' USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.status <> 'requested' AND NEW.status IS DISTINCT FROM OLD.status THEN
+    RAISE EXCEPTION 'a decided partner debit instruction never changes state' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS "PartnerDebitInstruction_guard" ON "PartnerDebitInstruction";
+CREATE TRIGGER "PartnerDebitInstruction_guard" BEFORE UPDATE OR DELETE ON "PartnerDebitInstruction"
+  FOR EACH ROW EXECUTE FUNCTION joko_partner_debit_guard();
+ALTER TABLE "PartnerDebitInstruction" DROP CONSTRAINT IF EXISTS "PartnerDebitInstruction_shape";
+ALTER TABLE "PartnerDebitInstruction" ADD CONSTRAINT "PartnerDebitInstruction_shape" CHECK ("totalKori" > 0 AND "lineCount" > 0 AND kind IN ('payout','payroll_batch')
+  AND status IN ('requested','executed','rejected','cancelled','expired','invalidated','failed'));
