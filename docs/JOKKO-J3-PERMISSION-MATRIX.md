@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**745 routes.** Column legend:
+**747 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -760,6 +760,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET mbolo/threads/:id/messages` | user | messages.read | member of thread |  |  |  |  |  |  |
 | `POST mbolo/threads/:id/messages` | user | messages.send | member of thread (accepted, not blocked) |  |  |  |  |  |  |
 | `POST mbolo/threads/:id/charge-card` | user | messages.charge_card | member of thread + business:business.charges.create of the charge; card carries the code only, amount from server |  |  |  |  |  |  |
+| `POST mbolo/threads/:id/order-card` | user | messages.order_card | J14-S5: direct thread member + business.orders.fulfill + business.charges.create; server-priced; payment only via the charge flow |  |  |  |  | commerce |  |
+| `POST mbolo/threads/:id/order-card/:subId/reshare` | user | messages.order_card | same seller authority; unpaid order of THIS thread only; old charge cancelled |  |  |  |  |  |  |
 | `POST mbolo/threads/:id/members` | user | messages.members.add | admin-of thread |  |  |  |  |  |  |
 | `GET mbolo/requests` | user | messages.requests.read | self |  |  |  |  |  |  |
 | `POST mbolo/threads/:id/accept` | user | messages.requests.accept | recipient of request |  |  |  |  |  |  |
