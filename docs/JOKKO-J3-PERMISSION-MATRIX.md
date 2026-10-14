@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**749 routes.** Column legend:
+**751 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -34,6 +34,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `GET cron/partner-events` | cron | cron.partner_events | cron_secret |  |  |  |  | job |  |
 | `POST cron/partner-events` | cron | cron.partner_events | cron_secret |  |  |  |  | job |  |
 | `GET cron/partner-retention` | cron | cron.partner_retention | cron_secret |  |  |  |  | job |  |
+| `GET cron/mbolo-order-expiry` | cron | cron.mbolo_order_expiry | cron_secret |  |  |  |  | job |  |
+| `POST cron/mbolo-order-expiry` | cron | cron.mbolo_order_expiry | cron_secret |  |  |  |  | job |  |
 | `POST cron/partner-retention` | cron | cron.partner_retention | cron_secret |  |  |  |  | job |  |
 | `GET cron/logistics` | cron | cron.logistics | cron_secret |  |  |  |  | job |  |
 | `POST cron/logistics` | cron | cron.logistics | cron_secret |  |  |  |  | job |  |
