@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**743 routes.** Column legend:
+**745 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -211,6 +211,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST v1/event-subscriptions/:id/rotate-secret` | partner | partner.events.subscribe | partner_key |  |  |  |  |  | own subscription only (another partner's reads as not found) |
 | `POST v1/event-subscriptions/:id/disable` | partner | partner.events.subscribe | partner_key |  |  |  |  |  |  |
 | `GET v1/event-deliveries` | partner | partner.events.read | partner_key |  |  |  |  |  | own delivery log; no payloads |
+| `POST v1/fulfillment-requests` | partner | partner.fulfillment.request | partner_key |  |  |  |  |  | idempotent per partner order; JOKKO_LOGISTICS refused (fee = business-wallet debit, D-J14-1) |
+| `GET v1/fulfillment-requests/:reference` | partner | partner.fulfillment.read | partner_key |  |  |  |  |  | own requests only |
 | `POST v1/product-links` | partner | partner.products.map | partner_key |  |  |  |  |  | active business link + product of that business; idempotent |
 | `GET v1/product-links` | partner | partner.products.read | partner_key |  |  |  |  |  |  |
 | `POST v1/product-links/:id/unlink` | partner | partner.products.map | partner_key |  |  |  |  |  | own links only (another partner's reads as not found) |

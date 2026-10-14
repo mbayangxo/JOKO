@@ -301,6 +301,35 @@ Rules:
 - External product ids are namespaced per shop, so two shops can reuse the same SKU string.
 - The business owner sees these links, and can revoke them, under the existing business-links screen. Revoking the business link disables all of its product links.
 
+## Fulfilment requests → Jokko Logistics (J14-S2, disabled by default)
+
+**Status:** local engineering only. Off unless `PARTNER_FULFILLMENT_ENABLED=true`. Requires scopes `partner.fulfillment.request` and `partner.fulfillment.read`.
+
+`POST /v1/fulfillment-requests`
+
+```json
+{
+  "external_business_id": "your shop id",
+  "external_order_id": "your order id",
+  "mode": "merchant_fleet",
+  "lines": [{ "external_product_id": "kabu-riz", "qty": 2 }],
+  "destination": { "area": "Médina", "precise": "…", "lat": 14.68, "lng": -17.44 },
+  "pickup_point_id": "only for customer_pickup"
+}
+```
+
+Responses:
+- `201` for a new request, `200` for a retry of the same order. Retries are idempotent per (partner, shop, order).
+- The body is `{ reference, external_order_id, mode, request_status, shipment: { reference, status } }`. The destination is never echoed back.
+
+Rules:
+- The shop link must be active, and the business active (`409 business_inactive` otherwise).
+- Every line must be mapped through `/v1/product-links`. Otherwise `422 product_not_mapped` lists the unmapped ids and nothing is created.
+- **No money moves.** Only `merchant_fleet` and `customer_pickup` are accepted. `jokko_logistics` is refused with `409 requires_merchant_approval`: it holds a delivery fee from the business wallet, and D-J14-1 requires an in-Jokko approval for any partner-initiated business debit.
+- Ids may not contain `:`.
+
+Use `GET /v1/fulfillment-requests/:reference` for status. It returns your own requests only; any other request reads as `404`. Status changes also arrive as signed `shipment.*` events (S1), only for shipments **you** requested.
+
 ## Scoped partner keys (J14-S6, disabled by default)
 
 **Status:** local engineering only. Off unless `PARTNER_SCOPED_KEYS_ENABLED=true`. With the flag off, nothing changes: environment keys (`JOKO_API_KEYS`) authenticate exactly as before, at 60 requests/min per partner.
