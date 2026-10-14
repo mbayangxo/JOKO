@@ -1123,6 +1123,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 - `collective_ops` × `finance_ops`
 - `collective_ops` × `finance_approver`
 - `sysadmin` × `collective_ops`
+- `integration_ops` × `risk`
+- `sysadmin` × `integration_ops`
 
 ## Maker-checker actions
 
