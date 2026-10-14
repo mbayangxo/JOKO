@@ -10,7 +10,7 @@ The dispatcher (`lib/authz/enforce.js`) enforces centrally, before any handler r
 
 Handlers and services enforce the object-level `resource` relationship. `tests/sweep` proves this for every GET route and every mutating route that takes an id.
 
-**726 routes.** Column legend:
+**735 routes.** Column legend:
 - **KYC:** minimum effective tier.
 - **Step-up:**
   - `amount` = PIN at or above 50 000 XOF, or for any amount from an untrusted session;
@@ -31,6 +31,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST cron/collective` | cron | cron.collective | cron_secret |  |  |  |  | job |  |
 | `GET cron/affiliate-settlement` | cron | cron.affiliate-settlement | cron_secret |  |  |  |  | job |  |
 | `POST cron/affiliate-settlement` | cron | cron.affiliate-settlement | cron_secret |  |  |  |  | job |  |
+| `GET cron/partner-events` | cron | cron.partner_events | cron_secret |  |  |  |  | job |  |
+| `POST cron/partner-events` | cron | cron.partner_events | cron_secret |  |  |  |  | job |  |
 | `GET cron/logistics` | cron | cron.logistics | cron_secret |  |  |  |  | job |  |
 | `POST cron/logistics` | cron | cron.logistics | cron_secret |  |  |  |  | job |  |
 | `GET cron/daily` | cron | cron.daily | cron_secret |  |  |  |  | job |  |
@@ -95,6 +97,8 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST admin/work/disputes/:id/appeal/resolve` | admin | work.disputes.resolve | operator_scope |  |  |  |  | admin+identity; a different operator than the first ruling; money via a new maker/checker approval |  |
 | `GET admin/work/feedback` | admin | work.read | operator_scope |  |  |  |  |  |  |
 | `POST admin/work/feedback/:id/rule` | admin | work.feedback.rule | operator_scope |  |  |  |  | admin+identity |  |
+| `GET admin/partner-events/deliveries` | admin | partner_events.read | operator_scope |  |  |  |  |  |  |
+| `POST admin/partner-events/deliveries/:id/replay` | admin | partner_events.replay | operator_scope |  |  |  |  | admin; reason required; never money |  |
 | `POST admin/auth/logout` | admin | (authenticated) | operator_scope |  |  |  |  |  | any authenticated operator |
 | `GET admin/me` | admin | (authenticated) | operator_scope |  |  |  |  |  | own roles and permissions |
 | `GET admin/dashboard` | admin | ops.dashboard.read | operator_scope |  |  |  |  |  |  |
@@ -197,6 +201,11 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `POST v1/payouts` | partner | partner.payout | partner_key |  |  |  |  | external_op | submitted payouts → provider reconciliation / admin review (D9) |
 | `POST v1/business-links` | partner | partner.business_link | partner_key |  |  |  |  |  | consented link: owner one-time code + partner key |
 | `GET v1/payouts/:reference` | partner | partner.payout.read | partner_key |  |  |  |  |  |  |
+| `POST v1/event-subscriptions` | partner | partner.events.subscribe | partner_key |  |  |  |  |  | disabled unless PARTNER_EVENTS_ENABLED; https only; secret shown once |
+| `GET v1/event-subscriptions` | partner | partner.events.subscribe | partner_key |  |  |  |  |  |  |
+| `POST v1/event-subscriptions/:id/rotate-secret` | partner | partner.events.subscribe | partner_key |  |  |  |  |  | own subscription only (another partner's reads as not found) |
+| `POST v1/event-subscriptions/:id/disable` | partner | partner.events.subscribe | partner_key |  |  |  |  |  |  |
+| `GET v1/event-deliveries` | partner | partner.events.read | partner_key |  |  |  |  |  | own delivery log; no payloads |
 | `POST v1/payouts/:reference/sandbox-complete` | partner | partner.sandbox | partner_key |  |  |  |  |  | non-production only |
 | `POST v1/support/agents` | partner | partner.support.agents | partner_key |  |  |  |  |  |  |
 | `GET v1/support/agents` | partner | partner.support.agents | partner_key |  |  |  |  |  |  |
@@ -1083,6 +1092,7 @@ Handlers and services enforce the object-level `resource` relationship. `tests/s
 | `work_ops` | `ops.dashboard.read`, `work.read`, `work.review`, `work.qualifications.verify`, `work.disputes.resolve`, `work.feedback.rule`, `approvals.read` |
 | `trust_safety` | `ops.dashboard.read`, `community.reports.read`, `community.reports.decide`, `community.appeals.decide` |
 | `collective_ops` | `ops.dashboard.read`, `collective.read`, `collective.disputes.resolve`, `collective.freeze`, `protected.settle.request`, `approvals.read` |
+| `integration_ops` | `ops.dashboard.read`, `partner_events.read`, `partner_events.replay` |
 | `sysadmin` | `ops.health.read`, `ops.dashboard.read`, `admin.roles.read`, `admin.roles.manage`, `audit.read`, `approvals.read` |
 
 **Separation-of-duty conflicts:** these pairs can never be held by one operator.

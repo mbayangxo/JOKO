@@ -5096,3 +5096,48 @@ model HandleRelease {
 
   @@index([handle, releasedAt])
 }
+
+/// J14-S1: a partner's subscription to signed event delivery (D-J14-2). DISABLED unless PARTNER_EVENTS_ENABLED.
+/// The signing secret is stored encrypted at rest (AES-256-GCM, lib/field-crypto.js) and shown once at creation /
+/// rotation. `previousSecretEnc` keeps signing valid for the receiver during a short rotation overlap.
+model PartnerEventSubscription {
+  id                   String    @id @default(cuid())
+  partnerId            String
+  url                  String
+  eventTypesJson       String
+  secretEnc            String
+  previousSecretEnc    String?
+  previousValidUntil   DateTime?
+  status               String    @default("active") // active | disabled
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  rotatedAt            DateTime?
+  /// fan-out cursor: CommerceEvent.createdAt of the last event already considered for this subscription
+  fannedThrough        DateTime?
+
+  deliveries PartnerEventDelivery[]
+
+  @@index([partnerId, status])
+}
+
+/// J14-S1: one event to one subscription. Operational log (30-day retention); the CommerceEvent itself and any
+/// ledger/audit record keep their own retention. Unique per (subscription, event): at-least-once, never duplicated.
+model PartnerEventDelivery {
+  id             String    @id @default(cuid())
+  subscriptionId String
+  eventId        String
+  status         String    @default("pending") // pending | sending | delivered | dead
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now())
+  lastStatusCode Int?
+  lastError      String?
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  subscription PartnerEventSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, eventId])
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
+}

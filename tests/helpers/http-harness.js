@@ -30,6 +30,8 @@ const SCRUB = [
   'ALLOW_BETA_OTP', 'ALLOW_BETA_DEPOSITS', 'RESEND_API_KEY', 'AFRICASTALKING_API_KEY', 'TWILIO_ACCOUNT_SID',
   'JOKO_API_KEY', 'JOKO_API_KEYS', 'PARTNER_SETTLEMENT_USER_ID', 'PLATFORM_INCENTIVES_ENABLED',
   'LEMFI_API_KEY', 'LEMFI_API_KEY_SANDBOX', 'STRIPE_SECRET_KEY',
+  // J14-S1: a dormant feature is enabled only by an explicit override, never inherited from the test process.
+  'PARTNER_EVENTS_ENABLED', 'PARTNER_EVENTS_ALLOW_LOCAL',
 ];
 
 export async function startApiServer(overrides = {}) {

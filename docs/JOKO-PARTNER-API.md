@@ -223,6 +223,68 @@ If customer has no Joko account, thread opens without Mbolo — use `/v1/message
 
 Requires `PARTNER_MESSAGING_USER_ID` (system sender) for auto messages / thread creation.
 
+## Event subscriptions (J14-S1, disabled by default)
+
+**Status:** local engineering only. Off unless `PARTNER_EVENTS_ENABLED=true`. Not activated in production. This is separate from the per-payment `webhook_url` above, which is unchanged.
+
+A partner subscribes an HTTPS endpoint to a minimal allowlist of events (D-J14-2). Only events of businesses **explicitly linked** to that partner are sent (active `ExternalLink`, `objectType=business`). Nothing is sent for another partner's business, an unlinked business or a revoked link; the link is re-checked at send time.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/v1/event-subscriptions` | `{ url, event_types? }`. Returns `secret` **once**. |
+| GET | `/v1/event-subscriptions` | Your subscriptions only (no secrets) |
+| POST | `/v1/event-subscriptions/:id/rotate-secret` | New secret, returned once; the old one is still used for signing for 24 h |
+| POST | `/v1/event-subscriptions/:id/disable` | Stops delivery |
+| GET | `/v1/event-deliveries` | Your delivery log (30 days) |
+
+**Event types:**
+- `order.placed`, `order.paid`, `order.accepted`, `order.ready_for_fulfillment`, `order.out_for_delivery`, `order.delivered`, `order.completed`, `order.cancelled`, `order.refunded`
+- `payment.recorded`
+- `settlement.completed`, `settlement.held`
+- `fulfillment.requested`, `shipment.created`
+
+Payloads carry ids, amounts and statuses only, never names, phones, addresses or notes:
+
+```json
+{
+  "id": "evt id (stable across retries)",
+  "type": "settlement.completed",
+  "created_at": "2026-10-13T12:00:00.000Z",
+  "business": { "external_id": "your shop id" },
+  "object": { "type": "partner_payment", "jokko_id": "…", "external_id": null },
+  "data": { "amountKori": 15000, "partnerReference": "shop_order_…" },
+  "api_version": "2026-10-j14"
+}
+```
+
+### Verifying a delivery
+
+Headers:
+
+```
+X-Jokko-Event-Id:        <event id>
+X-Jokko-Event-Timestamp: <unix seconds>
+X-Jokko-Event-Signature: v1=<hex>[,v1=<hex>]
+```
+
+Each signature is `HMAC_SHA256(secret, "<timestamp>.<event id>.<raw body>")`, hex-encoded. During a rotation overlap there are two signatures; accept the request if **any** of them matches. The receiver must:
+
+1. compute the HMAC over the **raw** body bytes, before parsing the JSON;
+2. compare in constant time;
+3. reject a timestamp more than **300 s** from its own clock (replay window);
+4. dedupe on `X-Jokko-Event-Id`. Delivery is at-least-once, so the same id can arrive more than once, for example after a retry or an operator replay.
+
+```js
+import crypto from 'node:crypto';
+function verify(secret, { timestamp, eventId, rawBody, header }) {
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  const want = Buffer.from('v1=' + crypto.createHmac('sha256', secret).update(`${timestamp}.${eventId}.${rawBody}`).digest('hex'));
+  return header.split(',').some((s) => { const got = Buffer.from(s.trim()); return got.length === want.length && crypto.timingSafeEqual(got, want); });
+}
+```
+
+A delivery succeeds only on a `2xx` response. Redirects are not followed. On failure, Jokko retries with backoff (0 s, 30 s, 2 min, 10 min, 30 min, 1 h, 3 h, 6 h). After 8 attempts the delivery is dead-lettered. An authorized operator can replay it, with a reason that is audited; the replay carries the same event id. Delivery logs are purged after 30 days. Events and financial audit records keep their own retention. A delivery never changes money on either side.
+
 ## Sandbox checklist
 
 1. Set `JOKO_API_KEY`, `JOKO_WEBHOOK_SECRET`, `PUBLIC_APP_URL` on Joko  
