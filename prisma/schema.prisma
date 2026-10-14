@@ -5101,19 +5101,19 @@ model HandleRelease {
 /// The signing secret is stored encrypted at rest (AES-256-GCM, lib/field-crypto.js) and shown once at creation /
 /// rotation. `previousSecretEnc` keeps signing valid for the receiver during a short rotation overlap.
 model PartnerEventSubscription {
-  id                   String    @id @default(cuid())
-  partnerId            String
-  url                  String
-  eventTypesJson       String
-  secretEnc            String
-  previousSecretEnc    String?
-  previousValidUntil   DateTime?
-  status               String    @default("active") // active | disabled
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  rotatedAt            DateTime?
+  id                 String    @id @default(cuid())
+  partnerId          String
+  url                String
+  eventTypesJson     String
+  secretEnc          String
+  previousSecretEnc  String?
+  previousValidUntil DateTime?
+  status             String    @default("active") // active | disabled
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  rotatedAt          DateTime?
   /// fan-out cursor: CommerceEvent.createdAt of the last event already considered for this subscription
-  fannedThrough        DateTime?
+  fannedThrough      DateTime?
 
   deliveries PartnerEventDelivery[]
 
