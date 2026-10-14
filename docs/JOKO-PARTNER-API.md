@@ -285,6 +285,22 @@ function verify(secret, { timestamp, eventId, rawBody, header }) {
 
 A delivery succeeds only on a `2xx` response. Redirects are not followed. On failure, Jokko retries with backoff (0 s, 30 s, 2 min, 10 min, 30 min, 1 h, 3 h, 6 h). After 8 attempts the delivery is dead-lettered. An authorized operator can replay it, with a reason that is audited; the replay carries the same event id. Delivery logs are purged after 30 days. Events and financial audit records keep their own retention. A delivery never changes money on either side.
 
+## Product mapping (J14-S3, disabled by default)
+
+**Status:** local engineering only. Off unless `PARTNER_PRODUCT_MAPPING_ENABLED=true`. Requires scopes `partner.products.map` and `partner.products.read`.
+
+| Method | Path | Body / query |
+|---|---|---|
+| POST | `/v1/product-links` | `{ external_business_id, external_product_id, jokko_product_id \| jokko_sku }` → `201` created, `200` same mapping again (idempotent), `409 already_mapped` if pointed elsewhere |
+| GET | `/v1/product-links?external_business_id=…` | Your links for that linked shop |
+| POST | `/v1/product-links/:id/unlink` | Revokes the link; mapping again reactivates the same row |
+
+Rules:
+- The business link must be active, and the product must belong to **that** business. Another business's product, an unknown shop and a revoked link all return `404`.
+- Only ids cross. No title, price, stock or image is copied.
+- External product ids are namespaced per shop, so two shops can reuse the same SKU string.
+- The business owner sees these links, and can revoke them, under the existing business-links screen. Revoking the business link disables all of its product links.
+
 ## Scoped partner keys (J14-S6, disabled by default)
 
 **Status:** local engineering only. Off unless `PARTNER_SCOPED_KEYS_ENABLED=true`. With the flag off, nothing changes: environment keys (`JOKO_API_KEYS`) authenticate exactly as before, at 60 requests/min per partner.
