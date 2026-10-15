@@ -1,0 +1,8 @@
+{
+  "description": "L0/L5 crash mix: kill -9 inside the money transaction (before COMMIT) and right after COMMIT (response lost), plus an infrastructure error mid-posting. Counters are per process and restart at 0 after a crash.",
+  "faults": [
+    { "point": "money.before_commit", "every": 17, "action": "crash" },
+    { "point": "money.after_commit", "every": 23, "action": "crash" },
+    { "point": "ledger.post", "every": 29, "action": "throw", "code": "db_unavailable" }
+  ]
+}
