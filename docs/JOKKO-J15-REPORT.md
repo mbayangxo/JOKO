@@ -1,7 +1,5 @@
 # J15: Financial torture lab (report)
 
-> **DRAFT** — §4 (latency), §6 (multi-instance suite run) and §7 (fresh gate) are pending. J15 is not claimed complete.
-
 **Status:** local engineering only. **Nothing deployed.** No production action, no production migration, no live money. Kebu Supabase was never accessed. The emergency production track (P0-A, P0-B, F1) stays separate: the lab measures the patches, it does not ship them.
 
 **Plan:** `docs/JOKKO-J15-TORTURE-LAB-PLAN.md`.
@@ -43,6 +41,7 @@
 | FL-3 | Concurrent delivery-dispute rulings **deadlocked** (opposite lock orders → 500). A losing customer ruling answered 200, rewrote the record (resolved_customer, delivery cancelled) after the courier had been paid, and was audited twice. Money already safe on this branch. | Medium (record integrity) | Both paths claim the dispute atomically first (one lock order); the loser changes nothing | `tests/j15/dispute-ruling-race.test.js` (15 rounds; unfixed fails 3/3) |
 | FL-4 | `PressScale` silently dropped `disabled`: dimmed buttons stayed pressable and were not announced as disabled (22 busy / in-flight guards on send, undo, submit, upload). | Low (double-tap UX; server idempotency already held) | Real `disabled` + `aria-disabled` | `tests/e2e/j15-ui.mjs` |
 | OI-1 | Unexplained: one `money/home` failure after a recovery login in the multi-instance run (§6). Not reproduced in 11 runs. | Unknown | Diagnostic assertion keeps the evidence (`83aa302`) | — |
+| FL-6 | Latent since J6: the J6 destruction test scanned 16 cash codes at once. A cash-out scan overtaking a cash-in hold is correctly refused `agent_capacity`, which crashed the test (first gate attempt). | Low (test integrity; product correct) | Scan cash-ins, then cash-outs; assert all 16 scans succeed | Proven by forcing cash-outs first (5/8 refused, same crash); file 7/7 ×3 |
 | FL-5 | Defence in depth confirmed: a negative customer balance cannot even be written (DB CHECK `LedgerAccount_nonneg_chk`). | — | — | `lab-l0.test.js` |
 
 ## 3. P0-A, P0-B, F1 under lab concurrency (decision 7)
@@ -124,7 +123,27 @@ This is evidence for the separate emergency track; it is not a deploy. P0-A runt
 
 ## 7. Fresh full gate
 
-_Filled in at the end._
+**First attempt at `8d52aa8`: NOT CLEAN.**
+- 953/954; every other check 0.
+- J6 destruction test: a cash-out scan was correctly refused `agent_capacity` because the test scanned all 16 codes at once (FL-6).
+- Root-caused from the gate database and proven by forcing the order. Fixed in `1d00e03` (test only).
+
+**Fresh full gate at `1d00e03`: CLEAN.** Postgres was up for the whole run (started 06:13, no restart), so the run is valid.
+
+| Check | Result |
+|---|---|
+| Full suite (`npm test`, J1–J15) | **954 / 954** |
+| Money / logistics / work / collective invariants, after the suite and after everything | 0 |
+| Load, sweeps | 0 |
+| Web build | 0 |
+| Browser E2E J8–J15 (J15 = S4 approval screen) | 0 (7, 8, 9, 12, 3, 5, 12, 11 steps) |
+| Weak-network lab (J12), migration rehearsal | 0 |
+| `schema_diff` | empty |
+| `audit_critical` | 0 |
+| Crons | unchanged (`daily`, `scheduled-payments`); `deploy_inert yes` |
+| Client matches schema | at start and end |
+
+Later commits only touch this report.
 
 ## 8. Remaining risks and gaps
 
