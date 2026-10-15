@@ -411,6 +411,14 @@ Mapped and legacy payments never mix.
 
 A new partner gets mapped merchants through the same consented link: the owner creates a one-time code naming that partner (`POST businesses/:id/os/integrations/link-code {system}`), and the partner redeems it with its key. A code for one partner is useless to another.
 
+## Rate limits (J15-D3)
+
+Partner rate limits are **shared and atomic across every API instance**: one Postgres counter per partner per minute (and per scoped key with `rate_limit_per_min`), incremented by a single upsert. Before J15 the counters were per process, so N instances allowed N × the limit.
+
+- Budget: `JOKO_PARTNER_RATE_LIMITS=kebu:120,rect:30`; otherwise `JOKO_PARTNER_RATE_LIMIT_DEFAULT`, or 60 / min.
+- Over budget → `429 rate_limited`.
+- **Enforcement unavailable** (counter store error) → money and identity routes (`checkout`, `collect`, `pos`, `payouts`, `sandbox`, `debit-instructions`, `business-links`, `messages/send`, and any route whose permission is unknown) **fail closed** with `503 rate_limit_unavailable` and execute nothing. Read routes proceed, degraded and logged.
+
 ## Sandbox checklist
 
 1. Set `JOKO_API_KEY`, `JOKO_WEBHOOK_SECRET`, `PUBLIC_APP_URL` on Joko  

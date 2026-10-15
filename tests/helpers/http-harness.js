@@ -22,6 +22,9 @@ const BASE_ENV = {
   EXTERNAL_API_TIMEOUT_MS: '300',
   EXTERNAL_API_RETRY_GAP_MS: '10',
   EXTERNAL_API_MAX_RETRIES: '1',
+  // J15-D3: partner limits are now shared across processes and test files (one Postgres counter); tests that
+  // exercise limits set JOKO_PARTNER_RATE_LIMITS explicitly.
+  JOKO_PARTNER_RATE_LIMIT_DEFAULT: '100000',
 };
 
 /** Env keys that must never leak from the developer shell into a prod-mode test server. */
@@ -37,6 +40,8 @@ const SCRUB = [
   'MBOLO_ORDER_CARD_ENABLED', 'PARTNER_LEGACY_SETTLEMENT_PARTNERS', 'PARTNER_LEGACY_PLATFORM_SETTLEMENT',
   'PARTNER_AUDIT_RETENTION_ENABLED', 'PARTNER_AUDIT_LEGAL_HOLD', 'PARTNER_AUDIT_RETENTION_DAYS', 'MBOLO_ORDER_EXPIRY_ENABLED',
   'PARTNER_DEBIT_INSTRUCTIONS_ENABLED',
+  // J15 lab: never inherited; a lab server receives them explicitly.
+  'JOKKO_LAB', 'JOKKO_LAB_ALLOW', 'JOKKO_LAB_FAULT_FILE', 'JOKKO_LAB_EVENT_LOG', 'JOKKO_LAB_WORKER', 'VERCEL', 'VERCEL_ENV',
 ];
 
 export async function startApiServer(overrides = {}) {

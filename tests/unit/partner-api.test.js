@@ -7,7 +7,7 @@ process.env.JOKO_API_KEY = 'unit-key-kebu';
 process.env.JOKO_DEFAULT_PARTNER_ID = 'kebu';
 process.env.JOKO_API_KEYS = 'rect:rect-key-xyz';
 
-const { authenticatePartner, partnerAuthConfigured, enforcePartnerRateLimit } = await import(
+const { authenticatePartner, partnerAuthConfigured } = await import(
   '../../lib/partner-auth.js'
 );
 const {
@@ -46,8 +46,10 @@ test('webhook HMAC matches Kebu sha256= hex style', () => {
   assert.equal(`sha256=${hex}`.replace(/^sha256=/i, ''), hex);
 });
 
-test('partner rate limit trips after burst', () => {
+test('partner rate limit trips after burst (shared Postgres counter, J15-D3)', async () => {
+  const { enforcePartnerLimits } = await import('../../lib/integrations/partner-rate-limit.js');
   const id = `rate-${Date.now()}`;
-  for (let i = 0; i < 60; i++) enforcePartnerRateLimit(id, { limit: 60 });
-  assert.throws(() => enforcePartnerRateLimit(id, { limit: 60 }));
+  for (let i = 0; i < 60; i++) assert.equal((await enforcePartnerLimits({ partnerId: id, perm: 'partner.payment.read' })).ok, true);
+  const over = await enforcePartnerLimits({ partnerId: id, perm: 'partner.payment.read' });
+  assert.deepEqual([over.ok, over.status], [false, 429]);
 });
