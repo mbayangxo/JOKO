@@ -13,7 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DB =
   'postgres://postgres:postgres@localhost:51214/template1?sslmode=disable&pgbouncer=true&connection_limit=20&pool_timeout=120';
 
-const BASE_ENV = {
+export const BASE_ENV = {
   NODE_ENV: 'production',
   JWT_ACCESS_SECRET: 'http-test-access-secret-0123456789',
   JWT_REFRESH_SECRET: 'http-test-refresh-secret-0123456789',
@@ -28,7 +28,7 @@ const BASE_ENV = {
 };
 
 /** Env keys that must never leak from the developer shell into a prod-mode test server. */
-const SCRUB = [
+export const SCRUB = [
   'JULAYA_API_KEY', 'JULAYA_API_KEY_SANDBOX', 'JULAYA_API_KEY_PRODUCTION', 'JULAYA_WEBHOOK_SECRET',
   'ALLOW_BETA_OTP', 'ALLOW_BETA_DEPOSITS', 'RESEND_API_KEY', 'AFRICASTALKING_API_KEY', 'TWILIO_ACCOUNT_SID',
   'JOKO_API_KEY', 'JOKO_API_KEYS', 'PARTNER_SETTLEMENT_USER_ID', 'PLATFORM_INCENTIVES_ENABLED',
@@ -41,7 +41,7 @@ const SCRUB = [
   'PARTNER_AUDIT_RETENTION_ENABLED', 'PARTNER_AUDIT_LEGAL_HOLD', 'PARTNER_AUDIT_RETENTION_DAYS', 'MBOLO_ORDER_EXPIRY_ENABLED',
   'PARTNER_DEBIT_INSTRUCTIONS_ENABLED',
   // J15 lab: never inherited; a lab server receives them explicitly.
-  'JOKKO_LAB', 'JOKKO_LAB_ALLOW', 'JOKKO_LAB_FAULT_FILE', 'JOKKO_LAB_EVENT_LOG', 'JOKKO_LAB_WORKER', 'VERCEL', 'VERCEL_ENV',
+  'JOKKO_LAB', 'JOKKO_LAB_ALLOW', 'IDEMPOTENCY_STALE_LEASE_MS', 'JOKKO_LAB_FAULT_FILE', 'JOKKO_LAB_EVENT_LOG', 'JOKKO_LAB_WORKER', 'VERCEL', 'VERCEL_ENV',
 ];
 
 export async function startApiServer(overrides = {}) {
