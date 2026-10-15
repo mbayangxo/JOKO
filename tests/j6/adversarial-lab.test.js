@@ -115,7 +115,15 @@ test('destruction: 8 customers × mixed concurrent completes / cancels / decline
   const floatStart = await floatOf(ag.profile.id);
   const ins = await Promise.all(custs.map((c) => c.call('POST', 'agent-cash/in', { amountXof: 20_000 }, idem())));
   const outs = await Promise.all(custs.map(async (c) => c.call('POST', 'agent-cash/out', { amountXof: 30_000 }, { headers: { ...idem().headers, ...(await pinned(c)) } })));
-  const scanned = await Promise.all([...ins, ...outs].map((r) => ag.s.call('POST', 'agent/cash/scan', { qr: r.body.qr })));
+  // Cash-ins first (they reserve float), then cash-outs (they grow it, capped by floatLimit). Scanning all 16 at once
+  // made the result order-dependent: a cash-out scan overtaking a pending cash-in hold is CORRECTLY refused
+  // (agent_capacity: 400 000 + in-flight cash-outs > the 500 000 limit). J15 gate root cause; proven by forcing
+  // cash-out scans first (5 of 8 refused agent_capacity, same crash). Each group stays fully concurrent.
+  const scanned = [
+    ...await Promise.all(ins.map((r) => ag.s.call('POST', 'agent/cash/scan', { qr: r.body.qr }))),
+    ...await Promise.all(outs.map((r) => ag.s.call('POST', 'agent/cash/scan', { qr: r.body.qr }))),
+  ];
+  assert.deepEqual(scanned.map((s) => s.status), Array(16).fill(200), JSON.stringify(scanned.map((s) => s.body?.code ?? s.status)));
   const agentPin = await pinned(ag.s);
   const pins = await Promise.all(custs.map((c) => pinned(c)));
   const ops = [];
