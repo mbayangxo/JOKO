@@ -20,6 +20,18 @@ afterEach(async () => { await assertInvariants(prisma); });
 
 const key = () => `intent-${crypto.randomBytes(8).toString('hex')}`;
 const avail = async (s) => (await s.call('GET', 'money/home')).body.balance.availableKori;
+// The incentive pool is a shared platform account (other suites fund it): a funded send / merchant payment also
+// books a small reward to the payer. Exact balance assertions compare the balance NET of the rewards the ledger
+// actually booked from the pool to this user, so they hold whatever the pool holds (J15: the historical J4
+// failures were +2 ₭ send rewards from a pool left funded by tests/money/torture.test.js).
+const rewardsBooked = async (s) => {
+  const rows = await prisma.$queryRaw`
+    SELECT COALESCE(SUM(p.amount), 0)::int AS kori
+      FROM "Posting" p JOIN "JournalEntry" j ON j.id = p."entryId" JOIN "LedgerAccount" a ON a.id = p."accountId"
+     WHERE j.kind = 'reward' AND p.side = 'credit' AND a."ownerType" = 'user' AND a."ownerId" = ${s.id}`;
+  return rows[0].kori;
+};
+const net = async (s) => (await avail(s)) - (await rewardsBooked(s));
 
 async function pair(senderKori = 5000) {
   const a = await customer({ koriBalance: 0 });
@@ -40,8 +52,8 @@ test('P2P: find recipient (minimal identity) → preview → send → both histo
 
   const r = await A.call('POST', 'transfers/send', { recipientHandle: B.handle, amount: 1200 }, { headers: { 'idempotency-key': key() } });
   assert.equal(r.status, 201, JSON.stringify(r.body));
-  assert.equal(await avail(A), 3800);
-  assert.equal(await avail(B), 1200);
+  assert.equal(await net(A), 3800);
+  assert.equal(await net(B), 1200);
   const outItem = (await A.call('GET', 'money/activity')).body.items.find((i) => i.type === 'transfer' && i.direction === 'out');
   const inItem = (await B.call('GET', 'money/activity')).body.items.find((i) => i.type === 'transfer' && i.direction === 'in');
   assert.equal(outItem.title, 'Envoi à Awa Diop');
@@ -60,7 +72,7 @@ test('P2P: duplicate tap / retry with the same intent key never pays twice; the 
   const k = key();
   const taps = await Promise.all([1, 2, 3].map(() => A.call('POST', 'transfers/send', { recipientHandle: B.handle, amount: 1000 }, { headers: { 'idempotency-key': k } })));
   assert.equal(taps.filter((t) => t.status === 201).length >= 1, true);
-  assert.equal(await avail(A), 4000, 'debited exactly once');
+  assert.equal(await net(A), 4000, 'debited exactly once');
   // "Timeout": the app does not know the outcome — it asks, never re-sends with a new key.
   const intent = await A.call('GET', `money/intents/${k}`);
   assert.equal(intent.body.state, 'completed');
@@ -81,7 +93,7 @@ test('P2P: duplicate tap / retry with the same intent key never pays twice; the 
   // Same key, different amount → refused (no silent second payment).
   const reuse = await A.call('POST', 'transfers/send', { recipientHandle: B.handle, amount: 999 }, { headers: { 'idempotency-key': k } });
   assert.equal(reuse.status, 422);
-  assert.equal(await avail(A), 4000);
+  assert.equal(await net(A), 4000);
 });
 
 test('P2P failures: self-transfer, insufficient funds, invalid recipient, blocked relationship, simultaneous devices', async () => {
@@ -97,7 +109,7 @@ test('P2P failures: self-transfer, insufficient funds, invalid recipient, blocke
   assert.equal(blocked.status, 403);
   assert.equal(blocked.body.code, 'recipient_unavailable');
   assert.ok(!/block/i.test(blocked.body.error), 'the block is not disclosed');
-  assert.equal(await avail(A), 1000);
+  assert.equal(await net(A), 1000);
   // Two phones, same account, concurrent sends exceeding the balance: one wins.
   const C = await signedIn(api, await customer());
   const phone2 = await signedIn(api, { ...A, device: newDevice(), deviceAgeHours: 72 });
@@ -105,17 +117,17 @@ test('P2P failures: self-transfer, insufficient funds, invalid recipient, blocke
   await prisma.authSession.updateMany({ where: { userId: A.id, revokedAt: null }, data: { trust: 'trusted' } });
   const both = await Promise.all([A, phone2].map((s) => s.call('POST', 'transfers/send', { recipientHandle: C.handle, amount: 700 })));
   assert.equal(both.filter((r) => r.status === 201).length, 1, both.map((r) => r.status).join(','));
-  assert.equal(await avail(A), 300);
+  assert.equal(await net(A), 300);
 });
 
 test('money request: request → recipient sees it → pays once → both histories; a request never debits by itself; decline, expiry, strangers, spam, blocks', async () => {
   const { A: requester, B: payer } = await pair(0);
   await fundUser(payer.id, 3000);
-  const before = await avail(payer);
+  const before = await net(payer);
   const req = await requester.call('POST', 'transfers/request', { recipientHandle: payer.handle, amount: 700 });
   assert.equal(req.status, 201, JSON.stringify(req.body));
   assert.ok(req.body.expiresAt, 'requests expire');
-  assert.equal(await avail(payer), before, 'a request is not a debit');
+  assert.equal(await net(payer), before, 'a request is not a debit');
   const incoming = await payer.call('GET', 'transfers/requests?role=incoming');
   assert.ok(JSON.stringify(incoming.body).includes(req.body.id));
   const stranger = await signedIn(api, await customer({ koriBalance: 0 }));
@@ -123,18 +135,18 @@ test('money request: request → recipient sees it → pays once → both histor
   assert.ok([400, 403, 404].includes((await requester.call('POST', `transfers/requests/${req.body.id}/accept`, {})).status), 'requester cannot pay own request');
   const paid = await Promise.all([1, 2].map(() => payer.call('POST', `transfers/requests/${req.body.id}/accept`, {})));
   assert.equal(paid.filter((p) => p.status < 300).length, 1, paid.map((p) => p.status).join(','));
-  assert.equal(await avail(payer), 2300);
-  assert.equal(await avail(requester), 700);
+  assert.equal(await net(payer), 2300);
+  assert.equal(await net(requester), 700);
 
   const declined = await requester.call('POST', 'transfers/request', { recipientHandle: payer.handle, amount: 50 });
   assert.equal((await payer.call('POST', `transfers/requests/${declined.body.id}/deny`, {})).status, 200);
-  assert.equal(await avail(payer), 2300, 'declining moves nothing');
+  assert.equal(await net(payer), 2300, 'declining moves nothing');
 
   const expiring = await requester.call('POST', 'transfers/request', { recipientHandle: payer.handle, amount: 60 });
   await prisma.moneyRequest.update({ where: { id: expiring.body.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
   const late = await payer.call('POST', `transfers/requests/${expiring.body.id}/accept`, {});
   assert.equal(late.status, 410);
-  assert.equal(await avail(payer), 2300);
+  assert.equal(await net(payer), 2300);
 
   const spam = await requester.call('POST', 'transfers/request', { recipientHandle: payer.handle, amount: 1 });
   assert.equal(spam.status, 429, '≤ 3 requests to the same person per 24 h');
@@ -162,7 +174,7 @@ test('merchant QR charge: server-authoritative merchant + amount; forged / chang
   const changed = await payer.call('POST', `money/charges/${ch.body.code}/pay`, { expectedAmountKori: 1 });
   assert.equal(changed.status, 409);
   assert.equal(changed.body.code, 'amount_mismatch');
-  assert.equal(await avail(payer), 5000);
+  assert.equal(await net(payer), 5000);
   assert.equal((await owner.call('POST', `money/charges/${ch.body.code}/pay`, { expectedAmountKori: 2500 })).status, 400, 'merchant cannot pay itself');
 
   const k = key();
@@ -175,7 +187,7 @@ test('merchant QR charge: server-authoritative merchant + amount; forged / chang
   await fundUser(otherPayer.id, 5000);
   const s2 = await signedIn(api, otherPayer);
   assert.equal((await s2.call('POST', `money/charges/${ch.body.code}/pay`, { expectedAmountKori: 2500 })).status, 409, 'a paid QR cannot be paid again');
-  assert.equal(await avail(payer), 2500);
+  assert.equal(await net(payer), 2500);
   assert.equal((await prisma.businessWallet.findUnique({ where: { businessId: biz.id } })).balance, 2500);
   const item = (await payer.call('GET', 'money/activity')).body.items.find((i) => i.type === 'merchant_payment');
   assert.equal(item.title, `Paiement à ${biz.name}`);
@@ -188,7 +200,7 @@ test('merchant QR charge: server-authoritative merchant + amount; forged / chang
   assert.equal((await otherMerchant.call('POST', `money/charges/${ch3.body.code}/cancel`)).status, 403);
   assert.equal((await owner.call('POST', `money/charges/${ch3.body.code}/cancel`)).status, 200);
   assert.equal((await payer.call('POST', `money/charges/${ch3.body.code}/pay`, { expectedAmountKori: 100 })).status, 409);
-  assert.equal(await avail(payer), 2500, 'none of the refused attempts moved money');
+  assert.equal(await net(payer), 2500, 'none of the refused attempts moved money');
   assert.equal((await otherMerchant.call('POST', 'money/charges', { businessId: biz.id, amountKori: 100 })).status, 403, 'another merchant cannot issue charges for this business');
 });
 
@@ -212,7 +224,7 @@ test('refund primitive: payee refunds (partial, then rest) as compensating entri
   const races = await Promise.all([1, 2].map(() => owner.call('POST', `money/payments/${encodeURIComponent(original)}/refund`, { amountKori: 1500, reason: 'cancel order' })));
   assert.equal(races.filter((r) => r.status === 201).length, 1, 'concurrent refunds never exceed the original');
   assert.equal((await owner.call('POST', `money/payments/${encodeURIComponent(original)}/refund`, { amountKori: 1, reason: 'more' })).status, 409);
-  assert.equal(await avail(payer), 2000);
+  assert.equal(await net(payer), 2000);
 
   const items = (await payer.call('GET', 'money/activity')).body.items;
   const orig = items.find((i) => i.reference === original);
@@ -236,7 +248,7 @@ test('P2P undo shows as a linked reversal; history survives reload', async () =>
   assert.equal(original.status, 'reversed');
   const reversal = items.find((i) => i.type === 'reversal');
   assert.equal(reversal.links.reverses, ref);
-  assert.equal(await avail(A), 1000);
+  assert.equal(await net(A), 1000);
 });
 
 test('supportability: support locates any reference and its stage, read-only; no role cannot; nobody can change a balance from it', async () => {
