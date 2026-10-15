@@ -8,7 +8,7 @@ import { test, after, afterEach, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 
-import { createUserWithWallet, prisma, uniqueRef, fundUser } from '../helpers/db.js';
+import { createUserWithWallet, drainIncentivePool, prisma, uniqueRef, fundUser } from '../helpers/db.js';
 import {
   LedgerConflictError,
   account,
@@ -377,11 +377,16 @@ test('rewards never create value: no funded budget → no reward; funded → pai
     assert.equal(paid, 0);
   }
   // Fund 60 ₭ (test treasury path) and race 5 rewards of 50.
-  await runMoneyTransaction(prisma, async (tx) => testFund(tx, { to: await account(tx, 'incentivesFunded'), amount: 60, reference: uniqueRef('POOL') }));
-  const rs = await settledAll(Array.from({ length: 5 }, () => runMoneyTransaction(prisma, (tx) => creditKoriEarn(tx, u.id, u.wallet.id, 'refer_friend', uniqueRef('EARN')))));
-  const paid = rs.filter((r) => r.status === 'fulfilled').reduce((s, r) => s + r.value, 0);
-  assert.equal(paid, 50 * Math.floor((start + 60) / 50), 'exactly what the budget covers');
-  assert.ok(paid <= start + 60, 'never more than the budget');
+  try {
+    await runMoneyTransaction(prisma, async (tx) => testFund(tx, { to: await account(tx, 'incentivesFunded'), amount: 60, reference: uniqueRef('POOL') }));
+    const rs = await settledAll(Array.from({ length: 5 }, () => runMoneyTransaction(prisma, (tx) => creditKoriEarn(tx, u.id, u.wallet.id, 'refer_friend', uniqueRef('EARN')))));
+    const paid = rs.filter((r) => r.status === 'fulfilled').reduce((s, r) => s + r.value, 0);
+    assert.equal(paid, 50 * Math.min(5, Math.floor((start + 60) / 50)), 'exactly what the budget covers');
+    assert.ok(paid <= start + 60, 'never more than the budget');
+  } finally {
+    // J15: never leave the shared pool funded for later tests (the J4 P2P failures' root cause).
+    await drainIncentivePool();
+  }
 });
 
 test('Stripe webhook replayed 5× concurrently: one operation, one credit, own provider clearing', async () => {

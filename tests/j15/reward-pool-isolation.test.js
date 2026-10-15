@@ -10,7 +10,7 @@ import '../helpers/setup.js';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { fundUser, prisma } from '../helpers/db.js';
+import { drainIncentivePool, fundUser, prisma } from '../helpers/db.js';
 import { startApiServer } from '../helpers/http-harness.js';
 import { assertInvariants } from '../../lib/money-kernel/invariants.js';
 import { runMoneyTransaction } from '../../lib/wallet-atomic.js';
@@ -25,7 +25,8 @@ after(async () => { await api?.stop(); await prisma.$disconnect(); });
 const pool = async () => Number((await prisma.ledgerAccount.findUnique({ where: { code: 'incentives:funded' } }))?.balance ?? 0);
 const avail = async (s) => (await s.call('GET', 'money/home')).body.balance.availableKori;
 
-test('funded incentive pool: a P2P send pays the sender exactly KORI_EARN.send, from the pool only', async () => {
+test('funded incentive pool: a P2P send pays the sender exactly KORI_EARN.send, from the pool only', async (t) => {
+  t.after(() => drainIncentivePool()); // leave the shared pool as found
   await runMoneyTransaction(prisma, async (tx) => testFund(tx, { to: await account(tx, 'incentivesFunded'), amount: 10, reference: `POOL-J15-${Date.now()}` }));
   const a = await customer({ koriBalance: 0 });
   await fundUser(a.id, 5000);
@@ -41,5 +42,13 @@ test('funded incentive pool: a P2P send pays the sender exactly KORI_EARN.send, 
   assert.equal(await pool(), poolBefore - KORI_EARN.send, 'the reward came out of the pool');
   assert.equal(await avail(A), 5000 - 1200 + KORI_EARN.send, 'debited once, rewarded once');
   assert.equal(await avail(B), 1200, 'the recipient gets exactly the amount');
+  await assertInvariants(prisma);
+});
+
+test('drainIncentivePool leaves the shared pool empty through the kernel (balanced, nothing minted)', async () => {
+  await runMoneyTransaction(prisma, async (tx) => testFund(tx, { to: await account(tx, 'incentivesFunded'), amount: 7, reference: `POOL-J15D-${Date.now()}` }));
+  assert.ok((await pool()) >= 7);
+  await drainIncentivePool();
+  assert.equal(await pool(), 0);
   await assertInvariants(prisma);
 });

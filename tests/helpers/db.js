@@ -123,6 +123,22 @@ export async function fundedRewardsFor(userId) {
   return funded;
 }
 
+/**
+ * J15: the incentive pool (incentives:funded) is a SHARED platform account. A test that funds it must leave it
+ * as it found it, or every later send / merchant payment in the run also books a reward and exact-balance
+ * assertions elsewhere become order-dependent (the root cause of the historical J4 P2P failures). Pays any
+ * remainder out through the kernel's own reward flow to a throwaway sink user, so the ledger stays balanced.
+ */
+export async function drainIncentivePool() {
+  const { reward } = await import('../../lib/money-kernel/flows.js');
+  const pool = await prisma.ledgerAccount.findUnique({ where: { code: 'incentives:funded' } });
+  const left = Number(pool?.balance ?? 0);
+  if (left <= 0) return 0;
+  const sink = await createUserWithWallet({ koriBalance: 0 });
+  await prisma.$transaction((tx) => reward(tx, { userId: sink.id, amount: left, reference: uniqueRef('POOL-DRAIN'), rewardType: 'test_pool_drain' }));
+  return left;
+}
+
 /** Session id behind a token minted by establishedSessionToken. */
 export function sidOf(token) {
   return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).sid;
