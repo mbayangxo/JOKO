@@ -367,13 +367,13 @@ A partner can **request** a debit of a linked business's wallet. **Nothing moves
 
 **Execution:** all lines in one money transaction, exactly once, with references `pdi-<id>-<i>`. Insufficient funds → `failed`, and nothing moves.
 
-Limits are configurable. These defaults are proposals:
+**PROVISIONAL LOCAL TEST LIMITS — not approved production limits** (J15 decision 1). Expressed in XOF and converted to ₭ through the ledger peg (10 XOF = 1 ₭):
 
-| Limit | Variable | Default |
+| Limit | Variable | Value |
 |---|---|---|
-| Per line | `PARTNER_DEBIT_LINE_MAX_KORI` | 500 000 ₭ |
-| Per instruction | `PARTNER_DEBIT_INSTRUCTION_MAX_KORI` | 5 000 000 ₭ |
-| Per business per 24 h | `PARTNER_DEBIT_DAILY_MAX_KORI` / `PARTNER_DEBIT_DAILY_MAX_COUNT` | 10 000 000 ₭ / 20 |
+| Per line | `PARTNER_DEBIT_LINE_MAX_XOF` | 500 000 XOF (50 000 ₭) |
+| Per request | `PARTNER_DEBIT_INSTRUCTION_MAX_XOF` | 5 000 000 XOF (500 000 ₭) |
+| Per business per 24 h | `PARTNER_DEBIT_DAILY_MAX_XOF` / `PARTNER_DEBIT_DAILY_MAX_COUNT` | 10 000 000 XOF (1 000 000 ₭) or 20 payments |
 
 ## Scoped partner keys (J14-S6, disabled by default)
 

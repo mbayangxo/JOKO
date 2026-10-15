@@ -109,7 +109,7 @@ test('immutable details: a wrong hash is refused; a re-post with different lines
   const body = payroll(s, [{ recipient_handle: e.handle, amount_kori: 700 }]);
   const r = await request(KEBU, body);
   assert.equal((await request(KEBU, body)).status, 200, 'same request → same instruction (idempotent)');
-  const changed = await request(KEBU, { ...body, lines: [{ recipient_handle: e.handle, amount_kori: 70_000 }] });
+  const changed = await request(KEBU, { ...body, lines: [{ recipient_handle: e.handle, amount_kori: 7_000 }] });
   assert.deepEqual([changed.status, changed.body.code], [409, 'instruction_immutable']);
   const bad = await approve(s, r.body.id, s.owner, { hash: 'f'.repeat(64) });
   assert.deepEqual([bad.status, bad.body.code], [409, 'details_mismatch']);
@@ -257,4 +257,40 @@ test('partner cancel before approval; a cancelled instruction can never be appro
   const rej = await request(KEBU, { external_business_id: s.ext, external_ref: `po_${hex()}`, kind: 'payout', lines: [{ recipient_handle: p.handle, amount_kori: 400 }] });
   assert.equal((await s.owner.call('POST', `businesses/${s.b.id}/partner-debits/${rej.body.id}/reject`, { reason: 'pas prévu' })).body.status, 'rejected');
   assert.equal((await approve(s, rej.body.id)).status, 409);
+});
+
+test('J15 provisional limits (XOF via the peg): line 500 000 XOF, request 5 000 000 XOF, daily count — exact boundaries', async () => {
+  const D = await import('../../lib/integrations/partner-debits.js');
+  assert.equal(D.LIMITS_STATUS, 'provisional_local_test_limits');
+  assert.deepEqual([D.LIMITS.lineMaxXof(), D.LIMITS.instructionMaxXof(), D.LIMITS.dailyMaxXof(), D.LIMITS.dailyMaxCount()], [500_000, 5_000_000, 10_000_000, 20]);
+  assert.deepEqual([D.LIMITS.lineMaxKori(), D.LIMITS.instructionMaxKori(), D.LIMITS.dailyMaxKori()], [50_000, 500_000, 1_000_000], '10 XOF per ₭');
+  const s = await shop({ funds: 2_000_000 });
+  const p = await customer();
+  const line = (amount) => request(KEBU, { external_business_id: s.ext, external_ref: `po_${hex()}`, kind: 'payout', lines: [{ recipient_handle: p.handle, amount_kori: amount }] });
+  assert.equal((await line(50_000)).status, 201, 'exactly the line limit');
+  assert.equal((await line(50_001)).status, 400, 'one ₭ over');
+  const emps = [];
+  for (let i = 0; i < 11; i += 1) emps.push(await s.employee());
+  const ten = await request(KEBU, payroll(s, emps.slice(0, 10).map((e) => ({ recipient_handle: e.handle, amount_kori: 50_000 }))));
+  assert.equal(ten.status, 201, 'exactly the request limit (500 000 ₭)');
+  const eleven = await request(KEBU, payroll(s, emps.map((e) => ({ recipient_handle: e.handle, amount_kori: 50_000 }))));
+  assert.deepEqual([eleven.status, eleven.body.code], [422, 'limit_exceeded']);
+  // Daily count, with a lowered (still provisional) count on a dedicated server.
+  const small = await startApiServer({ JOKO_API_KEYS: `kebu:${KEBU}`, PARTNER_DEBIT_INSTRUCTIONS_ENABLED: 'true', PARTNER_DEBIT_DAILY_MAX_COUNT: '2' });
+  try {
+    const owner = await signedIn(small, s.ownerC);
+    await stepUp(owner);
+    const outcomes = [];
+    for (let i = 0; i < 3; i += 1) {
+      const r = await small.client('POST', 'v1/debit-instructions', { ...as(KEBU), body: { external_business_id: s.ext, external_ref: `day_${hex()}`, kind: 'payout', lines: [{ recipient_handle: p.handle, amount_kori: 100 }] } });
+      const d = await owner.call('GET', `businesses/${s.b.id}/partner-debits/${r.body.id}`);
+      const a = await owner.call('POST', `businesses/${s.b.id}/partner-debits/${r.body.id}/approve`, { detailsHash: d.body.detailsHash });
+      outcomes.push(a.body.status ?? a.body.code);
+    }
+    const executedToday = await prisma.partnerDebitInstruction.count({ where: { businessId: s.b.id, status: 'executed' } });
+    assert.ok(executedToday <= 2 + 0, `daily count respected: ${outcomes}`);
+    assert.equal(outcomes.at(-1), 'risk_limit');
+  } finally {
+    await small.stop();
+  }
 });
