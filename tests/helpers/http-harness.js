@@ -83,13 +83,15 @@ export async function startApiServer(overrides = {}) {
   for (const k of SCRUB) delete env[k];
   Object.assign(env, BASE_ENV, {
     DATABASE_URL: normalizeDatabaseUrl(process.env.DATABASE_URL?.trim() || DEFAULT_DB),
-  }, overrides);
+  });
   const workers = Math.max(1, Number(process.env.LAB_HARNESS_WORKERS ?? 1) || 1);
   if (workers > 1) {
     Object.assign(env, { JOKKO_LAB: 'true', JOKKO_LAB_ALLOW: 'local-only' });
     if (process.env.LAB_HARNESS_FAULT_FILE) env.JOKKO_LAB_FAULT_FILE = process.env.LAB_HARNESS_FAULT_FILE;
     if (process.env.LAB_HARNESS_EVENT_LOG) env.JOKKO_LAB_EVENT_LOG = process.env.LAB_HARNESS_EVENT_LOG;
   }
+  // A test's explicit overrides always win over the lab-mode defaults (e.g. its own fault schedule).
+  Object.assign(env, overrides);
 
   const servers = Array.from({ length: workers }, (_, i) => spawnServer(workers > 1 ? { ...env, JOKKO_LAB_WORKER: `w${i}` } : env));
   const ports = await Promise.all(servers.map((sv) => sv.ready));
