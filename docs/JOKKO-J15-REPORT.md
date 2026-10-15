@@ -59,7 +59,31 @@ This is evidence for the separate emergency track; it is not a deploy. P0-A runt
 
 ## 4. Latency baselines (decision 5)
 
-_Pending: measured on an idle machine after the multi-instance suite run (filled in below)._
+**Setup:** measured on an idle machine.
+- 4 API + 2 cron processes; one local Postgres.
+- `p2p` scenario with no faults: 600 operations, 120 users. Seeds 5004 / 5008 / 5016 / 5032.
+- Latencies in ms, as seen by the client.
+
+**These are local measurements of this one machine. They do not represent production capacity and must not be used as production SLOs.**
+
+| Concurrency | Ops/s | `POST transfers/send` p50 / p95 / p99 / max | `GET money/home` p50 / p95 / p99 | `POST transfers/:ref/undo` p50 / p95 | Oracle snapshot max | Verdict |
+|---|---|---|---|---|---|---|
+| 4 | 37 | 110 / 175 / 258 / 300 | 47 / 94 / 168 | 87 / 113 | 443 | CLEAN |
+| 8 | 45 | 182 / 310 / 371 / 495 | 89 / 141 / 219 | 125 / 233 | 485 | CLEAN |
+| 16 | 47 | 330 / 636 / 800 / 851 | 156 / 289 / 398 | 274 / 443 | 503 | CLEAN |
+| 32 | 51 | 653 / 1 078 / 1 374 / 1 526 | 273 / 474 / 647 | 456 / 655 | 636 | CLEAN |
+
+**Kernel hot row:** 4 processes × 250 concurrent spends on ONE balance, no faults (seed 8). p50 2 455, p95 3 484, p99 3 554 ms. CLEAN.
+
+**Reading:**
+- Throughput saturates near 45–50 ops/s from concurrency 8. Beyond that, latency grows about linearly with concurrency: the requests queue on this machine's CPU and connection pools.
+- A single hot balance serializes by design (row lock). Its latency is the queue length × the per-transaction time.
+- No request was lost and no outcome was unknown at any level.
+
+**Proposal for the L6 soak thresholds** (to be confirmed by you; not adopted):
+- Measure on a staging configuration that models production (Vercel instance count, Supabase pooler size) before fixing numbers.
+- Until then, a local regression budget: `transfers/send` p99 at concurrency 8 ≤ 2 × this baseline (≈ 750 ms).
+- Zero unknown-unresolved outcomes after quiesce.
 
 ## 5. Historical J4 P2P failures (decision 8): root cause demonstrated
 
