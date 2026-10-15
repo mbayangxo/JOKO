@@ -87,7 +87,7 @@ export async function runLab(opts) {
         const fresh = r.findings.filter((f) => !preexisting.has(sig(f)));
         oracleRuns.push({ t: Date.now(), ms: r.ms, fresh: fresh.length });
         if (oracleRuns.length % 60 === 0) {
-          try { fs.appendFileSync(path.join(runDir, 'progress.jsonl'), `${JSON.stringify({ t: new Date().toISOString(), opsIssued: next, records: records.length, oracleRuns: oracleRuns.length, oracleMaxMs: Math.max(...oracleRuns.map((x) => x.ms)), restarts: cluster.restarts() })}\n`); } catch { /* progress is best-effort */ }
+          try { fs.appendFileSync(path.join(runDir, 'progress.jsonl'), `${JSON.stringify({ t: new Date().toISOString(), opsIssued: next, records: records.length, oracleRuns: oracleRuns.length, oracleMaxMs: Math.max(...oracleRuns.map((x) => x.ms)), restarts: cluster.restarts(), rssMb: cluster.rss() })}\n`); } catch { /* progress is best-effort */ }
         }
         if (fresh.length) { violation = { during: true, findings: fresh }; stop = true; break; }
         await new Promise((res) => setTimeout(res, manifest.oracleMs));

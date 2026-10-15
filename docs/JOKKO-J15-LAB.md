@@ -38,3 +38,19 @@ Fault schedules: `scripts/lab/faults/*.json`. A failing run is reproducible from
   - `unknownResolvedCompleted` / `unknownResolvedNothing` are requests whose response was lost (crash, timeout), resolved by asking the server what the client would ask (`intentOutcome`).
   - `stuckInProgress` must be 0.
 - `latency` is local and per route (p50 / p95 / p99 / max, status counts). **It is not production capacity.**
+
+## L6 soak thresholds (pre-registered before the run)
+
+**Local engineering budgets, not production SLOs.** Derived from the measured local baseline at concurrency 8 (`docs/JOKKO-J15-REPORT.md` §4). Production budgets need a staging configuration that models Vercel instances and the Supabase pooler.
+
+**Run:** `mixed` scenario, 4 API + 2 cron processes, concurrency 8, 300 users, 4 h, `faults/soak.json` (rare crashes, no injected latency). Latency counts answered requests only, per 15-minute window. A request lost with a killed worker is counted as an error and must resolve in the outcome audit.
+
+| # | Threshold | Budget |
+|---|---|---|
+| T1 | `POST transfers/send` p99, every window | ≤ 750 ms (2 × baseline 371 ms) |
+| T2 | `GET money/home` p99, every window | ≤ 450 ms (2 × baseline 219 ms) |
+| T3 | Other money writes (`money/charges/:code/pay`, `transfers/requests/:id/accept`, `transfers/:ref/undo`) p99, every window | ≤ 1 000 ms |
+| T4 | Stability: last window p99 vs first full window p99 (send, home) | ≤ 1.5 × |
+| T5 | Answered 5xx (not lost-with-worker) | ≤ 0.1 % of requests |
+| T6 | Oracle findings (during load and final), outcome-audit findings, stuck keys | 0 |
+| T7 | API worker memory: RSS at the end vs at 30 min (same process, no restart in between) | ≤ 2 × |

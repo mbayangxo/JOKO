@@ -1,0 +1,7 @@
+{
+  "description": "L6 soak: rare kill -9 inside and right after money transactions (about one per worker every few minutes), no artificial latency, so latency budgets measure the system.",
+  "faults": [
+    { "point": "money.before_commit", "every": 4000, "action": "crash" },
+    { "point": "money.after_commit", "every": 5000, "action": "crash" }
+  ]
+}

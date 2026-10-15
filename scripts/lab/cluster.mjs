@@ -173,7 +173,8 @@ export async function startCluster({ apiWorkers = 4, cronWorkers = 2, runDir, fa
       const w = Math.floor(sec / windowSec);
       const m = byW.get(w) ?? new Map();
       const l = m.get(route) ?? { ms: [], errors: 0 };
-      l.ms.push(ms);
+      // Latency of answered requests only; a request lost with a killed worker is an error, not a latency.
+      if (status !== 'network') l.ms.push(ms);
       if (status === 'network' || status >= 500) l.errors += 1;
       m.set(route, l);
       byW.set(w, m);
@@ -184,7 +185,7 @@ export async function startCluster({ apiWorkers = 4, cronWorkers = 2, runDir, fa
       routes: Object.fromEntries([...m.entries()].map(([route, l]) => {
         const v = [...l.ms].sort((a, b) => a - b);
         const pct = (p) => Math.round(v[Math.min(v.length - 1, Math.floor((p / 100) * v.length))]);
-        return [route, { n: v.length, p50: pct(50), p95: pct(95), p99: pct(99), errors: l.errors }];
+        return [route, { n: v.length, p50: v.length ? pct(50) : null, p95: v.length ? pct(95) : null, p99: v.length ? pct(99) : null, errors: l.errors }];
       })),
     }));
   };
@@ -199,6 +200,10 @@ export async function startCluster({ apiWorkers = 4, cronWorkers = 2, runDir, fa
     runCron,
     latencyReport,
     restarts: () => Object.fromEntries([...api, ...cron].map((w) => [w.name, w.restarts])),
+    /** Resident memory per worker (MB), for leak / drift detection over a soak. */
+    rss: () => Object.fromEntries([...api, ...cron].map((w) => {
+      try { return [w.name, Math.round(Number(fs.readFileSync(`/proc/${w.child.pid}/status`, 'utf8').match(/VmRSS:\s+(\d+)/)[1]) / 1024)]; } catch { return [w.name, null]; }
+    })),
     faultLog: () => {
       const f = env.JOKKO_LAB_EVENT_LOG;
       return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];

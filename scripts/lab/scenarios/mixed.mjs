@@ -40,6 +40,8 @@ const key = (rng) => `lab-${Math.floor(rng() * 2 ** 48).toString(16).padStart(12
 export async function step(ctx, i, opts) {
   const rng = rngFor(opts.seed ^ 0x5bd1e995, i);
   const roll = rng();
+  // Soak: keep payers funded (test faucet, ledger-booked) so insufficient funds do not take over a long run.
+  if (roll < 0.01) { await fundUser(ctx.actors[Math.floor(rng() * ctx.actors.length)].s.id, 20_000); return []; }
   if (roll < 0.55) return p2p.step(ctx, i, opts);
   const { actors, merchants } = ctx;
   const a = actors[Math.floor(rng() * actors.length)];
