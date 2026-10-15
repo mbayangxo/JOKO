@@ -99,7 +99,10 @@ export async function startCluster({ apiWorkers = 4, cronWorkers = 2, runDir, fa
   await Promise.all([...api, ...cron].map((w) => w.start()));
 
   const latency = new Map();
+  const t0 = Date.now();
+  const samples = []; // [secondsSinceStart, route, ms, status] for windowed (soak) reports
   const note = (route, ms, status) => {
+    samples.push([Math.floor((Date.now() - t0) / 1000), route, ms, status]);
     const l = latency.get(route) ?? { ms: [], statuses: {} };
     l.ms.push(ms);
     l.statuses[status] = (l.statuses[status] ?? 0) + 1;
@@ -162,7 +165,32 @@ export async function startCluster({ apiWorkers = 4, cronWorkers = 2, runDir, fa
     return out;
   };
 
+  /** Per time window (seconds) and route: n, p50, p95, p99, errors (5xx / network). */
+  const windowReport = (windowSec, routes) => {
+    const byW = new Map();
+    for (const [sec, route, ms, status] of samples) {
+      if (routes && !routes.includes(route)) continue;
+      const w = Math.floor(sec / windowSec);
+      const m = byW.get(w) ?? new Map();
+      const l = m.get(route) ?? { ms: [], errors: 0 };
+      l.ms.push(ms);
+      if (status === 'network' || status >= 500) l.errors += 1;
+      m.set(route, l);
+      byW.set(w, m);
+    }
+    return [...byW.entries()].sort((a, b) => a[0] - b[0]).map(([w, m]) => ({
+      window: w,
+      fromSec: w * windowSec,
+      routes: Object.fromEntries([...m.entries()].map(([route, l]) => {
+        const v = [...l.ms].sort((a, b) => a - b);
+        const pct = (p) => Math.round(v[Math.min(v.length - 1, Math.floor((p / 100) * v.length))]);
+        return [route, { n: v.length, p50: pct(50), p95: pct(95), p99: pct(99), errors: l.errors }];
+      })),
+    }));
+  };
+
   return {
+    windowReport,
     api,
     cron,
     events,

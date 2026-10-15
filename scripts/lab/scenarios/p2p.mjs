@@ -129,8 +129,9 @@ export async function audit(ctx, records) {
     `SELECT j.reference FROM "JournalEntry" j
       WHERE j.kind = 'p2p_transfer' AND j."createdAt" >= $2
         AND (j.metadata->>'clientKey' IS NULL OR NOT (j.metadata->>'clientKey' = ANY($1::text[])))
+        AND NOT (j.reference = ANY($4::text[]))
         AND EXISTS (SELECT 1 FROM "Posting" p JOIN "LedgerAccount" a ON a.id = p."accountId" WHERE p."entryId" = j.id AND a."ownerId" = ANY($3::text[]))`,
-    keys, ctx.startedAt, ids);
+    keys, ctx.startedAt, ids, ctx.knownReferences ?? []); // knownReferences: entries another lab flow created (e.g. paid money requests)
   if (phantom.length) findings.push({ check: 'exactly_once', id: 'phantom_transfer', n: phantom.length, sample: phantom.slice(0, 3) });
   // Undo: at most one reversal per original.
   const undos = await prisma.$queryRawUnsafe(

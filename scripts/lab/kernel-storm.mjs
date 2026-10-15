@@ -79,29 +79,45 @@ async function parent() {
     let se = '';
     c.stdout.on('data', (d) => { so += d; });
     c.stderr.on('data', (d) => { se += d; });
-    c.on('exit', (code) => (code === 0 ? resolve(JSON.parse(so.trim().split('\n').pop())) : reject(new Error(`child ${proc} exit ${code}: ${se.slice(-800)}`))));
+    c.on('exit', (code, signal) => {
+      if (code === 0) return resolve(JSON.parse(so.trim().split('\n').pop()));
+      // L5 crash mode: a child killed mid-storm (kill -9 at a fault point) reports nothing; the ledger is the truth.
+      if (args.allowCrash && signal === 'SIGKILL') return resolve({ crashed: true, ok: 0, okKori: 0, insufficient: 0, injected: 0, other: 0, otherSamples: [], lat: [] });
+      return reject(new Error(`child ${proc} exit ${code} ${signal ?? ''}: ${se.slice(-800)}`));
+    });
   })));
   const wallMs = Date.now() - t0;
-  const okKori = results.reduce((s, r) => s + r.okKori, 0);
+  // What actually committed, from the ledger (exact even when a child was killed before reporting).
+  const [{ committed, entries }] = await prisma.$queryRaw`
+    SELECT COALESCE(SUM(p.amount), 0)::bigint AS committed, COUNT(DISTINCT j.id)::int AS entries
+      FROM "JournalEntry" j JOIN "Posting" p ON p."entryId" = j.id JOIN "LedgerAccount" a ON a.id = p."accountId"
+     WHERE j.reference LIKE ${`KS-${seed}-%`} AND a.code = ${`customer:${src.id}:available`} AND p.side = 'debit'`;
+  const reportedKori = results.reduce((s, r) => s + r.okKori, 0);
+  const okKori = Number(committed);
+  const crashedChildren = results.filter((r) => r.crashed).length;
   const acct = await prisma.ledgerAccount.findUnique({ where: { code: `customer:${src.id}:available` } });
   const finalBalance = Number(acct.balance);
   const after = await runOracle(prisma);
   const fresh = after.findings.filter((f) => !pre.has(sig(f)));
   const lat = results.flatMap((r) => r.lat).sort((a, b) => a - b);
-  const pct = (p) => Math.round(lat[Math.min(lat.length - 1, Math.floor((p / 100) * lat.length))]);
+  const pct = (p) => (lat.length ? Math.round(lat[Math.min(lat.length - 1, Math.floor((p / 100) * lat.length))]) : null);
   const findings = [];
   if (finalBalance !== fund - okKori) findings.push({ id: 'balance_mismatch', expected: fund - okKori, finalBalance });
   if (okKori > fund) findings.push({ id: 'overspend', okKori, fund });
   if (finalBalance < 0) findings.push({ id: 'negative', finalBalance });
   const other = results.reduce((s, r) => s + r.other, 0);
   if (other) findings.push({ id: 'unexpected_errors', n: other, samples: results.flatMap((r) => r.otherSamples).slice(0, 5) });
+  // Every success a surviving child REPORTED must be in the ledger (a crashed child may have committed more).
+  if (!crashedChildren && reportedKori !== okKori) findings.push({ id: 'reported_vs_ledger', reportedKori, ledgerKori: okKori });
+  if (crashedChildren && reportedKori > okKori) findings.push({ id: 'reported_more_than_ledger', reportedKori, ledgerKori: okKori });
   findings.push(...fresh.map((f) => ({ id: `oracle:${f.check}:${f.id}`, detail: f.detail })));
   const report = {
     verdict: findings.length ? 'VIOLATION' : 'CLEAN',
     seed, procs, per, fund, wallMs,
     attempts: procs * per,
+    crashedChildren, committedEntries: entries,
     ok: results.reduce((s, r) => s + r.ok, 0), okKori, insufficient: results.reduce((s, r) => s + r.insufficient, 0), injected: results.reduce((s, r) => s + r.injected, 0), other,
-    finalBalance, latencyMs: { p50: pct(50), p95: pct(95), p99: pct(99), max: Math.round(lat[lat.length - 1]) },
+    finalBalance, latencyMs: { p50: pct(50), p95: pct(95), p99: pct(99), max: lat.length ? Math.round(lat[lat.length - 1]) : null },
     oracleMs: after.ms, findings,
   };
   fs.writeFileSync(path.join(runDir, 'results.json'), JSON.stringify(report, null, 2));

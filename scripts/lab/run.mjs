@@ -18,7 +18,7 @@ import { prisma } from '../../lib/prisma.js';
 import { startCluster } from './cluster.mjs';
 import { runOracle } from './oracle.mjs';
 
-const SCENARIOS = { p2p: () => import('./scenarios/p2p.mjs') };
+const SCENARIOS = { p2p: () => import('./scenarios/p2p.mjs'), mixed: () => import('./scenarios/mixed.mjs') };
 
 function args(argv) {
   const o = {};
@@ -48,6 +48,8 @@ export async function runLab(opts) {
     scenario: opts.scenario,
     seed: Number(opts.seed),
     ops: Number(opts.ops ?? 300),
+    durationMs: opts.durationMs ? Number(opts.durationMs) : null, // soak: run by time instead of op count
+    windowSec: Number(opts.windowSec ?? 900),
     concurrency: Number(opts.concurrency ?? 8),
     api: Number(opts.api ?? 4),
     cron: Number(opts.cron ?? 2),
@@ -84,6 +86,9 @@ export async function runLab(opts) {
         const r = await runOracle(prisma, { since: ctx.startedAt }).catch((e) => ({ ok: false, findings: [{ check: 'oracle', id: 'oracle_error', detail: String(e).slice(0, 300) }], ms: 0 }));
         const fresh = r.findings.filter((f) => !preexisting.has(sig(f)));
         oracleRuns.push({ t: Date.now(), ms: r.ms, fresh: fresh.length });
+        if (oracleRuns.length % 60 === 0) {
+          try { fs.appendFileSync(path.join(runDir, 'progress.jsonl'), `${JSON.stringify({ t: new Date().toISOString(), opsIssued: next, records: records.length, oracleRuns: oracleRuns.length, oracleMaxMs: Math.max(...oracleRuns.map((x) => x.ms)), restarts: cluster.restarts() })}\n`); } catch { /* progress is best-effort */ }
+        }
         if (fresh.length) { violation = { during: true, findings: fresh }; stop = true; break; }
         await new Promise((res) => setTimeout(res, manifest.oracleMs));
       }
@@ -102,7 +107,7 @@ export async function runLab(opts) {
       while (!stop) {
         const i = next;
         next += 1;
-        if (i >= manifest.ops) return;
+        if (manifest.durationMs ? Date.now() - ctx.startedAt.getTime() >= manifest.durationMs : i >= manifest.ops) return;
         const recs = await scenario.step(ctx, i, { seed: manifest.seed, apiWorkers: manifest.api });
         records.push(...recs);
       }
@@ -126,7 +131,7 @@ export async function runLab(opts) {
       verdict: !violation && finalFresh.length === 0 && audit.findings.length === 0 ? 'CLEAN' : 'VIOLATION',
       manifest,
       durationMs: loadDone - ctx.startedAt.getTime(),
-      ops: Math.min(next, manifest.ops),
+      ops: manifest.durationMs ? next : Math.min(next, manifest.ops),
       requests: records.length,
       oracle: { runs: oracleRuns.length, maxMs: Math.max(0, ...oracleRuns.map((r) => r.ms)), preexisting: [...preexisting], duringLoad: violation, final: finalFresh },
       audit,
@@ -134,6 +139,7 @@ export async function runLab(opts) {
       restarts: cluster.restarts(),
       workerEvents: cluster.events.map((e) => ({ ...e, tail: undefined })),
       latency: cluster.latencyReport(),
+      latencyWindows: cluster.windowReport(manifest.windowSec),
     };
     fs.writeFileSync(path.join(runDir, 'records.jsonl'), records.map((r) => JSON.stringify(r)).join('\n'));
     fs.writeFileSync(path.join(runDir, 'results.json'), JSON.stringify(results, null, 2));

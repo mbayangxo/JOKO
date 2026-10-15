@@ -1,0 +1,7 @@
+{
+  "description": "L5 S-K: kill -9 a storm process inside a money transaction (before COMMIT) or right after COMMIT; the ledger must hold exactly the committed spends, nothing partial.",
+  "faults": [
+    { "point": "money.before_commit", "nth": [40], "action": "crash" },
+    { "point": "money.after_commit", "nth": [25], "action": "crash" }
+  ]
+}
