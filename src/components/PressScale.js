@@ -14,7 +14,8 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 // Pressable (which actually participates in layout) stays unstyled.
 // Accessibility props are forwarded (they were silently dropped before J8 — screen readers
 // got no name for icon-only buttons such as steppers and back arrows).
-export default function PressScale({ children, style, onPress, onLongPress, scaleTo = 0.9, haptic = 'light', accessibilityLabel, accessibilityHint, accessibilityRole = 'button', accessibilityState, testID }) {
+// `disabled` really disables the press and is announced (J15-D2: it used to be dropped, so a dimmed button stayed live).
+export default function PressScale({ children, style, onPress, onLongPress, scaleTo = 0.9, haptic = 'light', accessibilityLabel, accessibilityHint, accessibilityRole = 'button', accessibilityState, testID, disabled = false }) {
   const scale = useRef(new Animated.Value(1)).current;
   const pressIn = () => {
     Animated.spring(scale, { toValue: scaleTo, useNativeDriver: true, speed: 60, bounciness: 0 }).start();
@@ -37,11 +38,12 @@ export default function PressScale({ children, style, onPress, onLongPress, scal
       onLongPress={onLongPress}
       onPressIn={pressIn}
       onPressOut={pressOut}
-      disabled={!onPress && !onLongPress}
+      disabled={disabled || (!onPress && !onLongPress)}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       accessibilityRole={onPress || onLongPress ? accessibilityRole : undefined}
-      accessibilityState={accessibilityState}
+      accessibilityState={disabled ? { ...accessibilityState, disabled: true } : accessibilityState}
+      aria-disabled={disabled || accessibilityState?.disabled ? true : undefined}
       testID={testID}
       style={[style, { transform: [{ scale }] }]}
     >

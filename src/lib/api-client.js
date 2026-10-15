@@ -1950,3 +1950,18 @@ export const getMyCoopCapital = () => apiFetch('/api/coop/capital/mine', { skipC
 export const respondCoopRecord = (id, confirm, note) => apiFetch(`/api/coop/capital/${encodeURIComponent(id)}/respond`, { method: 'POST', body: note ? { confirm, note } : { confirm }, skipCache: true });
 /** J10/J11 Jekkal direct: the named beneficiary consents. */
 export const respondJekkalBeneficiary = (id, accept) => apiFetch(`/api/jekkal/campaigns/${encodeURIComponent(id)}/beneficiary`, { method: 'POST', body: { accept }, skipCache: true });
+
+// ── J15-D2: partner debit requests (S4) — the business approver's view ─────────────────────────────────────
+export function listPartnerDebits(businessId, { status } = {}) {
+  return apiFetch(`/api/businesses/${encodeURIComponent(businessId)}/partner-debits${status ? `?status=${encodeURIComponent(status)}` : ''}`, { skipCache: true });
+}
+export function getPartnerDebit(businessId, id) {
+  return apiFetch(`/api/businesses/${encodeURIComponent(businessId)}/partner-debits/${encodeURIComponent(id)}`, { skipCache: true });
+}
+/** Explicit approval of EXACTLY the details shown (detailsHash) with a fresh step-up token. */
+export function approvePartnerDebit(businessId, id, { detailsHash, stepUpToken }) {
+  return apiFetch(`/api/businesses/${encodeURIComponent(businessId)}/partner-debits/${encodeURIComponent(id)}/approve`, { method: 'POST', body: { detailsHash }, stepUpToken });
+}
+export function rejectPartnerDebit(businessId, id, reason) {
+  return apiFetch(`/api/businesses/${encodeURIComponent(businessId)}/partner-debits/${encodeURIComponent(id)}/reject`, { method: 'POST', body: { reason } });
+}

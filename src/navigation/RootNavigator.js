@@ -51,6 +51,8 @@ import FriendsScreen from '../screens/FriendsScreen';
 import StudentPassScreen from '../screens/StudentPassScreen';
 import PinGateScreen from '../screens/PinGateScreen';
 import ScheduledPaymentsScreen from '../screens/ScheduledPaymentsScreen';
+import PartnerDebitsScreen from '../screens/PartnerDebitsScreen';
+import PartnerDebitDetailScreen from '../screens/PartnerDebitDetailScreen';
 import JekkalScreen from '../screens/JekkalScreen';
 import JekkalDetailScreen from '../screens/JekkalDetailScreen';
 import MyTicketsScreen from '../screens/MyTicketsScreen';
@@ -209,6 +211,8 @@ export default function RootNavigator() {
       <Stack.Screen name="BusinessOS" component={BusinessOSScreen} />
       <Stack.Screen name="SendMoney" component={SendMoneyScreen} />
       <Stack.Screen name="ScheduledPayments" component={ScheduledPaymentsScreen} />
+      <Stack.Screen name="PartnerDebits" component={PartnerDebitsScreen} />
+      <Stack.Screen name="PartnerDebitDetail" component={PartnerDebitDetailScreen} />
       <Stack.Screen name="PayMerchant" component={PayMerchantScreen} />
       <Stack.Screen name="Cash" component={CashScreen} />
       <Stack.Screen name="MoreActions" component={MoreActionsScreen} />

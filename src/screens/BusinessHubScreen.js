@@ -698,6 +698,9 @@ export default function BusinessHubScreen({ navigation, route }) {
                 <GlowButton label="Réapprovisionner (fournisseurs connectés)" onPress={() => navigation.navigate('Main', { screen: 'MarketplaceTab', params: { screen: 'Restock' } })} />
                 <GlowButton tone="ink" label="Dispatch : expéditions & tournées" onPress={() => navigation.navigate('Dispatch')} />
                 <GlowButton tone="ink" label="Recruter & missions" onPress={() => navigation.navigate('BusinessWork')} />
+                <PressScale scaleTo={0.98} onPress={() => activeId && navigation.navigate('PartnerDebits', { businessId: activeId })} style={styles.linkRow} accessibilityRole="button" testID="hub-partner-debits">
+                  <Text style={styles.linkText}>Demandes de paiement des partenaires →</Text>
+                </PressScale>
                 <PressScale scaleTo={0.98} onPress={() => navigation.navigate('Deliveries')} style={styles.linkRow}>
                   <Text style={styles.linkText}>Réceptions fournisseurs à déclarer →</Text>
                 </PressScale>
