@@ -1,3 +1,4 @@
+import { isDatabaseUnavailable } from '../../lib/db-errors.js';
 import '../../lib/env-bootstrap.js';
 import { getUserIdFromRequest } from './auth.js';
 import { logApiCall } from '../../lib/api-audit.js';
@@ -106,10 +107,7 @@ export function createHandler({ methods, auth = false, handler, skipRateLimit = 
       console.error(safeError(error));
       captureServerError(error, { path: req.url, method: req.method, userId });
       if (!res.headersSent) {
-        const prismaInit =
-          error.name === 'PrismaClientInitializationError' ||
-          error.code === 'P1001' ||
-          error.message?.includes('DATABASE_URL');
+        const prismaInit = isDatabaseUnavailable(error);
         if (prismaInit) {
           res.status(503).json({
             error: databaseConfigured()

@@ -89,6 +89,9 @@ export async function startApiServer(overrides = {}) {
     Object.assign(env, { JOKKO_LAB: 'true', JOKKO_LAB_ALLOW: 'local-only' });
     if (process.env.LAB_HARNESS_FAULT_FILE) env.JOKKO_LAB_FAULT_FILE = process.env.LAB_HARNESS_FAULT_FILE;
     if (process.env.LAB_HARNESS_EVENT_LOG) env.JOKKO_LAB_EVENT_LOG = process.env.LAB_HARNESS_EVENT_LOG;
+    // J15 OI-1: N processes per server × the Prisma default pool (2 × CPUs + 1) exhausted local max_connections (100)
+    // in the multi-instance run. Bound each lab worker's pool unless the URL already sets one.
+    if (!/[?&]connection_limit=/.test(env.DATABASE_URL)) env.DATABASE_URL += `${env.DATABASE_URL.includes('?') ? '&' : '?'}connection_limit=6`;
   }
   // A test's explicit overrides always win over the lab-mode defaults (e.g. its own fault schedule).
   Object.assign(env, overrides);

@@ -36,7 +36,9 @@ export function classifySubmission({ response, error }) {
     return { state: 'accepted_pending', message: e.message ?? 'Opération en vérification. Ne la renouvelle pas.', canRetrySameIntent: false, newIntentAllowed: false };
   }
   // Outcome unknown: the request may or may not have executed.
-  if (e.code === 'outcome_unknown' || e.code === 'timeout' || e.code === 'network' || e.code === 'idempotency_in_progress' || (e.status >= 500 && e.status !== 503)) {
+  // J15 (OI-1): db_unavailable is infrastructure, not a decision — the failure can come after COMMIT, so it is
+  // never proof that nothing was debited. Other 503s are explicit refusals (feature off, enforcement down).
+  if (e.code === 'outcome_unknown' || e.code === 'timeout' || e.code === 'network' || e.code === 'idempotency_in_progress' || e.code === 'db_unavailable' || (e.status >= 500 && e.status !== 503)) {
     return { state: 'checking', unknown: true, message: PROVISIONAL, canRetrySameIntent: false, newIntentAllowed: false };
   }
   if (e.code === 'step_up_required') {
