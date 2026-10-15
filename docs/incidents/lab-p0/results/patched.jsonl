@@ -1,0 +1,3 @@
+{"mode":"patched","scenario":"P0-A","groupsCreated":6,"victims":18,"victimLossTotal":0,"maxLossOneVictim":0,"creatorGainTotal":0,"releaseStatuses":{"503":24,"cron":3}}
+{"mode":"patched","scenario":"P0-B","statuses":{"403":12},"escrowStatus":"disputed_held","buyerRefundXof":0,"riderGainKori":0,"paidOutXof":0,"escrowedXof":1500,"doublePayout":false}
+{"mode":"patched","scenario":"F1","coops":[{"farmerReceived":1500,"ownerDebited":1500,"timesPaid":1,"runs":1},{"farmerReceived":1500,"ownerDebited":1500,"timesPaid":1,"runs":1},{"farmerReceived":1500,"ownerDebited":1500,"timesPaid":1,"runs":1}],"okCalls":3,"refusedCalls":33}
