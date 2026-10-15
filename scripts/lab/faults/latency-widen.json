@@ -1,0 +1,8 @@
+{
+  "description": "L2-L4 multi-instance suites: latency only (widens race windows; must not change any outcome).",
+  "faults": [
+    { "point": "money.before_commit", "every": 3, "action": "delay", "ms": 120 },
+    { "point": "ledger.post", "every": 5, "action": "delay", "ms": 30 },
+    { "point": "ratelimit.partner", "every": 7, "action": "delay", "ms": 50 }
+  ]
+}

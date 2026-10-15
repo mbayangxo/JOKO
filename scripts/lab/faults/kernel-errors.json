@@ -1,0 +1,7 @@
+{
+  "description": "L1 S-K: infrastructure error mid-posting on every 13th journal entry per process, slow commits on every 5th money transaction (lock holders).",
+  "faults": [
+    { "point": "ledger.post", "every": 13, "action": "throw", "code": "db_unavailable" },
+    { "point": "money.before_commit", "every": 5, "action": "delay", "ms": 40 }
+  ]
+}
