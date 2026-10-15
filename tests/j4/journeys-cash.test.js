@@ -197,6 +197,7 @@ test('cash-out blocked: tier, new device, recent recovery, provider outage — e
   await fundUser(rc.id, 2000);
   const recovered = await signedIn(live, rc, { intent: 'recover' });
   const hr = await recovered.call('GET', 'money/home');
+  assert.equal(hr.status, 200, `money/home after a recovery login: ${JSON.stringify(hr.body).slice(0, 400)}`); // J15: keep the evidence if it recurs
   assert.equal(hr.body.actions.cashOut.category, 'security_change');
 
   // Provider outage
