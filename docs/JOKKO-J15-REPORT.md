@@ -42,6 +42,7 @@
 | FL-2 | **Systemic test order dependence:** the shared incentive pool, left funded by one test, makes 19 exact-balance tests in 7 suites fail by exactly the funded reward (+2 / +5 ₭). Root cause of the J4 failures (§5). | Medium (test integrity) | `drainIncentivePool()`: tests that fund the pool restore it through the kernel's reward flow. The torture test's expected-payout formula corrected (it assumed a pool under 240 ₭). | funded-pool probe + `reward-pool-isolation.test.js` |
 | FL-3 | Concurrent delivery-dispute rulings **deadlocked** (opposite lock orders → 500). A losing customer ruling answered 200, rewrote the record (resolved_customer, delivery cancelled) after the courier had been paid, and was audited twice. Money already safe on this branch. | Medium (record integrity) | Both paths claim the dispute atomically first (one lock order); the loser changes nothing | `tests/j15/dispute-ruling-race.test.js` (15 rounds; unfixed fails 3/3) |
 | FL-4 | `PressScale` silently dropped `disabled`: dimmed buttons stayed pressable and were not announced as disabled (22 busy / in-flight guards on send, undo, submit, upload). | Low (double-tap UX; server idempotency already held) | Real `disabled` + `aria-disabled` | `tests/e2e/j15-ui.mjs` |
+| OI-1 | Unexplained: one `money/home` failure after a recovery login in the multi-instance run (§6). Not reproduced in 11 runs. | Unknown | Diagnostic assertion keeps the evidence (`83aa302`) | — |
 | FL-5 | Defence in depth confirmed: a negative customer balance cannot even be written (DB CHECK `LedgerAccount_nonneg_chk`). | — | — | `lab-l0.test.js` |
 
 ## 3. P0-A, P0-B, F1 under lab concurrency (decision 7)
@@ -82,7 +83,20 @@ _Pending: measured on an idle machine after the multi-instance suite run (filled
 
 ## 6. Multi-instance suite run (L2–L4)
 
-_Filled in when the run completes._
+**What ran:** the whole `npm test` (953 tests, J1–J15) with `LAB_HARNESS_WORKERS=4`.
+- Every HTTP suite talked to **4 API processes** round-robin on one database.
+- The lab hooks were live with `latency-widen.json`: slow commits, slow postings and slow rate-limit checks. **735 faults fired.**
+- The database was a copy of the gate database.
+- The run started at `1bba0e1`. Server code is loaded per test file, so files that ran after `dac39f4` saw the dispute fix. The fresh gate in §7 is the authoritative single-commit check.
+
+**Result: 951 / 953 pass.** Every S4 approval race, partner key, settlement, logistics, work, collective, agent, commerce, P2P, undo, idempotency, F17 and torture test held with requests spread across 4 instances and widened race windows.
+
+| Failure | Cause | Outcome |
+|---|---|---|
+| #488 shared rate limit fail-closed | **Harness defect:** lab mode overwrote the test's own fault schedule, so "enforcement unavailable" was never injected | Fixed (overrides win, `3866e84`); test 4/4 in both modes |
+| #553 cash-out blocked (recovery case) | **Open item OI-1, unexplained.** `money/home` after a recovery login answered without `actions`. The recovery session was authenticated (`lastUsedAt` +60 ms), so the handler answered non-200 or another shape; the body was not captured. 11 further lab-mode runs of the file: 0 failures. | Not dismissed. The assertion now reports status and body if it recurs. |
+
+**In-memory state drift (plan risk 5):** no module-level cache remains in `lib/` (besides the lab's own fault-file cache), and partner rate limits are shared (D3). No test failed because of instance-local state.
 
 ## 7. Fresh full gate
 
