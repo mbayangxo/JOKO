@@ -6,6 +6,8 @@
 **How to run the lab:** `docs/JOKKO-J15-LAB.md`.
 **Baseline:** J14 + follow-ups accepted at `d99a1d1` (gate CLEAN, 935/935).
 
+**Verdict:** see §10.
+
 ## 1. Decisions applied (J15 brief)
 
 | # | Decision | Result | Commit |
@@ -30,7 +32,12 @@
 | **L2–L4** all suites multi-instance | Every HTTP suite (J3–J15) against **4 API processes**, round-robin, latency faults widening every race window | see §6 | see §6 |
 | **L3** S4 / partner | S4 approvals (5 concurrent approvals, 2 approvers → 1 execution) and shared rate limits, inside the multi-instance suite run | see §6 | see §6 |
 | **L4** logistics / work / collective / agents | Their suites in the multi-instance run; dispute ruling race found while extending P0-B (**FL-3**) | `dac39f4` | FL-3 fixed |
-| **L5** crash / restart | Crash before COMMIT (seed 2002) and right after COMMIT (seed 3003) on the P2P family; supervisor restart; reconciliation convergence | `2bcee30` | After FL-1: every abandoned key converges within the lease (lab: 3 s; production default: 5 min); 0 manual fixes. **Coverage: the P2P family only** (see §8). |
+| **L5** crash / restart | Crash before COMMIT (seed 2002) and right after COMMIT (seed 3003) on the P2P family; supervisor restart; reconciliation convergence | `2bcee30` | After FL-1: every abandoned key converges within the lease (lab: 3 s; production default: 5 min); 0 manual fixes. |
+| **L2–L5** mixed scenario | `mixed`: P2P + contested money requests (double accept / accept ‖ deny on two workers) + contested merchant QR charges (two payers racing, owner cancelling). Audit: each request and charge paid at most once, status = ledger | `3c8f603` | Seed 6001, crash mix: first run flagged 46 "phantom transfers" — a lab-audit artefact (paid requests carry no client key), fixed in the audit. Replay **CLEAN** (13 crashes; 45 requests, 86 charges paid exactly once). |
+| **L1–L5** 10-seed campaign | `campaign.sh`: 10 seeds of `mixed` (7001–7010), 800 ops each, rotating crash-before-commit / crash-after-commit / latency schedules, fresh database per seed | `3c8f603` | **10 / 10 CLEAN.** ≈ 340 process kills, ≈ 11 500 requests. 588 requests and 1 420 charges paid at most once, status = ledger. Lost responses: 123 resolved to completed, 457 to nothing moved. 0 stuck keys. |
+| **L5** kernel crash | `kernel-storm.mjs --allowCrash`: 4 storm processes killed mid-storm (before / after COMMIT) | `3c8f603` | **CLEAN.** 4 / 4 killed; ledger holds exactly the committed spends (100 entries, 107 219), final balance exact, oracle clean. |
+| **L6** soak | 4 h, `mixed`, 4 API + 2 cron, concurrency 8, 300 users, 40 merchants, rare crashes; thresholds pre-registered in `JOKKO-J15-LAB.md` | see §11 | First attempt (seed 9001) **invalid and stopped**: the lab driver did not refresh expired access tokens, so from minute 30 every request answered 401 (lab defect, fixed in `f94a805`). Result of the valid run: §11. |
+| **L7** report + gate | This report, the handoff (`JOKKO-J15-HANDOFF.md`), the roadmap, the fresh gate | §7 | — |
 
 ### Findings
 
@@ -40,7 +47,7 @@
 | FL-2 | **Systemic test order dependence:** the shared incentive pool, left funded by one test, makes 19 exact-balance tests in 7 suites fail by exactly the funded reward (+2 / +5 ₭). Root cause of the J4 failures (§5). | Medium (test integrity) | `drainIncentivePool()`: tests that fund the pool restore it through the kernel's reward flow. The torture test's expected-payout formula corrected (it assumed a pool under 240 ₭). | funded-pool probe + `reward-pool-isolation.test.js` |
 | FL-3 | Concurrent delivery-dispute rulings **deadlocked** (opposite lock orders → 500). A losing customer ruling answered 200, rewrote the record (resolved_customer, delivery cancelled) after the courier had been paid, and was audited twice. Money already safe on this branch. | Medium (record integrity) | Both paths claim the dispute atomically first (one lock order); the loser changes nothing | `tests/j15/dispute-ruling-race.test.js` (15 rounds; unfixed fails 3/3) |
 | FL-4 | `PressScale` silently dropped `disabled`: dimmed buttons stayed pressable and were not announced as disabled (22 busy / in-flight guards on send, undo, submit, upload). | Low (double-tap UX; server idempotency already held) | Real `disabled` + `aria-disabled` | `tests/e2e/j15-ui.mjs` |
-| OI-1 | Unexplained: one `money/home` failure after a recovery login in the multi-instance run (§6). Not reproduced in 11 runs. | Unknown | Diagnostic assertion keeps the evidence (`83aa302`) | — |
+| FL-7 (was OI-1) | **Root cause found.** The multi-instance run exhausted local Postgres connections: Postgres log `FATAL: sorry, too many clients already` 100 ms after the recovery session. 2 servers × 4 processes × the default Prisma pool (2 × CPUs + 1), against max_connections 100. Reproduced deterministically with a connection-limited role. **Two real defects behind it:** (a) the warm process threw P2037 and answered a bare 500 while the cold one answered 503 `db_unavailable`; (b) the app treated EVERY 503 on a money call as "nothing debited", although a connection failure can follow COMMIT. | Medium (honest outcome) | One classifier for connection failures (`lib/db-errors.js`, both mappers). The app treats `db_unavailable` as UNKNOWN (reconcile via the intent). Lab-mode workers get bounded pools. `9f2ae26` | `tests/j15/db-unavailable.test.js`, mutation-checked ×2 |
 | FL-6 | Latent since J6: the J6 destruction test scanned 16 cash codes at once. A cash-out scan overtaking a cash-in hold is correctly refused `agent_capacity`, which crashed the test (first gate attempt). | Low (test integrity; product correct) | Scan cash-ins, then cash-outs; assert all 16 scans succeed | Proven by forcing cash-outs first (5/8 refused, same crash); file 7/7 ×3 |
 | FL-5 | Defence in depth confirmed: a negative customer balance cannot even be written (DB CHECK `LedgerAccount_nonneg_chk`). | — | — | `lab-l0.test.js` |
 
@@ -117,7 +124,7 @@ This is evidence for the separate emergency track; it is not a deploy. P0-A runt
 | Failure | Cause | Outcome |
 |---|---|---|
 | #488 shared rate limit fail-closed | **Harness defect:** lab mode overwrote the test's own fault schedule, so "enforcement unavailable" was never injected | Fixed (overrides win, `3866e84`); test 4/4 in both modes |
-| #553 cash-out blocked (recovery case) | **Open item OI-1, unexplained.** `money/home` after a recovery login answered without `actions`. The recovery session was authenticated (`lastUsedAt` +60 ms), so the handler answered non-200 or another shape; the body was not captured. 11 further lab-mode runs of the file: 0 failures. | Not dismissed. The assertion now reports status and body if it recurs. |
+| #553 cash-out blocked (recovery case) | **Root-caused afterwards (FL-7): local Postgres connection exhaustion.** Original note: `money/home` after a recovery login answered without `actions`. The recovery session was authenticated (`lastUsedAt` +60 ms), so the handler answered non-200 or another shape; the body was not captured. 11 further lab-mode runs of the file: 0 failures. | Not dismissed. The assertion now reports status and body if it recurs. |
 
 **In-memory state drift (plan risk 5):** no module-level cache remains in `lib/` (besides the lab's own fault-file cache), and partner rate limits are shared (D3). No test failed because of instance-local state.
 
@@ -147,10 +154,37 @@ Later commits only touch this report.
 
 ## 8. Remaining risks and gaps
 
-1. **Lab duration.** The plan's L1–L4 gate is 10 seeds × 30 min per family. What ran is shorter: single seeds per fault schedule plus the multi-instance suites. Not yet a soak (L6), and no thresholds set.
-2. **L5 coverage.** Crash/restart was exercised on the P2P family only. Other families got multi-instance latency faults, not crashes. Existing suites cannot absorb crashes, so each family needs its own lab scenario with an outcome audit.
+1. **Lab duration.** The plan's per-family "10 seeds × 30 min" was not reproduced literally. What ran: 10 seeds × 800 ops (≈ 1 min each) of the mixed scenario, plus the 4-hour soak (§11), plus the multi-instance suites.
+2. **L5 coverage.** Crash / restart with an outcome audit covers P2P, money requests, merchant charges and the kernel. Logistics, work, collective and agents ran multi-instance with latency faults (all their suites pass) but have no crash scenario with an outcome audit yet.
 3. **Chaos providers** (Julaya / Stripe / partner receivers with duplicate, reorder, forged and late callbacks) are not built yet. The rails are covered by the existing torture and J6 suites, not by the lab.
 4. **Clock skew per worker** is not implemented.
 5. **The legacy `resolveDispute` race on `7d262de`** (P0-B double payout) is closed there only because the patch refuses every caller on the user route; the function itself is still racy on that base. It must stay unreachable on `7d262de`.
 6. **Replay** reproduces the operation content and the fault schedule, not the interleaving; failing runs are turned into deterministic tests (as for FL-1 and FL-3).
 7. **Local measurements are not production capacity.** One machine; Postgres local; the pool sizes are not the Supabase pooler's.
+
+## 9. Final security review
+
+**Scope:**
+- financial endpoints and the central route policy;
+- partner APIs (scoped keys, shared rate limits, S4 debits and approvals);
+- approval flows (S4, admin maker / checker);
+- account isolation;
+- background jobs;
+- feature flags.
+
+**Method:** code review, plus the existing gate sweeps (authorization boundary, horizontal data exposure, J3 mutation sweep, PII sweep), plus new tests.
+
+| # | Finding | Severity | Fix | Proof |
+|---|---|---|---|---|
+| S-1 | `ALLOW_BETA_DEPOSITS=true` bypassed the KYC requirement for creating a business account **even in production** (missing production guard) | Medium (only with a misconfigured production env) | Production-guarded `betaDepositsAllowed()`; the platform config no longer advertises beta deposits in production. `6864737` | `tests/j15/beta-flags.test.js`, mutation-checked |
+| S-2 | The cron bearer secret was compared with `!==` (not constant-time) | Low | `timingSafeEqual` over digests. `d5360f4` | `tests/j15/cron-auth.test.js` |
+| S-3 | An unused duplicate `cronAgentCashSweep` export had no secret check. **Not exploitable**: the routed handler is protected | Latent | Defensive check | `tests/j15/cron-routes-auth.test.js`: all 38 cron routes refuse missing and wrong secrets in the production runtime; mutation-checked on the routed handler |
+| S-4 | Feature flags: every dormant feature is opt-in. Two deliberate default-on switches are documented: `AGENT_DEPOSITS_ENABLED` (J6 live) and `PARTNER_LEGACY_PLATFORM_SETTLEMENT` (P-J6-7). `vercel.json` sets no env | — | — | `tests/j15/flags-default-off.test.js`, mutation-checked |
+
+**Confirmed sound** (no change needed):
+- A route without a policy is refused (`policy_missing`).
+- Partner keys, webhook signatures, OTPs and pickup codes are compared in constant time.
+- Partner rate limits are shared and fail closed on money routes (D3).
+- S4 approval requires the approver's step-up and the echoed `detailsHash`; the approver cannot be a recipient, and execution is exactly-once (F1 suite).
+- The retired `ADMIN_API_KEY` authorizes nothing.
+- No money route trusts a client-supplied amount (charges carry no amount; S4 hashes the details).
