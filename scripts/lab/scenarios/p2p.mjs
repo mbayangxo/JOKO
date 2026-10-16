@@ -11,6 +11,28 @@ import { intentOutcome } from '../../../lib/api-idempotency.js';
 
 export const name = 'p2p';
 
+/**
+ * A routed call for this session that behaves like the app: an expired access token (401) triggers ONE refresh
+ * (single-flight per session — refresh tokens rotate and must not be reused) and the request is retried once.
+ * (J15: the first soak lost its load at minute 30 because the driver never refreshed.)
+ */
+export function withRefresh(s, api) {
+  const send = (method, p, body, extra) =>
+    api.client(method, p, { token: s.token, device: s.device, ip: s.ip, headers: { ...(extra.headers ?? {}) }, body: method === 'GET' ? undefined : body, worker: extra.worker });
+  const refresh = () => {
+    s.refreshing ??= api.client('POST', 'auth/refresh', { device: s.device, ip: s.ip, body: { refreshToken: s.refresh } })
+      .then((r) => { if (r.status === 200) { s.token = r.body.accessToken; s.refresh = r.body.refreshToken; s.refreshes = (s.refreshes ?? 0) + 1; } else { s.refreshFailures = (s.refreshFailures ?? 0) + 1; } })
+      .finally(() => { s.refreshing = null; });
+    return s.refreshing;
+  };
+  return async (method, p, body, extra = {}) => {
+    const r = await send(method, p, body, extra);
+    if (r.status !== 401) return r;
+    await refresh();
+    return send(method, p, body, extra);
+  };
+}
+
 export async function setup(cluster, { seed, users = 24, fundKori = 20_000 }) {
   const actors = [];
   for (let i = 0; i < users; i += 1) {
@@ -19,8 +41,7 @@ export async function setup(cluster, { seed, users = 24, fundKori = 20_000 }) {
     const s = await signedIn(cluster.apiFor(`login:${seed}:${i}`), c);
     // Route this actor's calls deterministically, independent of the login routing.
     const api = cluster.apiFor(`actor:${seed}:${i}`);
-    s.call = (method, p, body, extra = {}) =>
-      api.client(method, p, { token: s.token, device: s.device, ip: s.ip, headers: { ...(extra.headers ?? {}) }, body: method === 'GET' ? undefined : body, worker: extra.worker });
+    s.call = withRefresh(s, api);
     actors.push({ i, s, lastSend: null, lastUnknownKey: null });
   }
   return { actors, fundKori };
@@ -137,6 +158,9 @@ export async function audit(ctx, records) {
   const undos = await prisma.$queryRawUnsafe(
     `SELECT "reversesId" AS orig, COUNT(*)::int AS n FROM "JournalEntry" WHERE kind = 'p2p_undo' AND "createdAt" >= $1 GROUP BY 1 HAVING COUNT(*) > 1`, ctx.startedAt);
   if (undos.length) findings.push({ check: 'exactly_once', id: 'double_undo', n: undos.length });
+  stats.tokenRefreshes = ctx.actors.reduce((n, a) => n + (a.s.refreshes ?? 0), 0);
+  stats.tokenRefreshFailures = ctx.actors.reduce((n, a) => n + (a.s.refreshFailures ?? 0), 0);
+  if (stats.tokenRefreshFailures) findings.push({ check: 'driver', id: 'token_refresh_failed', n: stats.tokenRefreshFailures });
   return { findings, stats };
 }
 

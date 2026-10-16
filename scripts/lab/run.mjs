@@ -54,6 +54,7 @@ export async function runLab(opts) {
     api: Number(opts.api ?? 4),
     cron: Number(opts.cron ?? 2),
     users: Number(opts.users ?? 24),
+    merchants: Number(opts.merchants ?? 4),
     oracleMs: Number(opts.oracleMs ?? 1000),
     cronMs: Number(opts.cronMs ?? 2000),
     leaseMs: Number(opts.leaseMs ?? 3000),
@@ -77,7 +78,7 @@ export async function runLab(opts) {
     const baseline = await runOracle(prisma);
     const sig = (f) => `${f.check}:${f.id}:${f.detail ?? ''}`;
     const preexisting = new Set(baseline.findings.map(sig));
-    const ctx = await scenario.setup(cluster, { seed: manifest.seed, users: manifest.users });
+    const ctx = await scenario.setup(cluster, { seed: manifest.seed, users: manifest.users, merchants: manifest.merchants });
     ctx.startedAt = new Date();
     fs.writeFileSync(faultFile, JSON.stringify(faults)); // arm the schedule
 

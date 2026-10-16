@@ -16,15 +16,15 @@ import * as p2p from './p2p.mjs';
 export const name = 'mixed';
 export const crons = p2p.crons;
 
-export async function setup(cluster, { seed, users = 24 }) {
+export async function setup(cluster, { seed, users = 24, merchants = 4 }) {
   const ctx = await p2p.setup(cluster, { seed, users });
   ctx.merchants = [];
-  for (let i = 0; i < 4; i += 1) {
+  // Enough merchants that none crosses the per-account abuse threshold (80 requests / min → 15-min block).
+  for (let i = 0; i < merchants; i += 1) {
     const c = await customer({ koriBalance: 0 });
     const s = await signedIn(cluster.apiFor(`mlogin:${seed}:${i}`), c);
     const api = cluster.apiFor(`merchant:${seed}:${i}`);
-    s.call = (method, p, body, extra = {}) =>
-      api.client(method, p, { token: s.token, device: s.device, ip: s.ip, headers: { ...(extra.headers ?? {}) }, body: method === 'GET' ? undefined : body, worker: extra.worker });
+    s.call = p2p.withRefresh(s, api);
     const biz = await business(s);
     ctx.merchants.push({ s, biz });
   }
