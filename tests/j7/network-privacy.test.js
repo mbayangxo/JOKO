@@ -91,7 +91,12 @@ test('negotiated prices never leak: price-list buyer pays its price; other buyer
   const stdCat = (await std.owner.call('GET', `businesses/${std.b.id}/b2b/suppliers/${sup.b.id}/catalog`)).body;
   assert.equal(vipCat.items[0].priceKori, 800);
   assert.equal(stdCat.items[0].priceKori, 1000);
-  assert.ok(!JSON.stringify(stdCat).includes('800'));
+  // Values, not substrings: a random id can contain "800" (gate at 89dd253: listing id `…d8006h…`). The negotiated
+  // price, the price list's id and its name must appear nowhere in the other buyer's catalog; positive control on vipCat.
+  const leaks = (v) => (v === 800 || v === '800' || v === pl.body.id || v === 'Grossistes A' ? 1
+    : v && typeof v === 'object' ? Object.values(v).reduce((n, x) => n + leaks(x), 0) : 0);
+  assert.ok(leaks(vipCat) > 0, 'control: the value walk sees the negotiated price');
+  assert.equal(leaks(stdCat), 0, JSON.stringify(stdCat));
   const forged = await submit(std, sup, { packs: 2, expected: 1600 });
   assert.equal(forged.body.code, 'price_changed');
   assert.equal((await submit(vip, sup, { packs: 2, expected: 1600 })).status, 201);
