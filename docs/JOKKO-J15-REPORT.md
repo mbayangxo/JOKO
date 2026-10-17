@@ -140,18 +140,19 @@ Each gate creates a new database, applies every migration, runs the whole suite 
 | 1 | `8d52aa8` | NOT CLEAN: 953/954. J6 destruction test order (FL-6), fixed in `1d00e03` (test only) |
 | 2 | `1d00e03` | CLEAN, 954/954 |
 | 3 | `89dd253` (after FL-7, S-1..S-3, FL-8) | NOT CLEAN: 966/967. Fragile J7 privacy assertion (FL-9), fixed in `b69c6fc` (test only). Every other check 0 |
-| **4 (final)** | **`b69c6fc`** | **CLEAN, 967/967.** Postgres up for the whole run (started 04:18:32 UTC, no restart): valid |
+| 4 | `b69c6fc` | CLEAN, 967/967 |
+| **5 (final)** | **`8716838`** (after FL-10) | **CLEAN, 969/969.** Postgres up for the whole run (started 04:18:32 UTC, no restart): valid |
 
-**Final gate at `b69c6fc`, 2026-10-17 05:05–05:40 UTC:**
+**Final gate at `8716838`, 2026-10-17, finished 11:00 UTC:**
 
 | Check | Result |
 |---|---|
-| Full suite (`npm test`, J1–J15) | **967 / 967** |
+| Full suite (`npm test`, J1–J15) | **969 / 969** |
 | Money / logistics / work / collective invariants, after the suite and after everything | 0 |
 | Load, sweeps | 0 |
 | Web build | 0 |
 | Browser E2E J8–J15 | 0 |
-| Weak-network lab (J12), migration rehearsal | 0 |
+| Weak-network lab (J12), migration rehearsal (includes the new index migration) | 0 |
 | `schema_diff` | empty |
 | `audit_critical` | 0 |
 | Crons | unchanged (`daily`, `scheduled-payments`); `deploy_inert yes` |
