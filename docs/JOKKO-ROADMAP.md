@@ -24,7 +24,7 @@ Product scope and the year plan stay in `docs/K21-BUILD-SPEC.md`. This file trac
 | J12 | Offline, low bandwidth, localization, PIN / idempotency proofs | `JOKKO-J12-REPORT.md` | Done (local) |
 | J13 | UX audit, financial-state clarity, recipient identity binding, F17 uncertain-payment states | `JOKKO-J13-REPORT.md`, `JOKKO-J13-F17-REPORT.md`, `JOKKO-J13-RECIPIENT-BINDING.md` | Done (local) |
 | J14 | Ecosystem integration: signed partner events, scoped partner keys, product mapping, fulfilment, chat orders, S4 partner debits, audit retention | `JOKKO-J14-REPORT.md`, `JOKKO-J14-FOLLOWUP-REPORT.md`, `JOKO-PARTNER-API.md` | Done (local); every capability behind an off flag |
-| J15 | Financial torture lab (L0–L7), S4 approval screen, shared partner rate limits, P0 reproductions, J4 / OI-1 root causes, security review | `JOKKO-J15-REPORT.md`, `JOKKO-J15-LAB.md` | See the J15 report verdict |
+| J15 | Financial torture lab (L0–L7) incl. 4-hour soak, S4 approval screen, shared partner rate limits, P0 reproductions, J4 / OI-1 root causes, FL-1…FL-10, security review | `JOKKO-J15-REPORT.md`, `JOKKO-J15-LAB.md`, `JOKKO-J15-HANDOFF.md` | Done (local): gate CLEAN at `8716838` (969/969); soak CLEAN |
 
 ## Open production track (separate, never bundled)
 

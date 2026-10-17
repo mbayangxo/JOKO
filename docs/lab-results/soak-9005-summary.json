@@ -1,0 +1,436 @@
+{
+ "run": "L6 soak attempt 5",
+ "manifest": {
+  "scenario": "mixed",
+  "seed": 9005,
+  "ops": 300,
+  "durationMs": 14400000,
+  "windowSec": 900,
+  "concurrency": 8,
+  "api": 4,
+  "cron": 2,
+  "users": 300,
+  "merchants": 40,
+  "oracleMs": 15000,
+  "cronMs": 5000,
+  "leaseMs": 3000,
+  "faults": {
+   "description": "L6 soak: rare kill -9 inside and right after money transactions (about one per worker every few minutes), no artificial latency, so latency budgets measure the system.",
+   "faults": [
+    {
+     "point": "money.before_commit",
+     "every": 4000,
+     "action": "crash"
+    },
+    {
+     "point": "money.after_commit",
+     "every": 5000,
+     "action": "crash"
+    }
+   ]
+  },
+  "commit": "8716838180454390a26fa21bbbe391506c0d66eb",
+  "dirty": false,
+  "node": "v22.22.2",
+  "startedAt": "2026-10-17T11:01:47.274Z"
+ },
+ "verdict": "CLEAN",
+ "durationMs": 14400146,
+ "ops": 744860,
+ "requests": 959583,
+ "oracle": {
+  "runs": 893,
+  "maxMs": 3584,
+  "duringLoadFindings": 0,
+  "finalFindings": 0,
+  "preexistingCount": 0
+ },
+ "audit": {
+  "findings": 0,
+  "stats": {
+   "keys": 301873,
+   "completed": 763,
+   "refused": 124331,
+   "held": 144799,
+   "unknownResolvedCompleted": 0,
+   "unknownResolvedNothing": 31980,
+   "stuckInProgress": 0,
+   "tokenRefreshes": 2158,
+   "tokenRefreshFailures": 0,
+   "requests": 8891,
+   "charges": 186481,
+   "requestsPaid": 313,
+   "chargesPaid": 155659
+  }
+ },
+ "faultsFired": {
+  "money.before_commit:crash": 36
+ },
+ "restarts": {
+  "api-0": 9,
+  "api-1": 9,
+  "api-2": 9,
+  "api-3": 9,
+  "cron-0": 0,
+  "cron-1": 0
+ },
+ "thresholds": {
+  "T1": {
+   "worst": 299,
+   "budget": 750
+  },
+  "T2": {
+   "worst": 232,
+   "budget": 450
+  },
+  "T3": {
+   "worst": {
+    "POST money/charges/:id/pay": 473,
+    "POST transfers/requests/:id/accept": 260,
+    "POST transfers/:id/undo": 269
+   },
+   "budget": 1000
+  },
+  "T4_lastFullWindow": {
+   "send": 0.91,
+   "home": 1.32
+  },
+  "T5": {
+   "answered5xx": 0,
+   "requests": 1266386,
+   "pct": 0,
+   "lostWithWorker": 295,
+   "budgetPct": 0.1
+  },
+  "T6": {
+   "oracleDuringLoad": 0,
+   "oracleFinal": 0,
+   "audit": 0,
+   "stuck": 0
+  },
+  "T7": {
+   "at30": "2026-10-17T11:32:45.040Z",
+   "last": "2026-10-17T14:47:17.802Z",
+   "eligible": {},
+   "maxApiRssAnySample": 410,
+   "budget": 2,
+   "supplementaryCronSameProcess": {
+    "cron-0": 1.03,
+    "cron-1": 1.03
+   }
+  },
+  "pass": {
+   "T1": true,
+   "T2": true,
+   "T3": true,
+   "T4": true,
+   "T5": true,
+   "T6": true,
+   "T7": "not evaluable (every API worker restarted in between)"
+  }
+ },
+ "windows": [
+  {
+   "window": 0,
+   "fromSec": 0,
+   "send_p99": 299,
+   "home_p99": 176,
+   "chargePay_p99": 317,
+   "accept_p99": 260,
+   "undo_p99": 269
+  },
+  {
+   "window": 1,
+   "fromSec": 900,
+   "send_p99": 252,
+   "home_p99": 156,
+   "chargePay_p99": 300,
+   "accept_p99": 225,
+   "undo_p99": null
+  },
+  {
+   "window": 2,
+   "fromSec": 1800,
+   "send_p99": 272,
+   "home_p99": 169,
+   "chargePay_p99": 326,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 3,
+   "fromSec": 2700,
+   "send_p99": 277,
+   "home_p99": 175,
+   "chargePay_p99": 327,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 4,
+   "fromSec": 3600,
+   "send_p99": 290,
+   "home_p99": 185,
+   "chargePay_p99": 346,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 5,
+   "fromSec": 4500,
+   "send_p99": 275,
+   "home_p99": 174,
+   "chargePay_p99": 338,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 6,
+   "fromSec": 5400,
+   "send_p99": 268,
+   "home_p99": 172,
+   "chargePay_p99": 329,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 7,
+   "fromSec": 6300,
+   "send_p99": 273,
+   "home_p99": 176,
+   "chargePay_p99": 338,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 8,
+   "fromSec": 7200,
+   "send_p99": 280,
+   "home_p99": 185,
+   "chargePay_p99": 362,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 9,
+   "fromSec": 8100,
+   "send_p99": 263,
+   "home_p99": 178,
+   "chargePay_p99": 358,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 10,
+   "fromSec": 9000,
+   "send_p99": 270,
+   "home_p99": 196,
+   "chargePay_p99": 372,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 11,
+   "fromSec": 9900,
+   "send_p99": 256,
+   "home_p99": 200,
+   "chargePay_p99": 384,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 12,
+   "fromSec": 10800,
+   "send_p99": 242,
+   "home_p99": 195,
+   "chargePay_p99": 368,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 13,
+   "fromSec": 11700,
+   "send_p99": 256,
+   "home_p99": 211,
+   "chargePay_p99": 407,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 14,
+   "fromSec": 12600,
+   "send_p99": 259,
+   "home_p99": 211,
+   "chargePay_p99": 419,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 15,
+   "fromSec": 13500,
+   "send_p99": 272,
+   "home_p99": 232,
+   "chargePay_p99": 428,
+   "accept_p99": null,
+   "undo_p99": null
+  },
+  {
+   "window": 16,
+   "fromSec": 14400,
+   "send_p99": 274,
+   "home_p99": 228,
+   "chargePay_p99": 473,
+   "accept_p99": null,
+   "undo_p99": null
+  }
+ ],
+ "latency": {
+  "POST auth/verify": {
+   "n": 340,
+   "p50": 54,
+   "p95": 70,
+   "p99": 200,
+   "max": 286,
+   "statuses": {
+    "200": 340
+   }
+  },
+  "POST money/charges": {
+   "n": 186794,
+   "p50": 63,
+   "p95": 111,
+   "p99": 147,
+   "max": 2546,
+   "statuses": {
+    "201": 186481,
+    "401": 284,
+    "network": 29
+   }
+  },
+  "POST cron/:id": {
+   "n": 5622,
+   "p50": 33,
+   "p95": 187,
+   "p99": 236,
+   "max": 396,
+   "statuses": {
+    "200": 5622
+   }
+  },
+  "POST money/charges/:id/cancel": {
+   "n": 46599,
+   "p50": 74,
+   "p95": 222,
+   "p99": 282,
+   "max": 2526,
+   "statuses": {
+    "200": 30796,
+    "401": 2,
+    "409": 15789,
+    "network": 12
+   }
+  },
+  "POST transfers/send": {
+   "n": 383508,
+   "p50": 116,
+   "p95": 220,
+   "p99": 271,
+   "max": 2627,
+   "statuses": {
+    "201": 763,
+    "202": 146187,
+    "401": 824,
+    "403": 161940,
+    "409": 69299,
+    "429": 4412,
+    "network": 83
+   }
+  },
+  "POST money/charges/:id/pay": {
+   "n": 373867,
+   "p50": 180,
+   "p95": 299,
+   "p99": 367,
+   "max": 2584,
+   "statuses": {
+    "201": 155658,
+    "400": 145,
+    "401": 905,
+    "409": 213217,
+    "429": 3837,
+    "network": 105
+   }
+  },
+  "GET money/home": {
+   "n": 100647,
+   "p50": 91,
+   "p95": 150,
+   "p99": 192,
+   "max": 2613,
+   "statuses": {
+    "200": 100378,
+    "401": 244,
+    "network": 25
+   }
+  },
+  "POST transfers/request": {
+   "n": 148484,
+   "p50": 79,
+   "p95": 134,
+   "p99": 172,
+   "max": 2419,
+   "statuses": {
+    "201": 8891,
+    "401": 368,
+    "429": 139184,
+    "network": 41
+   }
+  },
+  "POST transfers/requests/:id/accept": {
+   "n": 15134,
+   "p50": 132,
+   "p95": 209,
+   "p99": 252,
+   "max": 495,
+   "statuses": {
+    "200": 313,
+    "202": 14060,
+    "400": 419,
+    "429": 342
+   }
+  },
+  "POST transfers/requests/:id/deny": {
+   "n": 2648,
+   "p50": 83,
+   "p95": 143,
+   "p99": 174,
+   "max": 211,
+   "statuses": {
+    "200": 2585,
+    "429": 63
+   }
+  },
+  "POST transfers/:id/undo": {
+   "n": 304,
+   "p50": 82,
+   "p95": 236,
+   "p99": 269,
+   "max": 327,
+   "statuses": {
+    "200": 127,
+    "400": 174,
+    "429": 3
+   }
+  },
+  "POST auth/refresh": {
+   "n": 2439,
+   "p50": 45,
+   "p95": 85,
+   "p99": 114,
+   "max": 182,
+   "statuses": {
+    "200": 2439
+   }
+  }
+ }
+}

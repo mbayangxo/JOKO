@@ -158,17 +158,21 @@ Each gate creates a new database, applies every migration, runs the whole suite 
 | Crons | unchanged (`daily`, `scheduled-payments`); `deploy_inert yes` |
 | Client matches schema | at start and end |
 
-Later commits only touch documentation.
+Later commits only touch documentation and add the lab scoring script `scripts/lab/score-soak.mjs` (not part of the app or the gate).
 
 ## 8. Remaining risks and gaps
 
-1. **Lab duration.** The plan's per-family "10 seeds × 30 min" was not reproduced literally. What ran: 10 seeds × 800 ops (≈ 1 min each) of the mixed scenario, plus the 4-hour soak (§11), plus the multi-instance suites.
+1. **Lab duration.** The plan's per-family "10 seeds × 30 min" was not reproduced literally. What ran: 10 seeds × 800 ops (≈ 1 min each) of the mixed scenario, plus the 4-hour soak (§11, attempt 5 CLEAN), plus the multi-instance suites.
 2. **L5 coverage.** Crash / restart with an outcome audit covers P2P, money requests, merchant charges and the kernel. Logistics, work, collective and agents ran multi-instance with latency faults (all their suites pass) but have no crash scenario with an outcome audit yet.
 3. **Chaos providers** (Julaya / Stripe / partner receivers with duplicate, reorder, forged and late callbacks) are not built yet. The rails are covered by the existing torture and J6 suites, not by the lab.
 4. **Clock skew per worker** is not implemented.
 5. **The legacy `resolveDispute` race on `7d262de`** (P0-B double payout) is closed there only because the patch refuses every caller on the user route; the function itself is still racy on that base. It must stay unreachable on `7d262de`.
 6. **Replay** reproduces the operation content and the fault schedule, not the interleaving; failing runs are turned into deterministic tests (as for FL-1 and FL-3).
 7. **Local measurements are not production capacity.** One machine; Postgres local; the pool sizes are not the Supabase pooler's.
+8. **Latency grows with data volume (soak, §11).** Within budget, but monotonic over 4 hours as tables grew to about 1 M requests' worth of rows: `GET money/home` p99 176 → 232 ms, `money/charges/:id/pay` p99 317 → 473 ms. FL-10 removed one linear scan; others may remain. Profile the hot money queries with production-sized data in J16.
+9. **The soak's send traffic is mostly held or refused.** Of 309 000 sends, 763 completed; 146 187 were held (202) and 161 940 refused (403) by the velocity / risk controls, so T1 measures mostly those paths. Money that moved went through 155 659 paid charges and 313 paid requests. A soak profile with realistic send volumes per user is a J16 item.
+10. **After-commit crashes did not fire during the soak.** Fault counters are per process and reset on restart; the before-commit crash (every 4 000 hits) always restarted the process before the after-commit point (every 5 000) was reached. Crashes right after COMMIT are covered by L2 seed 3003 (40 kills) and the 10-seed campaign, not by the soak.
+11. **T7 (memory) could not be judged as pre-registered**: every API worker was restarted by the crash schedule between minute 30 and the end. Supplementary evidence only: API RSS stayed within 326–410 MB across all samples; the cron processes (never restarted, same code) went 1.03× over 3 h 15 min. A dedicated no-crash memory soak is a J16 item.
 
 ## 9. Final security review
 
@@ -196,3 +200,51 @@ Later commits only touch documentation.
 - S4 approval requires the approver's step-up and the echoed `detailsHash`; the approver cannot be a recipient, and execution is exactly-once (F1 suite).
 - The retired `ADMIN_API_KEY` authorizes nothing.
 - No money route trusts a client-supplied amount (charges carry no amount; S4 hashes the details).
+
+## 10. Verdict
+
+**J15 is complete as a local engineering milestone.**
+
+- **Final fresh gate CLEAN** at `8716838`: 969 / 969, every invariant, load, sweep, browser, rehearsal and audit check 0, schema diff empty (§7).
+- **L0–L7 done.** L0 harness validated (6/6 seeded defect classes caught); L1 kernel storms CLEAN; L2–L5 crash / restart / multi-instance CLEAN after fixes, including a 10 / 10 CLEAN campaign and a CLEAN kernel crash storm; **L6 4-hour soak CLEAN** (§11) with T1–T6 met and T7 not judgeable as pre-registered (risk 11); L7 this report, the handoff and the roadmap.
+- **Ten lab findings (FL-1 … FL-10), every real one fixed** with a regression test, mutation-checked; four real defects were found only by the lab, not by the existing suites: FL-1 stuck keys (crash mix), FL-7 connection exhaustion (multi-instance), FL-8 key scope and FL-10 unindexed recovery lookup (both by the soak).
+- **Security review**: S-1 … S-4 fixed or documented (§9).
+- **Production track** (P0-A verification, P0-B, F1, web slow boot; F4 latent) is **not** part of this verdict and remains open: see `JOKKO-J15-HANDOFF.md` §8. **Nothing was deployed.**
+
+Open items carried to J16 are the risks in §8; none is a known money-correctness defect.
+
+## 11. L6 soak (4 hours)
+
+**Valid run: attempt 5, seed 9005, commit `8716838`, 2026-10-17 11:01–15:02 UTC load, 15:09 verdict.** Postgres up for the whole run (no restart). Summary with every window: `docs/lab-results/soak-9005-summary.json`.
+
+| Item | Result |
+|---|---|
+| Profile | `mixed`, 4 API + 2 cron processes, concurrency 8, 300 users, 40 merchants, `faults/soak.json` |
+| Load | 240 min, 744 860 operations, 959 583 requests |
+| Faults | 36 kill -9 before COMMIT; each API worker restarted 9 times by the supervisor; cron workers never restarted |
+| Oracle | 893 snapshot runs (max 3.6 s), **0 findings during load, 0 at the end** |
+| Outcome audit | **0 findings**. 301 873 client keys: 763 completed, 144 799 held, 124 331 refused; 31 980 uncertain outcomes all resolved to "nothing moved", 0 to a wrong answer; **0 stuck keys**. 155 659 charges and 313 money requests paid exactly once, status = ledger. 2 158 token refreshes, 0 failures |
+| **Verdict** | **CLEAN** |
+
+**Thresholds (pre-registered in `JOKKO-J15-LAB.md`; local budgets, not production SLOs):**
+
+| # | Budget | Measured (worst 15-min window) | Result |
+|---|---|---|---|
+| T1 | send p99 ≤ 750 ms | 299 ms | PASS |
+| T2 | home p99 ≤ 450 ms | 232 ms | PASS |
+| T3 | other money writes p99 ≤ 1 000 ms | charge pay 473, accept 260, undo 269 ms | PASS |
+| T4 | last / first full window ≤ 1.5× | send 0.91×, home 1.32× | PASS (home close to the budget; risk 8) |
+| T5 | answered 5xx ≤ 0.1 % | 0 of 1 266 386 (295 requests lost with a killed worker, all resolved by the audit) | PASS |
+| T6 | 0 oracle / audit findings, 0 stuck keys | 0 / 0 / 0 | PASS |
+| T7 | API RSS end ≤ 2× the 30-min value, same process | not judgeable: every API worker restarted in between (risk 11). Supplementary: API 326–410 MB all run; cron 1.03× | NOT EVALUABLE |
+
+**Earlier attempts (all kept):**
+
+| Attempt | Seed / commit | Outcome |
+|---|---|---|
+| 1 | 9001 | Invalid: the lab driver did not refresh tokens (401 from minute 30); 4 merchants tripped the abuse guard. Driver fixed (`f94a805`) |
+| 2 | 9002 | VOID: environment outage at 2 h 48 min. Evidence: after abrupt kill and Postgres crash recovery the oracle was clean and 3 abandoned keys were released by the sweep |
+| 3 | 9003 / `6a2776b` | Stopped by the oracle at 2 h 22 min: **FL-8** (key scope), fixed in `89dd253` |
+| 4 | 9004 / `b69c6fc` | 4 h of load with no oracle finding, but the end-of-run audit could not finish: **FL-10**, fixed in `8716838`. Checked afterwards on its database: final oracle clean, 0 stuck keys, 193 841 charges paid at most once, status = ledger |
+| **5** | **9005 / `8716838`** | **CLEAN** (above) |
+

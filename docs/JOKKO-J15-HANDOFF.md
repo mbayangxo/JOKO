@@ -8,7 +8,7 @@
 |---|---|
 | Repository | `mbayangxo/JOKO` |
 | Branch | `claude/jokko-forensic-audit-rprqia` |
-| Final commit | see §14 (the last commit touching this file, plus the gate commit) |
+| Final commit | the branch head (after the gated code commit `8716838`: documentation and a lab scoring script only); see §14 |
 | Production | `b0318b5` = `7d262de` + the P0-A containment (deployed 2026-10-10; **runtime verification incomplete**), **not** this branch. Open incidents in §8 |
 | Agent instructions | `AGENTS.md` / `CLAUDE.md` (read the K21 docs listed there before touching money) |
 
@@ -129,11 +129,19 @@ Production runs **`b0318b5`** (`7d262de` + the P0-A containment). Packages and p
 
 ## 9. Open defects and risks (this branch)
 
-See `docs/JOKKO-J15-REPORT.md` §8 for the complete list. None is a known money-correctness defect.
+See `docs/JOKKO-J15-REPORT.md` §8 for the complete list (11 items). **None is a known money-correctness defect.** The open engineering items with severity:
+
+| # | Item | Severity | Reproduction |
+|---|---|---|---|
+| R-8 | Money-route latency grows with table size (within budget over 4 h) | Low–Medium (performance) | `docs/lab-results/soak-9005-summary.json`, `windows` |
+| R-9 | Soak send traffic is mostly held / refused, so send latency under completion load is not measured at soak scale | Low (coverage) | same file, `latency["POST transfers/send"].statuses` |
+| R-10 | After-commit crashes not exercised inside the soak | Low (coverage; covered by L2 seed 3003 and the campaign) | `faultsFired` in the same file |
+| R-11 | T7 memory threshold not judgeable under crash faults | Low (coverage) | `restarts` in the same file |
+| R-2 / R-3 | No crash + outcome-audit scenario for logistics, work, collective, agents; no chaos providers | Medium (coverage) | — |
 
 ## 10. Security review (J15 final)
 
-Findings S-1 to S-3, scope and results: `docs/JOKKO-J15-REPORT.md` §9.
+Findings S-1 to S-4, scope and results: `docs/JOKKO-J15-REPORT.md` §9.
 
 ## 11. Recommended J16 priorities
 
@@ -145,6 +153,10 @@ Findings S-1 to S-3, scope and results: `docs/JOKKO-J15-REPORT.md` §9.
 2. **Staging that models production:** Vercel instance count, the Supabase pooler and `connection_limit`. Re-measure the J15 latency budgets there and set real SLOs. OI-1 showed that connection exhaustion is the first failure mode under multi-instance load.
 3. **Chaos providers** for the rails: Julaya / Stripe / partner receivers with duplicates, reordering, forged and late callbacks, amount mismatches. Live Julaya sandbox round-trip.
 4. **Lab coverage:** crash scenarios with outcome audits for logistics, work, collective and agents (today: P2P, requests, merchant charges, kernel); per-worker clock skew.
+   - a soak with realistic per-user send volumes (in the J15 soak most sends were held or refused by the velocity controls);
+   - a no-crash memory soak (T7 could not be judged under the crash schedule);
+   - after-commit crashes inside the soak (the per-process counters never reached them).
+   - **query performance with production-sized data:** latency grew over the 4-hour soak (home p99 176 → 232 ms, charge pay 317 → 473 ms) while staying in budget. FL-10 removed one full-journal scan; profile the hot money queries for others.
 5. **Policy decisions still open:** S4 production limits, the L6 production SLOs, the J9 / J11 money approvals and the P-J9 / P-J11 decision reviews.
 6. **Observability:** Sentry, uptime and the morning checklist (`docs/K21-QUALITY-CONTROL.md`), with an alert for every lab failure mode (stuck intents, `db_unavailable` rate, reconciliation exceptions).
 
@@ -169,4 +181,17 @@ Unknown outcomes are never shown as failed or as succeeded until the server answ
 
 ## 14. Final verification
 
-_Filled in at the end of J15._
+| Item | Value |
+|---|---|
+| Branch | `claude/jokko-forensic-audit-rprqia` |
+| Gated code commit | **`8716838`** — every later commit changes only documentation (this file, the report, the roadmap, the lab notes, `docs/lab-results/`) and adds the lab scoring script `scripts/lab/score-soak.mjs` (not used by the app or the gate) |
+| Final commit | the branch head; it is stated in the final J15 summary and is identical on the remote |
+| Final fresh full gate | **CLEAN at `8716838`**, 2026-10-17: **969 / 969** tests; money, logistics, work and collective invariants after the suite and after everything 0; load 0; sweeps 0; web build 0; browser E2E J8–J15 0; weak-network lab 0; migration rehearsal 0 (includes migration `20261031000000`); schema diff empty; `npm audit` critical 0; crons unchanged; deploy-inert yes; Postgres did not restart (run valid) |
+| Gate history | 5 gates; 2 not clean, both root-caused and fixed (FL-6, FL-9). `docs/JOKKO-J15-REPORT.md` §7 |
+| Four-hour soak | **CLEAN**: attempt 5, seed 9005, commit `8716838`; 240 min, 744 860 operations, 959 583 requests, 36 crashes; oracle 0 findings during load and at the end; outcome audit 0 findings; 0 stuck keys. **T1–T6 PASS; T7 not evaluable** as pre-registered. Attempts 1–4 and why they did not count: report §11 |
+| Lab findings | FL-1 … FL-10; every real defect fixed with a mutation-checked regression test (report §2) |
+| Security review | S-1 … S-4 (report §9) |
+| Production | **Nothing deployed** from this branch; no production migration; no live money; Kebu not accessed. Production stays on `b0318b5` with the open incidents in §8 |
+| Unresolved | Production track (§8) and the engineering risks in §9; none is a known money-correctness defect on this branch |
+
+**Verdict: J15 is complete as a local engineering milestone. The repository is a stable, documented baseline for the next developer.**

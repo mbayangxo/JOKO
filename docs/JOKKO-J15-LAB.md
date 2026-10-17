@@ -26,6 +26,9 @@ node scripts/lab/run.mjs --replay lab-runs/crash-2002
 node scripts/lab/kernel-storm.mjs --procs 4 --per 250 --fund 200000 --seed 7 --faults scripts/lab/faults/kernel-errors.json
 LAB_HARNESS_WORKERS=4 LAB_HARNESS_FAULT_FILE=$PWD/scripts/lab/faults/latency-widen.json npm test
 bash docs/incidents/lab-p0/run-p0-lab.sh <legacy-worktree> <patched-worktree> <out-dir>
+# L6 soak (4 h; allow ~1 h after load for quiesce + final oracle + audit), then score it against T1–T7
+node scripts/lab/run.mjs --scenario mixed --seed 9005 --durationMs 14400000 --concurrency 8 --users 300 --merchants 40 --faults scripts/lab/faults/soak.json --oracleMs 15000 --cronMs 5000 --windowSec 900 --out lab-runs/soak-9005
+node scripts/lab/score-soak.mjs lab-runs/soak-9005
 ```
 
 Fault schedules: `scripts/lab/faults/*.json`. A failing run is reproducible from its `manifest.json`: seed, sizes, fault schedule and commit. **The content of every operation and the fault schedule replay exactly. The interleaving of concurrent operations does not**, so neither does which request a per-process fault lands on. Turn a failing run into a deterministic test, as was done for `tests/j15/stale-intent.test.js`.
@@ -54,3 +57,6 @@ Fault schedules: `scripts/lab/faults/*.json`. A failing run is reproducible from
 | T5 | Answered 5xx (not lost-with-worker) | ≤ 0.1 % of requests |
 | T6 | Oracle findings (during load and final), outcome-audit findings, stuck keys | 0 |
 | T7 | API worker memory: RSS at the end vs at 30 min (same process, no restart in between) | ≤ 2 × |
+
+**Notes from the valid run (thresholds unchanged):** the window after the 4-hour mark only holds the in-flight tail, so T4 compares the last *full* window. T7 cannot be judged under `faults/soak.json`: the crash schedule restarts every API worker more often than every 30 minutes; judging memory needs a no-crash soak. Results: `docs/JOKKO-J15-REPORT.md` §11.
+
