@@ -342,3 +342,7 @@ DROP TRIGGER IF EXISTS j2_external_op_ledger ON "JournalEntry";
 CREATE CONSTRAINT TRIGGER j2_external_op_ledger AFTER INSERT ON "JournalEntry"
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION j2_external_op_ledger();
+
+-- J15: client-key lookups (intent outcome, void, crash recovery) use this partial expression index. Mirrors
+-- migration 20261031000000_j15_journal_client_key_index for databases built with `db push`.
+CREATE INDEX IF NOT EXISTS "JournalEntry_clientKey_idx" ON "JournalEntry" ((metadata->>'clientKey')) WHERE metadata ? 'clientKey';

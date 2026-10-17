@@ -106,7 +106,7 @@ export async function audit(ctx, records) {
   const keys = [...byKey.keys()];
   const entries = keys.length
     ? await prisma.$queryRawUnsafe(
-      `SELECT metadata->>'clientKey' AS key, kind, reference FROM "JournalEntry" WHERE metadata->>'clientKey' = ANY($1::text[])`, keys)
+      `SELECT metadata->>'clientKey' AS key, kind, reference FROM "JournalEntry" WHERE metadata ? 'clientKey' AND metadata->>'clientKey' = ANY($1::text[])`, keys)
     : [];
   const entriesByKey = new Map();
   for (const e of entries) entriesByKey.set(e.key, [...(entriesByKey.get(e.key) ?? []), e]);

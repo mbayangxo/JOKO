@@ -117,6 +117,10 @@ export async function runLab(opts) {
     });
     await Promise.all(lanes);
     const loadDone = Date.now();
+    const phase = (name) => console.error(`[lab] ${new Date().toISOString()} ${name}`);
+    // Client observations first: a post-load phase that dies still leaves what the audit needs.
+    fs.writeFileSync(path.join(runDir, 'records.jsonl'), records.map((r) => JSON.stringify(r)).join('\n'));
+    phase(`load done, ${records.length} records written; quiesce`);
     // Quiesce: disarm faults, let every worker come back, run the reconciliation jobs, then judge.
     fs.writeFileSync(faultFile, JSON.stringify({ faults: [] }));
     await Promise.all([...cluster.api, ...cluster.cron].map((w) => w.url()));
@@ -125,9 +129,12 @@ export async function runLab(opts) {
     for (let k = 0; k < manifest.cron * 2; k += 1) for (const name of scenario.crons ?? []) await cluster.runCron(k, name);
     stop = true;
     await Promise.all([oracleLoop, cronLoop]);
+    phase('final oracle');
     const final = await runOracle(prisma, { since: ctx.startedAt });
     const finalFresh = final.findings.filter((f) => !preexisting.has(sig(f)));
+    phase('outcome audit');
     const audit = await scenario.audit(ctx, records);
+    phase('audit done');
     const firedByPoint = {};
     for (const f of cluster.faultLog()) firedByPoint[`${f.point}:${f.action}`] = (firedByPoint[`${f.point}:${f.action}`] ?? 0) + 1;
     const results = {
@@ -144,7 +151,6 @@ export async function runLab(opts) {
       latency: cluster.latencyReport(),
       latencyWindows: cluster.windowReport(manifest.windowSec),
     };
-    fs.writeFileSync(path.join(runDir, 'records.jsonl'), records.map((r) => JSON.stringify(r)).join('\n'));
     fs.writeFileSync(path.join(runDir, 'results.json'), JSON.stringify(results, null, 2));
     fs.writeFileSync(path.join(runDir, 'worker-events.json'), JSON.stringify(cluster.events, null, 2));
     return { runDir, results };

@@ -102,8 +102,14 @@ export async function audit(ctx, records) {
   }
   if (ctx.charges.length) {
     const rows = await prisma.merchantCharge.findMany({ where: { code: { in: ctx.charges } }, select: { code: true, status: true } });
+    // One grouped read instead of one journal scan per charge (a 4-hour soak has ~260 000 charges: the per-charge
+    // count could not finish). Same rule as before: entries whose reference starts with `charge:<code>`.
+    const refs = await prisma.$queryRaw`SELECT reference, COUNT(*)::int AS n FROM "JournalEntry" WHERE kind = 'charge_payment' AND reference LIKE 'charge:%' GROUP BY reference`;
+    const lens = new Set(rows.map((r) => r.code.length));
+    const byCode = new Map();
+    for (const { reference, n } of refs) for (const len of lens) { const code = reference.slice(7, 7 + len); byCode.set(code, (byCode.get(code) ?? 0) + n); }
     for (const r of rows) {
-      const c = await prisma.journalEntry.count({ where: { kind: 'charge_payment', reference: { startsWith: `charge:${r.code}` } } });
+      const c = byCode.get(r.code) ?? 0;
       if (c > 1) findings.push({ check: 'exactly_once', id: 'charge_paid_twice', charge: r.code, n: c });
       if (r.status === 'paid' && c !== 1) findings.push({ check: 'settlement', id: 'charge_paid_without_entry', charge: r.code });
       if (r.status !== 'paid' && c > 0) findings.push({ check: 'settlement', id: 'charge_entry_but_not_paid', charge: r.code, status: r.status });
