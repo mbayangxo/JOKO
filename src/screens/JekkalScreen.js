@@ -3,6 +3,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import GlowButton from '../components/GlowButton';
 import PressScale from '../components/PressScale';
+import LoadErrorState from '../components/LoadErrorState';
 import ScreenBackground from '../components/ScreenBackground';
 import ScreenHeader from '../components/ScreenHeader';
 import ConfettiBurst from '../components/ConfettiBurst';
@@ -39,6 +40,7 @@ export default function JekkalScreen({ navigation }) {
   const showToast = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState('');
   const [story, setStory] = useState('');
@@ -49,8 +51,10 @@ export default function JekkalScreen({ navigation }) {
     try {
       const list = await getJekkalCampaigns();
       setItems(Array.isArray(list) ? list : []);
+      setLoadFailed(false);
     } catch {
       setItems([]);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -92,15 +96,16 @@ export default function JekkalScreen({ navigation }) {
 
           <View style={styles.form}>
             <Text style={styles.lbl}>Nouvelle collecte</Text>
-            <TextInput value={title} onChangeText={setTitle} placeholder="Ex: Frais médicaux pour Awa" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
-            <TextInput value={story} onChangeText={setStory} placeholder="Pourquoi ? (optionnel)" style={[styles.input, styles.inputMulti]} multiline placeholderTextColor="rgba(5,8,5,0.35)" />
-            <TextInput value={goal} onChangeText={setGoal} placeholder="Objectif (C̶)" keyboardType="number-pad" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
+            <TextInput accessibilityLabel="Ex: Frais médicaux pour Awa" value={title} onChangeText={setTitle} placeholder="Ex: Frais médicaux pour Awa" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
+            <TextInput accessibilityLabel="Pourquoi ? (optionnel)" value={story} onChangeText={setStory} placeholder="Pourquoi ? (optionnel)" style={[styles.input, styles.inputMulti]} multiline placeholderTextColor="rgba(5,8,5,0.35)" />
+            <TextInput accessibilityLabel="Objectif (C̶)" value={goal} onChangeText={setGoal} placeholder="Objectif (C̶)" keyboardType="number-pad" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
             <GlowButton label={creating ? 'Création…' : 'Lancer la collecte'} onPress={submit} disabled={creating} tone="orange" />
           </View>
 
           <Text style={styles.sectionLbl}>Collectes actives</Text>
           {loading ? <ActivityIndicator color={colors.green} /> : null}
-          {!loading && items.length === 0 ? <Text style={styles.empty}>Aucune collecte pour l'instant.</Text> : null}
+          {!loading && loadFailed ? <LoadErrorState what="les collectes" onRetry={load} /> : null}
+          {!loading && !loadFailed && items.length === 0 ? <Text style={styles.empty}>Aucune collecte pour l'instant.</Text> : null}
           {items.map((item) => (
             <CampaignCard key={item.id} item={item} onPress={(c) => navigation.navigate('JekkalDetail', { campaignId: c.id })} />
           ))}

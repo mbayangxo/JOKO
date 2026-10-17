@@ -38,11 +38,6 @@ export function AppStateProvider({ children }) {
     setProfileState((prev) => ({ ...prev, ...partial }));
   }, []);
 
-  const addTransaction = useCallback(({ icon, iconBg, title, subtitle, amount }) => {
-    setBalance((prev) => prev + amount);
-    setTransactions((prev) => [{ key: `tx-${Date.now()}`, icon, iconBg, title, subtitle, amount }, ...prev]);
-  }, []);
-
   const hydrateFromApi = useCallback(({ profile: p, balance: b, transactions: txs }) => {
     setProfileState({
       accountType: p.accountType ?? 'personal',
@@ -132,7 +127,6 @@ export function AppStateProvider({ children }) {
       transactions,
       authenticated,
       walletRefreshError,
-      addTransaction,
       initAccount,
       initBusinessAccount,
       hydrateFromApi,
@@ -148,7 +142,6 @@ export function AppStateProvider({ children }) {
       transactions,
       authenticated,
       walletRefreshError,
-      addTransaction,
       initAccount,
       initBusinessAccount,
       hydrateFromApi,

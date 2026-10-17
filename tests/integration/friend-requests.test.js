@@ -61,7 +61,7 @@ test('friend requests: send → accept flow replaces instant add', async () => {
   assert.equal(await prisma.userFriend.count({ where: { userId: ibou.id, friendId: awa.id } }), 1);
 });
 
-test('friend requests: decline, re-request, and mutual request auto-accepts', async () => {
+test('friend requests: decline sticks (no silent re-open spam), mutual request auto-accepts', async () => {
   const a = await createUserWithWallet({ name: 'Fatou' });
   const b = await createUserWithWallet({ name: 'Moussa' });
 
@@ -75,13 +75,19 @@ test('friend requests: decline, re-request, and mutual request auto-accepts', as
   assert.equal(declined.body.declined, true);
   assert.equal(await prisma.userFriend.count({ where: { userId: a.id, friendId: b.id } }), 0);
 
-  // Re-sending after a decline re-opens the same request row.
+  // Re-sending after a decline does NOT re-open it (no repeated requests for
+  // 30 days). The sender sees the same answer as a normal send.
+  const notesBefore = await prisma.notification.count({ where: { userId: b.id } });
   const resent = await call(friendsHandler, { userId: a.id, body: { handle: b.handle } });
   assert.equal(resent.body.requested, true);
-  assert.equal(await prisma.friendRequest.count({ where: { fromId: a.id, toId: b.id } }), 1);
+  assert.equal(resent.body.silent, undefined, 'silent flag never leaves the server');
+  const row = await prisma.friendRequest.findUnique({ where: { fromId_toId: { fromId: a.id, toId: b.id } } });
+  assert.equal(row.status, 'declined');
+  assert.equal(await prisma.notification.count({ where: { userId: b.id } }), notesBefore, 'B is not pinged again');
 
-  // B "adds" A back while A's request is pending → counts as accepting.
-  const mutual = await call(friendsHandler, { userId: b.id, body: { handle: a.handle } });
+  // B changes their mind and asks A; A "adding" B back counts as accepting.
+  await call(friendsHandler, { userId: b.id, body: { handle: a.handle } });
+  const mutual = await call(friendsHandler, { userId: a.id, body: { handle: b.handle } });
   assert.equal(mutual.body.autoAccepted, true);
   assert.equal(await prisma.userFriend.count({ where: { userId: b.id, friendId: a.id } }), 1);
 });

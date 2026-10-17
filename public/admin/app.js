@@ -410,6 +410,144 @@ async function loadAuditTab() {
   );
 }
 
+/* ── J9 Work & Opportunity ───────────────────────────────────────────────── */
+// Everything below renders user-entered text: always escaped.
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+function bindWork(rootId, attr, fn) {
+  $(rootId).querySelectorAll(`[${attr}]`).forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await fn(btn.getAttribute(attr), btn);
+        await loadWorkTab();
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+  });
+}
+
+async function loadWorkTab() {
+  const [review, disputes, feedback, approvals] = await Promise.all([
+    api('/work/review').catch(() => ({ opportunities: [], qualifications: [] })),
+    api('/work/disputes?status=open').catch(() => []),
+    api('/work/feedback').catch(() => []),
+    api('/approvals').catch(() => ({ items: [] })),
+  ]);
+  $('work-review-opps').innerHTML = tableHtml(['Posting', 'Flags', 'Created', 'Decision'], review.opportunities ?? [], (o) => `<tr>
+    <td><strong>${esc(o.title)}</strong><br><small>${esc(o.description).slice(0, 240)}</small></td>
+    <td>${(o.flags ?? []).map(esc).join(', ')}</td>
+    <td>${fmtDate(o.createdAt)}</td>
+    <td><button type="button" class="link-btn" data-work-opp-approve="${esc(o.id)}">Approve</button>
+        <button type="button" class="link-btn danger" data-work-opp-reject="${esc(o.id)}">Reject</button></td></tr>`);
+  $('work-review-quals').innerHTML = tableHtml(['Qualification', 'Evidence', 'Decision'], review.qualifications ?? [], (q) => `<tr>
+    <td>${esc(q.kind)} · <strong>${esc(q.title)}</strong><br><small>${esc(q.issuer)}</small></td>
+    <td><small>${esc(q.evidenceRef)}</small></td>
+    <td><button type="button" class="link-btn" data-work-qual-verify="${esc(q.id)}">Verified</button>
+        <button type="button" class="link-btn danger" data-work-qual-reject="${esc(q.id)}">Reject</button></td></tr>`);
+  $('work-disputes').innerHTML = tableHtml(['Dispute', 'At stake', 'Evidence (roles only)', 'Ruling'], Array.isArray(disputes) ? disputes : [], (d) => `<tr>
+    <td>${esc(d.kind)} · opened by ${esc(d.openedByRole)}<br><small>${esc(d.assignment?.reference)} · ${esc(d.assignment?.arrangement)} · ${fmtDate(d.createdAt)}</small></td>
+    <td>${d.milestone ? `${esc(d.milestone.amountKori)} ₭ (${esc(d.milestone.status)})` : 'no money (finding only)'}</td>
+    <td>${(d.evidence ?? []).map((e) => `<div><small><b>${esc(e.role)}</b>: ${esc(e.content)}</small></div>`).join('')}</td>
+    <td><button type="button" class="link-btn" data-work-rule="${esc(d.id)}">Rule…</button></td></tr>`);
+  const pending = (approvals.items ?? approvals.approvals ?? []).filter((a) => a.action === 'work_dispute_settle' && a.status === 'requested');
+  $('work-settlements').innerHTML = tableHtml(['Approval', 'Requested', 'Execute'], pending, (a) => `<tr>
+    <td>${esc(a.caseRef)}<br><small>${esc(a.reason)}</small></td><td>${fmtDate(a.createdAt)}</td>
+    <td><button type="button" class="link-btn" data-work-settle="${esc(a.id)}">Approve &amp; execute</button></td></tr>`);
+  $('work-feedback').innerHTML = tableHtml(['Feedback', 'Contest', 'Ruling'], Array.isArray(feedback) ? feedback : [], (f) => `<tr>
+    <td>${esc(f.rating)}/5 from ${esc(f.fromRole)}<br><small>${esc(f.comment)}</small></td>
+    <td><small>${esc(f.contestNote)}</small></td>
+    <td><button type="button" class="link-btn" data-work-fb-uphold="${esc(f.id)}">Uphold</button>
+        <button type="button" class="link-btn danger" data-work-fb-remove="${esc(f.id)}">Remove</button></td></tr>`);
+
+  const note = (q) => {
+    const n = prompt(q);
+    if (!n) throw new Error('A reason is required');
+    return n;
+  };
+  bindWork('work-review-opps', 'data-work-opp-approve', (id) => api(`/work/opportunities/${encodeURIComponent(id)}/review`, { method: 'POST', body: { decision: 'approve', note: note('Reason for approving?') } }));
+  bindWork('work-review-opps', 'data-work-opp-reject', (id) => api(`/work/opportunities/${encodeURIComponent(id)}/review`, { method: 'POST', body: { decision: 'reject', note: note('Reason for rejecting?') } }));
+  bindWork('work-review-quals', 'data-work-qual-verify', (id) => api(`/work/qualifications/${encodeURIComponent(id)}/review`, { method: 'POST', body: { decision: 'verified', note: prompt('Note (optional)') || undefined } }));
+  bindWork('work-review-quals', 'data-work-qual-reject', (id) => api(`/work/qualifications/${encodeURIComponent(id)}/review`, { method: 'POST', body: { decision: 'rejected', note: prompt('Note (optional)') || undefined } }));
+  bindWork('work-disputes', 'data-work-rule', async (id) => {
+    const outcome = prompt('Outcome: worker | business | split | finding_only');
+    if (!outcome) return;
+    const body = { outcome: outcome.trim(), note: note('Reason (10+ characters, recorded in the audit trail)') };
+    if (body.outcome === 'split') body.splitWorkerKori = Number(prompt('Worker share in ₭ (integer)'));
+    const r = await api(`/work/disputes/${encodeURIComponent(id)}/resolve`, { method: 'POST', body });
+    alert(r.approval ? 'Ruling recorded — a second (finance) operator must execute the settlement.' : 'Ruling recorded.');
+  });
+  bindWork('work-settlements', 'data-work-settle', (id) => api(`/approvals/${encodeURIComponent(id)}/approve`, { method: 'POST', body: {} }));
+  bindWork('work-feedback', 'data-work-fb-uphold', (id) => api(`/work/feedback/${encodeURIComponent(id)}/rule`, { method: 'POST', body: { decision: 'upheld', note: note('Reason (10+ characters)') } }));
+  bindWork('work-feedback', 'data-work-fb-remove', (id) => api(`/work/feedback/${encodeURIComponent(id)}/rule`, { method: 'POST', body: { decision: 'removed', note: note('Reason (10+ characters)') } }));
+}
+
+async function loadCommunityTab() {
+  const [q, ap] = await Promise.all([
+    api('/moderation/reports').catch(() => ({ reports: [] })),
+    api('/moderation/appeals').catch(() => ({ appeals: [] })),
+  ]);
+  const more = q.total > (q.shown ?? 0) ? `<p class="hint">Showing ${esc(q.shown)} of ${esc(q.total)} open reports, most severe first (scam / violence / sexual, then harassment / hate / impersonation, then other, spam last).</p>` : '';
+  $('community-reports').innerHTML = more + tableHtml(['Report', 'Evidence (snapshot)', 'Context', 'Decision'], q.reports ?? [], (r) => `<tr>
+    <td>${esc(r.category)}<br><small>${esc(r.reason)} · ${fmtDate(r.createdAt)}</small></td>
+    <td><small>${r.evidence ? esc(r.evidence.body) : '—'}</small></td>
+    <td><small>${esc(r.reportsAgainstTarget30d)} report(s) in 30 d · ${esc(r.priorActions)} prior action(s)</small></td>
+    <td><button type="button" class="link-btn" data-mod-decide="${esc(r.id)}">Decide…</button></td></tr>`);
+  $('community-appeals').innerHTML = tableHtml(['Action', 'Appeal', 'Decision'], ap.appeals ?? [], (a) => `<tr>
+    <td>${esc(a.kind)}${a.until ? ` until ${fmtDate(a.until)}` : ''}<br><small>${esc(a.note)}</small></td>
+    <td><small>${esc(a.appealNote)}</small></td>
+    <td><button type="button" class="link-btn" data-mod-lift="${esc(a.id)}">Lift</button>
+        <button type="button" class="link-btn danger" data-mod-uphold="${esc(a.id)}">Uphold</button></td></tr>`);
+  const bind = (container, attr, fn) => document.querySelectorAll(`#${container} [${attr}]`).forEach((btn) => btn.addEventListener('click', async () => {
+    try { await fn(btn.getAttribute(attr)); await loadCommunityTab(); } catch (error) { alert(error.message); }
+  }));
+  const reason = (q2) => { const n = prompt(q2); if (!n) throw new Error('A reason is required'); return n; };
+  bind('community-reports', 'data-mod-decide', async (id) => {
+    const outcome = prompt('Outcome: no_violation | warn | restrict_messaging');
+    if (!outcome) return;
+    const body = { outcome: outcome.trim(), note: reason('Reason (10+ characters, recorded in the audit trail)') };
+    if (body.outcome === 'restrict_messaging') body.days = Number(prompt('Days (1–30)'));
+    await api(`/moderation/reports/${encodeURIComponent(id)}/resolve`, { method: 'POST', body });
+  });
+  bind('community-appeals', 'data-mod-lift', (id) => api(`/moderation/actions/${encodeURIComponent(id)}/appeal/resolve`, { method: 'POST', body: { outcome: 'lifted', note: reason('Reason (10+ characters)') } }));
+  bind('community-appeals', 'data-mod-uphold', (id) => api(`/moderation/actions/${encodeURIComponent(id)}/appeal/resolve`, { method: 'POST', body: { outcome: 'upheld', note: reason('Reason (10+ characters)') } }));
+}
+
+async function loadCollectiveTab() {
+  const [d, g, ap] = await Promise.all([
+    api('/collective/disputes').catch(() => ({ disputes: [] })),
+    api('/collective/groups').catch(() => ({ groups: [] })),
+    api('/approvals').catch(() => ({ approvals: [] })),
+  ]);
+  const MONEY = ['collective_dispute_settle', 'collective_termination_settle', 'protected_release', 'protected_cancel'];
+  const pending = (ap.approvals ?? []).filter((a) => MONEY.includes(a.action) && a.status === 'requested');
+  $('collective-disputes').innerHTML = tableHtml(['Dispute', 'Group / cycle', 'Ruling'], d.disputes ?? [], (x) => `<tr>
+    <td><small>${esc(x.reason)} · ${fmtDate(x.createdAt)}</small></td>
+    <td><small>${esc(x.groupId)} · cycle ${esc(x.cycle)}</small></td>
+    <td><button type="button" class="link-btn" data-col-rule="${esc(x.id)}">Rule…</button></td></tr>`);
+  $('collective-approvals').innerHTML = tableHtml(['Action', 'Case', 'Requested', 'Execute'], pending, (a) => `<tr>
+    <td>${esc(a.action)}</td><td><small>${esc(a.caseRef ?? '')} · ${esc(a.reason ?? '')}</small></td><td><small>${fmtDate(a.createdAt)}</small></td>
+    <td><button type="button" class="link-btn" data-col-approve="${esc(a.id)}">Approve &amp; execute</button></td></tr>`);
+  $('collective-groups').innerHTML = tableHtml(['Group', 'Kind / status', 'Cycle', 'Members', 'Freeze'], g.groups ?? [], (x) => `<tr>
+    <td><small>${esc(x.id)}</small></td><td>${esc(x.kind)} · ${esc(x.status)}${x.frozen ? ' · <b>FROZEN</b>' : ''}</td>
+    <td>${esc(x.currentCycle)} / ${esc(x.cycleCount ?? '—')}</td><td>${esc(x.members)}</td>
+    <td>${x.frozen ? `<button type="button" class="link-btn" data-col-unfreeze="${esc(x.id)}">Unfreeze</button>` : `<button type="button" class="link-btn danger" data-col-freeze="${esc(x.id)}">Freeze</button>`}${x.status === 'settlement_pending' ? ` <button type="button" class="link-btn" data-col-settle="${esc(x.id)}">Request settlement…</button>` : ''}</td></tr>`);
+  const bind = (container, attr, fn) => document.querySelectorAll(`#${container} [${attr}]`).forEach((btn) => btn.addEventListener('click', async () => {
+    try { await fn(btn.getAttribute(attr)); await loadCollectiveTab(); } catch (error) { alert(error.message); }
+  }));
+  const reason = (q2) => { const n = prompt(q2); if (!n) throw new Error('A reason is required'); return n; };
+  bind('collective-disputes', 'data-col-rule', async (id) => {
+    const outcome = prompt('Ruling: continue | release_collected | skip_recipient');
+    if (!outcome) return;
+    await api(`/collective/disputes/${encodeURIComponent(id)}/rule`, { method: 'POST', body: { outcome: outcome.trim(), note: reason('Reason (10+ characters, recorded in the audit trail)') } });
+  });
+  bind('collective-approvals', 'data-col-approve', (id) => api(`/approvals/${encodeURIComponent(id)}/approve`, { method: 'POST', body: {} }));
+  bind('collective-groups', 'data-col-settle', (id) => api(`/collective/groups/${encodeURIComponent(id)}/settle`, { method: 'POST', body: { reason: reason('Settlement reason (10+ characters)') } }));
+  bind('collective-groups', 'data-col-freeze', (id) => api(`/collective/groups/${encodeURIComponent(id)}/freeze`, { method: 'POST', body: { reason: reason('Why freeze (10+ characters)') } }));
+  bind('collective-groups', 'data-col-unfreeze', (id) => api(`/collective/groups/${encodeURIComponent(id)}/unfreeze`, { method: 'POST', body: { reason: reason('Why unfreeze (10+ characters)') } }));
+}
+
 async function loadDashboard() {
   const data = await api('/dashboard');
   renderDashboard(data);
@@ -428,6 +566,9 @@ async function loadTabData(name) {
   if (name === 'ops') await loadOpsTab();
   if (name === 'audit') await loadAuditTab();
   if (name === 'agents') await loadFloatRequestsTab();
+  if (name === 'work') await loadWorkTab();
+  if (name === 'community') await loadCommunityTab();
+  if (name === 'collective') await loadCollectiveTab();
 }
 
 async function enterApp() {

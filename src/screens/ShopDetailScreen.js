@@ -21,6 +21,7 @@ import { getMarketplaceShop, placeMarketplaceOrder, setBusinessCommunityStatus }
 import { getSeenStatusKeys, markStatusSeen } from '../lib/status-seen-storage';
 import { useEntrance, usePopIn } from '../hooks/animations';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
+import LowDataImage from '../components/LowDataImage';
 
 function statusKey(businessId, c) {
   return `${businessId}:${c.userId}:${c.updatedAt}`;
@@ -31,7 +32,7 @@ function ProductRow({ product, qty, onChangeQty, onShare, delay = 0 }) {
   return (
     <Animated.View style={[styles.productRow, entrance]}>
       {product.imageUrl ? (
-        <Image source={{ uri: product.imageUrl }} style={styles.productImg} />
+        <LowDataImage uri={product.imageUrl} style={styles.productImg} />
       ) : (
         <View style={[styles.productImg, styles.productImgPh]}>
           <Text style={{ fontSize: 22 }}>🛒</Text>
@@ -45,7 +46,7 @@ function ProductRow({ product, qty, onChangeQty, onShare, delay = 0 }) {
         ) : null}
       </View>
       {onShare ? (
-        <PressScale scaleTo={0.9} onPress={onShare} style={styles.productShareBtn}>
+        <PressScale scaleTo={0.9} onPress={onShare} style={styles.productShareBtn} accessibilityRole="button" accessibilityLabel="Partager dans Mboolo">
           <Text style={{ fontSize: 14 }}>💬</Text>
         </PressScale>
       ) : null}
@@ -232,7 +233,7 @@ export default function ShopDetailScreen({ navigation, route }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <Animated.View style={[styles.header, headerEntrance]}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 18 }}>←</Text>
           </PressScale>
           <View style={{ flex: 1 }}>
@@ -348,7 +349,7 @@ export default function ShopDetailScreen({ navigation, route }) {
             {fulfillment === 'delivery' ? (
               <View style={{ gap: spacing.sm }}>
                 <Text style={styles.sheetLabel}>Quartier</Text>
-                <TextInput
+                <TextInput accessibilityLabel="Ex. Médina"
                   style={styles.sheetInput}
                   value={dropoffArea}
                   onChangeText={setDropoffArea}
@@ -356,7 +357,7 @@ export default function ShopDetailScreen({ navigation, route }) {
                   placeholderTextColor={colors.appCanvas.textFaint}
                 />
                 <Text style={styles.sheetLabel}>Adresse</Text>
-                <TextInput
+                <TextInput accessibilityLabel="Rue, repère, téléphone"
                   style={[styles.sheetInput, { minHeight: 72 }]}
                   value={dropoffAddress}
                   onChangeText={setDropoffAddress}

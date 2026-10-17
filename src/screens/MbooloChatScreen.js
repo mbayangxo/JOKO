@@ -22,18 +22,23 @@ import {
   markMboloThreadRead,
   saveMboloMessageMedia,
   sendMboloMessage,
+  confirmP2p,
+  lookupUser,
   transferRequest,
   transferSend,
+  reportMboloMessage,
 } from '../lib/api-client';
 import {
   pickMboloImage,
   takeMboloPhoto,
   pickMboloVideoAsset,
-  sendMboloMediaMessage,
+  sendMbooloMediaMessage,
   resolveVoicePlaybackSource,
 } from '../lib/mbolo-media';
 import { parseMoneyCommand } from '../lib/mbolo-voice-money';
-import { flushMboloOutbox, enqueueMboloMessage } from '../lib/mbolo-outbox';
+import { flushMboloOutbox, enqueueMboloMessage, newClientMessageId, outboxState, releaseHeld, discardHeld } from '../lib/mbolo-outbox';
+import { OUTBOX_KINDS } from '../lib/offline-policy';
+import { useDraft } from '../hooks/useDraft';
 import { runTerangaGifStudio } from '../lib/mbolo-gif-studio';
 import { formatXof, getDirectPartner } from '../lib/mbolo-social';
 import { useMbooloVoiceRecorder, formatVoiceDuration } from '../hooks/useMbooloVoiceRecorder';
@@ -69,6 +74,7 @@ function MessageBubble({
   onOpenAffiliateProduct,
   onOpenShare,
   onLongPressMedia,
+  onReport,
 }) {
   const time = formatMsgTime(message.createdAt);
   const sender = message.sender;
@@ -240,6 +246,14 @@ function MessageBubble({
         </PressScale>
       );
     }
+    // J10: long-press someone else's message to report it (a snapshot is kept for review).
+    if (!isMe && onReport) {
+      return (
+        <PressScale scaleTo={1} onLongPress={() => onReport(message)} accessibilityHint="Appui long pour signaler">
+          <Text style={styles.themText}>{message.body}</Text>
+        </PressScale>
+      );
+    }
     return <Text style={isMe ? styles.meText : styles.themText}>{message.body}</Text>;
   };
 
@@ -350,6 +364,11 @@ export default function MbooloChatScreen({ navigation, route }) {
   const micPulse = useBlink(isRecording ? 600 : 100000, isRecording ? 0.55 : 1);
   const readyToastShown = useRef(false);
   const [messages, setMessages] = useState([]);
+  // J12: what the user is typing survives a lost connection / restart as a local per-thread draft.
+  const composeDraft = useDraft('mbolo-compose', threadId ?? null);
+  useEffect(() => {
+    if (composeDraft.restored?.fields?.text) setText((t) => t || composeDraft.restored.fields.text);
+  }, [composeDraft.restored]);
   const [userId, setUserId] = useState(null);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -360,6 +379,8 @@ export default function MbooloChatScreen({ navigation, route }) {
   const [requestNote, setRequestNote] = useState('');
   const [requesting, setRequesting] = useState(false);
   const [sendMoneyOpen, setSendMoneyOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState(null);
+  const sendIntentKey = useRef(null); // one key per opening of the send sheet: a retry never pays twice
   const [sendAmount, setSendAmount] = useState('2000');
   const [sendNote, setSendNote] = useState('');
   const [sendPhotoUrl, setSendPhotoUrl] = useState(null);
@@ -423,17 +444,32 @@ export default function MbooloChatScreen({ navigation, route }) {
     }
   }, [threadId, searchQuery, showToast]);
 
+  const [sync, setSync] = useState({ pending: 0, held: 0 });
+  const refreshSync = useCallback(() => {
+    if (threadId) outboxState(threadId).then(setSync).catch(() => {});
+  }, [threadId]);
+  const mergeSent = useCallback((sent) => {
+    if (sent?.length) setMessages((prev) => [...prev, ...sent.filter((m) => !prev.some((p) => p.id === m.id))]);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
       flushMboloOutbox(threadId)
-        .then((sent) => {
-          if (sent.length > 0) setMessages((prev) => [...prev, ...sent]);
-        })
-        .finally(() => loadMessages());
-      const timer = setInterval(loadMessages, 3000);
+        .then(mergeSent)
+        .catch(() => {})
+        .finally(() => {
+          refreshSync();
+          loadMessages();
+        });
+      // J12: while the chat is open, queued messages are retried with the regular refresh (same client
+      // ids — the server stores each once); held/refused ones wait for the user.
+      const timer = setInterval(() => {
+        loadMessages();
+        flushMboloOutbox(threadId).then(mergeSent).then(refreshSync).catch(() => {});
+      }, 3000);
       return () => clearInterval(timer);
-    }, [loadMessages, threadId]),
+    }, [loadMessages, threadId, mergeSent, refreshSync]),
   );
 
   useEffect(() => {
@@ -457,18 +493,26 @@ export default function MbooloChatScreen({ navigation, route }) {
     if (!isReady) readyToastShown.current = false;
   }, [isReady, showToast]);
 
+  // J12 (P-J12-3): every message carries ONE stable client id for all of its attempts; a lost send is
+  // queued under that same id, so the server stores it once whatever the network does.
   const postMessage = async (payload) => {
+    const withId = payload.clientMessageId ? payload : { ...payload, clientMessageId: newClientMessageId() };
     setSending(true);
     try {
-      const msg = await sendMboloMessage(threadId, payload);
-      setMessages((prev) => [...prev, msg]);
+      const msg = await sendMboloMessage(threadId, withId);
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
       setText('');
+      composeDraft.discard();
     } catch (err) {
+      const lost = ['network', 'timeout', 'outcome_unknown'].includes(err?.code) || (typeof navigator !== 'undefined' && navigator.onLine === false);
       if (err?.code === 'verification_required' || err?.status === 403) {
         showToast(err.message ?? 'Vérifie ton profil (nom + téléphone) pour envoyer des messages');
-      } else if (!navigator?.onLine && Platform.OS !== 'web') {
-        await enqueueMboloMessage(threadId, payload);
-        showToast('Hors ligne — message en attente d’envoi');
+      } else if (lost && OUTBOX_KINDS.includes(withId.kind ?? 'text')) {
+        await enqueueMboloMessage(threadId, withId).catch(() => {});
+        setText('');
+        composeDraft.discard();
+        refreshSync();
+        showToast('Hors ligne — message en attente, il partira une seule fois');
       } else {
         showToast(err.message ?? 'Envoi impossible');
       }
@@ -479,6 +523,9 @@ export default function MbooloChatScreen({ navigation, route }) {
 
   const handleTextChange = (value) => {
     setText(value);
+    // A money command ("envoie 2000 à @awa") is a financial instruction: never kept as a draft.
+    if (parseMoneyCommand(value)) composeDraft.discard();
+    else composeDraft.save({ text: value });
     if (!threadId) return;
     if (typingTimer.current) clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => {
@@ -486,25 +533,13 @@ export default function MbooloChatScreen({ navigation, route }) {
     }, 400);
   };
 
-  const handleSendMoneyCommand = async (cmd) => {
-    setSendingMoney(true);
-    try {
-      const result = await transferSend({
-        recipientHandle: cmd.handle,
-        amount: cmd.amount,
-        currency: 'national',
-        note: cmd.note,
-        threadId,
-      });
-      if (result.mboloMessage) setMessages((prev) => [...prev, result.mboloMessage]);
-      await refreshWallet();
-      setText('');
-      showToast(`💸 ${cmd.amount} F envoyé à @${cmd.handle}`);
-    } catch (err) {
-      showToast(err.message ?? 'Envoi impossible');
-    } finally {
-      setSendingMoney(false);
-    }
+  // J10: chat text never moves money by itself. A typed "envoie 2000 à @awa" only opens the normal
+  // send flow, pre-filled; the person reviews the recipient and amount there and confirms (step-up when required).
+  const handleSendMoneyCommand = (cmd) => {
+    setText('');
+    composeDraft.discard();
+    showToast('Vérifie le destinataire et le montant, puis confirme');
+    open('SendMoney', { recipientHandle: cmd.handle, prefilledAmount: cmd.amount, note: cmd.note.slice(0, 140) });
   };
 
   const handleSend = () => {
@@ -516,6 +551,18 @@ export default function MbooloChatScreen({ navigation, route }) {
       return;
     }
     postMessage({ body, kind: 'text' });
+  };
+
+  const submitReport = async (category) => {
+    const target = reportTarget;
+    setReportTarget(null);
+    if (!target?.id) return;
+    try {
+      await reportMboloMessage(target.id, category, `Signalé depuis la conversation (${category})`);
+      showToast('Merci — l’équipe K21 va examiner ce message');
+    } catch (err) {
+      showToast(err.message ?? 'Signalement impossible');
+    }
   };
 
   const handleLongPressMedia = (message) => {
@@ -543,15 +590,13 @@ export default function MbooloChatScreen({ navigation, route }) {
       showToast('Studio GIF Teranga…');
       const asset = await runTerangaGifStudio();
       if (!asset) return;
-      await postMediaMessage(
-        sendMboloMediaMessage({
+      await sendMedia({
           threadId,
           kind: asset.mode === 'video_fallback' ? 'video' : 'gif',
           uri: asset.uri,
           mimeType: asset.mimeType,
           blob: asset.blob,
-        }),
-      );
+        });
     } catch (err) {
       showToast(err.message ?? 'Studio GIF impossible');
     }
@@ -565,13 +610,20 @@ export default function MbooloChatScreen({ navigation, route }) {
 
   const closeAttach = () => setAttachOpen(false);
 
-  const postMediaMessage = async (promise) => {
+  // J12: an interrupted media upload keeps its checkpoint; "Reprendre" continues from the step that was
+  // cut (never a second upload or message). Bytes are not kept across an app restart.
+  const [interrupted, setInterrupted] = useState(null);
+  const postMediaMessage = async (promise, args = null) => {
     setSending(true);
     try {
       const msg = await promise;
-      setMessages((prev) => [...prev, msg]);
+      setInterrupted(null);
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
     } catch (err) {
-      if (err?.code === 'verification_required' || err?.status === 403) {
+      if (args && err?.checkpoint && err.resumable) {
+        setInterrupted({ args, checkpoint: err.checkpoint });
+        showToast('Envoi interrompu — tu peux reprendre là où il s’est arrêté');
+      } else if (err?.code === 'verification_required' || err?.status === 403) {
         showToast(err.message ?? 'Vérifie ton profil (nom + téléphone) pour envoyer des messages');
       } else if (err?.code === 'storage_unavailable' || err?.code === 'legacy_media_disabled') {
         showToast(err.message ?? 'Stockage média indisponible — contacte le support K21');
@@ -582,6 +634,8 @@ export default function MbooloChatScreen({ navigation, route }) {
       setSending(false);
     }
   };
+  const sendMedia = (args) => postMediaMessage(sendMbooloMediaMessage(args), args);
+  const resumeUpload = () => interrupted && postMediaMessage(sendMbooloMediaMessage({ ...interrupted.args, checkpoint: interrupted.checkpoint }), interrupted.args);
 
   const handlePhoto = async () => {
     try {
@@ -590,14 +644,12 @@ export default function MbooloChatScreen({ navigation, route }) {
       if (Platform.OS === 'web') closeAttach();
       if (!mediaUrl) return;
       showToast('Envoi de la photo…');
-      await postMediaMessage(
-        sendMboloMediaMessage({
+      await sendMedia({
           threadId,
           kind: 'image',
           uri: mediaUrl,
           mimeType: 'image/jpeg',
-        }),
-      );
+        });
     } catch (err) {
       closeAttach();
       showToast(err.message ?? 'Photo impossible');
@@ -611,14 +663,12 @@ export default function MbooloChatScreen({ navigation, route }) {
       if (Platform.OS === 'web') closeAttach();
       if (!mediaUrl) return;
       showToast('Envoi de la photo…');
-      await postMediaMessage(
-        sendMboloMediaMessage({
+      await sendMedia({
           threadId,
           kind: 'image',
           uri: mediaUrl,
           mimeType: 'image/jpeg',
-        }),
-      );
+        });
     } catch (err) {
       closeAttach();
       showToast(err.message ?? 'Photo impossible');
@@ -632,15 +682,13 @@ export default function MbooloChatScreen({ navigation, route }) {
       if (Platform.OS === 'web') closeAttach();
       if (!asset) return;
       showToast('Envoi de la vidéo…');
-      await postMediaMessage(
-        sendMboloMediaMessage({
+      await sendMedia({
           threadId,
           kind: 'video',
           uri: asset.uri,
           mimeType: asset.mimeType,
           blob: asset.blob,
-        }),
-      );
+        });
     } catch (err) {
       closeAttach();
       showToast(err.message ?? 'Vidéo impossible');
@@ -691,14 +739,12 @@ export default function MbooloChatScreen({ navigation, route }) {
         showToast('GIF indisponible');
         return;
       }
-      await postMediaMessage(
-        sendMboloMediaMessage({
+      await sendMedia({
           threadId,
           kind: 'gif',
           uri: gif.url,
           mimeType: 'image/gif',
-        }),
-      );
+        });
     } catch (err) {
       showToast(err.message ?? 'GIF impossible');
     }
@@ -709,15 +755,13 @@ export default function MbooloChatScreen({ navigation, route }) {
       const mediaUrl = await stopVoice();
       if (!mediaUrl) return;
       showToast('⏹ Enregistrement terminé — envoi…');
-      await postMediaMessage(
-        sendMboloMediaMessage({
+      await sendMedia({
           threadId,
           kind: 'voice',
           uri: mediaUrl,
           mimeType: Platform.OS === 'web' ? 'audio/webm' : 'audio/mp4',
           durationMs: durationMillis,
-        }),
-      );
+        });
       showToast('Message vocal envoyé ✓');
     } catch (err) {
       showToast(err.message ?? 'Enregistrement impossible');
@@ -753,6 +797,7 @@ export default function MbooloChatScreen({ navigation, route }) {
     setSendAmount('2000');
     setSendNote('');
     setSendPhotoUrl(null);
+    sendIntentKey.current = `mbolo-send-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     setSendMoneyOpen(true);
   };
 
@@ -777,12 +822,18 @@ export default function MbooloChatScreen({ navigation, route }) {
     }
     setSendingMoney(true);
     try {
+      if (!sendIntentKey.current) sendIntentKey.current = `mbolo-send-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      // J13-4: bind the payment to the partner's ACCOUNT (server-issued), never to the handle alone.
+      const partner = await lookupUser(directPartner.handle, { mode: 'handle' });
+      const { instructionRef } = await confirmP2p({ recipientRef: partner.recipientRef, amountKori: amount, intentKey: sendIntentKey.current });
       const result = await transferSend({
         recipientHandle: directPartner.handle,
+        instructionRef,
         amount,
         note: sendNote.trim() || undefined,
         photoUrl: sendPhotoUrl ?? undefined,
         threadId,
+        intentKey: sendIntentKey.current,
       });
       if (result.mboloMessage) setMessages((prev) => [...prev, result.mboloMessage]);
       await refreshWallet();
@@ -846,8 +897,37 @@ export default function MbooloChatScreen({ navigation, route }) {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
+        {interrupted ? (
+          <View style={styles.syncBar} accessibilityRole="alert" accessibilityLiveRegion="polite" testID="chat-upload-interrupted">
+            <Text style={styles.syncText}>📶 Envoi du média interrompu ({interrupted.checkpoint.put ? 'fichier déjà envoyé' : 'fichier pas encore envoyé'}).</Text>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
+              <PressScale onPress={resumeUpload} disabled={sending}><Text style={styles.syncAction}>Reprendre</Text></PressScale>
+              <PressScale onPress={() => setInterrupted(null)}><Text style={styles.syncAction}>Annuler</Text></PressScale>
+            </View>
+          </View>
+        ) : null}
+        {sync.pending > 0 || sync.held > 0 ? (
+          <View style={styles.syncBar} accessibilityRole="alert" accessibilityLiveRegion="polite" testID="chat-sync-state">
+            {sync.pending > 0 ? (
+              <Text style={styles.syncText}>⏳ {sync.pending} message{sync.pending > 1 ? 's' : ''} en attente d’envoi — {sync.pending > 1 ? 'ils partiront' : 'il partira'} une seule fois au retour du réseau.</Text>
+            ) : null}
+            {sync.held > 0 ? (
+              <View>
+                <Text style={styles.syncText}>⚠️ {sync.held} message{sync.held > 1 ? 's' : ''} non envoyé{sync.held > 1 ? 's' : ''} (trop ancien ou refusé).</Text>
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
+                  <PressScale onPress={() => releaseHeld(threadId).then(mergeSent).finally(refreshSync)}>
+                    <Text style={styles.syncAction}>Renvoyer</Text>
+                  </PressScale>
+                  <PressScale onPress={() => discardHeld(threadId).finally(refreshSync)}>
+                    <Text style={styles.syncAction}>Supprimer</Text>
+                  </PressScale>
+                </View>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
         <View style={styles.chatHead}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.chBack}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.chBack} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 15, color: '#fff' }}>←</Text>
           </PressScale>
           <View style={{ flex: 1 }}>
@@ -888,7 +968,7 @@ export default function MbooloChatScreen({ navigation, route }) {
 
         {searchOpen ? (
           <View style={styles.searchBar}>
-            <TextInput
+            <TextInput accessibilityLabel="Rechercher dans la conversation"
               style={styles.searchInput}
               placeholder="Rechercher dans la conversation…"
               placeholderTextColor={colors.mboolo.ink3}
@@ -955,6 +1035,7 @@ export default function MbooloChatScreen({ navigation, route }) {
               isMe={m.senderId === userId}
               lowData={lowDataMode}
               onLongPressMedia={handleLongPressMedia}
+              onReport={(msg) => setReportTarget(msg)}
               onPlayVoice={playVoice}
               onJoinCall={(msg) =>
                 open('Call', {
@@ -1065,6 +1146,21 @@ export default function MbooloChatScreen({ navigation, route }) {
         onSaveProfile={() => saveMedia('profile')}
       />
 
+      <Modal visible={Boolean(reportTarget)} animationType="slide" transparent onRequestClose={() => setReportTarget(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Signaler ce message</Text>
+            <Text style={styles.modalHint}>Le message est conservé pour l’équipe K21. La personne ne sait pas qui l’a signalé.</Text>
+            {[['scam', 'Arnaque / demande de code'], ['spam', 'Spam'], ['harassment', 'Harcèlement'], ['hate', 'Haine'], ['other', 'Autre']].map(([c, label]) => (
+              <PressScale key={c} scaleTo={0.97} onPress={() => submitReport(c)} style={styles.modalSubmit} accessibilityLabel={`Signaler : ${label}`}>
+                <Text style={styles.modalSubmitText}>{label}</Text>
+              </PressScale>
+            ))}
+            <PressScale onPress={() => setReportTarget(null)} style={{ alignItems: 'center', padding: spacing.md }}><Text style={styles.modalHint}>Annuler</Text></PressScale>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={requestOpen} animationType="slide" transparent onRequestClose={() => setRequestOpen(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalSheet}>
@@ -1072,7 +1168,7 @@ export default function MbooloChatScreen({ navigation, route }) {
             <Text style={styles.modalHint}>
               À @{directPartner?.handle ?? '…'} · ils recevront une notification
             </Text>
-            <TextInput
+            <TextInput accessibilityLabel="Montant (F CFA)"
               style={styles.modalInput}
               placeholder="Montant (F CFA)"
               placeholderTextColor={colors.mboolo.ink3}
@@ -1080,7 +1176,7 @@ export default function MbooloChatScreen({ navigation, route }) {
               value={requestAmount}
               onChangeText={setRequestAmount}
             />
-            <TextInput
+            <TextInput accessibilityLabel="Raison (optionnel)"
               style={styles.modalInput}
               placeholder="Raison (optionnel)"
               placeholderTextColor={colors.mboolo.ink3}
@@ -1103,7 +1199,7 @@ export default function MbooloChatScreen({ navigation, route }) {
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>Envoyer de l'argent</Text>
             <Text style={styles.modalHint}>À @{directPartner?.handle ?? '…'}</Text>
-            <TextInput
+            <TextInput accessibilityLabel="Montant (F CFA)"
               style={styles.modalInput}
               placeholder="Montant (F CFA)"
               placeholderTextColor={colors.mboolo.ink3}
@@ -1111,7 +1207,7 @@ export default function MbooloChatScreen({ navigation, route }) {
               value={sendAmount}
               onChangeText={setSendAmount}
             />
-            <TextInput
+            <TextInput accessibilityLabel="Message (optionnel)"
               style={styles.modalInput}
               placeholder="Message (optionnel)"
               placeholderTextColor={colors.mboolo.ink3}
@@ -1140,6 +1236,9 @@ export default function MbooloChatScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+  syncBar: { marginHorizontal: 12, marginTop: 6, padding: 10, borderRadius: 10, backgroundColor: 'rgba(245, 180, 40, 0.14)' },
+  syncText: { color: '#fff', fontSize: 13, lineHeight: 18 },
+  syncAction: { color: '#ffd166', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
   root: { flex: 1, backgroundColor: colors.mboolo.bg },
   chatHead: { backgroundColor: colors.mboolo.terra, paddingHorizontal: 14, paddingVertical: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
   chBack: { width: 32, height: 32, borderRadius: radius.md, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },

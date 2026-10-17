@@ -126,8 +126,8 @@ export default function AffiliateScreen({ navigation }) {
 
           <View style={styles.form}>
             <Text style={styles.lbl}>Créer un lien de promo</Text>
-            <TextInput value={businessId} onChangeText={setBusinessId} placeholder="ID commerce (depuis la boutique)" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
-            <TextInput value={productId} onChangeText={setProductId} placeholder="ID produit (optionnel)" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
+            <TextInput accessibilityLabel="ID commerce (depuis la boutique)" value={businessId} onChangeText={setBusinessId} placeholder="ID commerce (depuis la boutique)" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
+            <TextInput accessibilityLabel="ID produit (optionnel)" value={productId} onChangeText={setProductId} placeholder="ID produit (optionnel)" style={styles.input} placeholderTextColor="rgba(5,8,5,0.35)" />
             <GlowButton label={creating ? 'Création…' : 'Créer & partager le lien'} onPress={createLink} disabled={creating} tone="orange" />
           </View>
 

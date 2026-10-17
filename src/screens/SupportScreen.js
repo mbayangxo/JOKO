@@ -116,7 +116,7 @@ export default function SupportScreen({ navigation }) {
             ))}
             {!['closed', 'resolved'].includes(detail.status) ? (
               <>
-                <TextInput
+                <TextInput accessibilityLabel="Ta réponse"
                   style={[styles.input, { minHeight: 80 }]}
                   multiline
                   placeholder="Ta réponse…"
@@ -140,8 +140,8 @@ export default function SupportScreen({ navigation }) {
             </View>
 
             <Text style={styles.sectionLabel}>Nouvelle demande</Text>
-            <TextInput style={styles.input} placeholder="Sujet" value={subject} onChangeText={setSubject} placeholderTextColor="rgba(5,8,5,0.4)" />
-            <TextInput
+            <TextInput accessibilityLabel="Sujet" style={styles.input} placeholder="Sujet" value={subject} onChangeText={setSubject} placeholderTextColor="rgba(5,8,5,0.4)" />
+            <TextInput accessibilityLabel="Décris ton problème"
               style={[styles.input, { minHeight: 100 }]}
               multiline
               placeholder="Décris ton problème…"

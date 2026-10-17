@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import PressScale from './PressScale';
 import { colors, fontFamily, radius } from '../theme';
 import { useGlowPulse } from '../hooks/animations';
+import { usePressGuard } from '../hooks/usePressGuard';
 
 const TONES = {
   green: { gradient: ['#3dff87', colors.green, colors.greenDark], glow: colors.green, label: colors.ink },
@@ -16,14 +17,17 @@ const TONES = {
 export default function GlowButton({ label, onPress, style, disabled = false, tone = 'green' }) {
   const glow = useGlowPulse(2500, 0.25);
   const t = TONES[tone] ?? TONES.green;
+  const guard = usePressGuard(disabled ? undefined : onPress);
   return (
     <PressScale
       scaleTo={0.96}
-      onPress={disabled ? undefined : onPress}
+      onPress={guard.busy ? undefined : guard.onPress}
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: Boolean(disabled), busy: guard.busy }}
       style={[
         styles.btn,
         { shadowColor: t.glow },
-        disabled && styles.btnDisabled,
+        (disabled || guard.busy) && styles.btnDisabled,
         style,
         { shadowOpacity: Animated.add(0.3, glow) },
       ]}

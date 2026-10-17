@@ -1,0 +1,100 @@
+/**
+ * Critical-route tables for the authorization-boundary gate
+ * (tests/sweep/authz-boundary.test.js, static check in tests/j8/authz-boundary-static.test.js).
+ */
+/** A user route is critical when it moves money and acts on an object id. */
+export const isCriticalUserRoute = (key, p) =>
+  !key.startsWith('GET ') && p.actor === 'user' && key.includes(':') && (String(p.audit ?? '').includes('ledger') || Boolean(p.stepUp) || p.risk === 'cash_out');
+export const isCriticalAdminRoute = (key, p) => !key.startsWith('GET ') && p.actor === 'admin';
+
+const H64 = 'a'.repeat(64);
+/** Semantically valid adversarial bodies: they pass the route's schema so the handler reaches its authorization decision. */
+export const VALID_BODIES = {
+  'POST admin/moderation/reports/:id/resolve': () => ({ outcome: 'no_violation', note: 'sweep: decide someone else’s report' }),
+  'POST admin/moderation/actions/:id/appeal/resolve': () => ({ outcome: 'lifted', note: 'sweep: lift someone else’s action' }),
+  'POST businesses/:id/work/milestones/accept-batch': () => ({ items: [{ assignmentId: 'sweep-assignment', seq: 1 }] }),
+  'POST money/charges/:id/pay': () => ({ expectedAmountKori: 100 }),
+  'POST businesses/:id/partner-debits/:subId/approve': () => ({ detailsHash: 'a'.repeat(64) }),
+  'POST businesses/:id/partner-debits/:subId/reject': () => ({ reason: 'sweep: reject someone else’s instruction' }),
+  'POST money/payments/:reference/refund': () => ({ amountKori: 100, reason: 'sweep: refund someone else’s payment' }),
+  'POST transfers/:reference/undo': () => ({}),
+  'POST transfers/requests/:id/accept': () => ({}),
+  'POST merchants/:id/pay': () => ({ amount: 100, currency: 'kori' }),
+  'POST payment-funds/:id/fund': () => ({ amountKori: 100 }),
+  'POST payment-funds/:id/withdraw': () => ({ amountKori: 100 }),
+  'POST agent/deposits/:id/confirm': () => ({}),
+  'POST agent/withdrawals/:id/confirm': () => ({}),
+  'POST agent-cash/tx/:id/confirm': () => ({ bindingHash: H64 }),
+  'POST agent-cash/tx/:id/cancel': () => ({}),
+  'POST agent/cash/:id/complete': () => ({ bindingHash: H64 }),
+  'POST agent/cash/:id/decline': () => ({ reason: 'sweep' }),
+  'POST deliveries/:id/accept': () => ({}),
+  'POST deliveries/:id/claim': () => ({}),
+  'POST deliveries/:id/confirm': () => ({}),
+  'POST events/:id/tickets': () => ({ quantity: 1 }),
+  'POST jekkal/campaigns/:id/contribute': () => ({ amount: 100 }),
+  // J11: someone else's collective group / vote — must be 404 (private), never validation-only.
+  'POST protected/funds/:id/contribute': () => ({ amountKori: 100 }),
+  'POST collective/groups/:id/contribute': () => ({ amountKori: 100 }),
+  'POST collective/groups/:id/release': () => ({}),
+  'POST collective/groups/:id/withdraw': () => ({ amountKori: 100 }),
+  'POST collective/groups/:id/votes': () => ({ topic: 'cancel' }),
+  'POST collective/votes/:id/ballot': () => ({ choice: 'yes' }),
+  'POST tontine/groups/:id/contribute': () => ({}),
+  'POST tontine/groups/:id/release': () => ({}),
+  'POST tontine/groups/:id/cancel': () => ({ reason: 'sweep: cancel someone else’s tontine' }),
+  'POST marketplace/orders/:id/confirm': () => ({}),
+  'POST marketplace/orders/:id/cancel': () => ({ reason: 'sweep: cancel someone else’s order' }),
+  'POST distribution/invoices/:id/pay': () => ({ paymentSource: 'personal' }),
+  'POST distribution/invoices/:id/dispute-resolve': () => ({ action: 'waive', note: 'sweep' }),
+  'POST businesses/:id/transfer': (ctx) => ({ kind: 'b2b', amount: 100, recipientBusinessId: ctx.ownBizId }),
+  'POST businesses/:id/os/orders/:subId/cancel': () => ({ reason: 'sweep: cancel someone else’s order' }),
+  'POST businesses/:id/os/orders/:subId/refund': () => ({ reason: 'sweep: refund someone else’s order' }),
+  'POST businesses/:id/b2b/purchase-orders': () => ({ sellerBusinessId: 'x', lines: [{ listingId: 'x', packs: 1 }], paymentTerm: 'due_now', expectedTotalKori: 100 }),
+  'POST businesses/:id/b2b/purchase-orders/:subId/pay': () => ({ expectedAmountKori: 100 }),
+  'POST businesses/:id/b2b/purchase-orders/:subId/cancel': () => ({ reason: 'sweep: cancel someone else’s PO' }),
+  'POST businesses/:id/b2b/invoices/:subId/pay': () => ({ amountKori: 100 }),
+  'POST businesses/:id/b2b/invoices/:subId/credit-memos': () => ({ amountKori: 100, reason: 'sweep: credit someone else’s invoice', reference: 'SWEEP-1' }),
+  'POST businesses/:id/b2b/returns/:subId/resolve': () => ({ resolution: 'none', note: 'sweep: resolve someone else’s return' }),
+  // J8 logistics: custody / money acts on someone else's shipment.
+  'POST logistics/shipments/:id/deliver': () => ({ code: 'ABCDEFGH' }),
+  'POST logistics/shipments/:id/return/complete': () => ({ code: 'ABCDEFGH' }),
+  'POST logistics/shipments/:id/cancel': () => ({ reason: 'sweep: cancel someone else’s shipment' }),
+  // J9 work: money acts on someone else's offer / assignment / rule.
+  'POST work/offers/:id/accept': () => ({ termsHash: H64, ageAttested: true }),
+  'POST work/offers/:id/decline': () => ({}),
+  'POST work/assignments/:id/end': () => ({ reason: 'sweep: end someone else’s assignment' }),
+  'POST businesses/:id/work/offers': (ctx) => ({ applicationId: ctx.attackerId, startDate: '2026-11-02', duties: 'sweep: offer on someone else’s business' }),
+  'POST businesses/:id/work/offers/:subId/withdraw': () => ({}),
+  'POST businesses/:id/work/assignments/:subId/accept': () => ({ seq: 1 }),
+  'POST businesses/:id/work/assignments/:subId/end': () => ({ reason: 'sweep: end someone else’s assignment' }),
+  'POST businesses/:id/work/rules/:subId/fund': () => ({ amountKori: 100 }),
+  'POST businesses/:id/work/rules/:subId/end': () => ({}),
+  'POST admin/work/opportunities/:id/review': () => ({ decision: 'approve', note: 'sweep review' }),
+  'POST admin/work/qualifications/:id/review': () => ({ decision: 'verified' }),
+  'POST admin/work/disputes/:id/resolve': () => ({ outcome: 'finding_only', note: 'sweep: rule on a dispute' }),
+  'POST admin/work/disputes/:id/appeal/resolve': () => ({ outcome: 'upheld', note: 'sweep: rule on an appeal' }),
+  'POST admin/work/feedback/:id/rule': () => ({ decision: 'removed', note: 'sweep: rule on feedback' }),
+  'POST businesses/:id/payroll/pay': (ctx) => ({ employeeHandle: ctx.attackerHandle, amount: 100 }),
+  'POST businesses/:id/payroll/run': () => ({}),
+  'POST businesses/:id/school/pay': () => ({ studentId: 'x', periodId: 'x' }),
+  'POST businesses/:id/cooperative/payout': (ctx) => ({ farmerUserId: ctx.attackerId, ratePerTonXof: 100 }),
+};
+/** Acting on someone else's object by design (the attacker pays from their own wallet / acts in their own role). */
+export const PUBLIC_BY_DESIGN = new Set([
+  'POST merchants/:id/pay',
+  'POST money/charges/:id/pay',
+  'POST events/:id/tickets',
+  'POST jekkal/campaigns/:id/contribute',
+  'POST protected/funds/:id/contribute', // J11.2: a donor pays their own wallet into the fund's escrow (never to a person)
+  'POST deliveries/:id/accept',
+  'POST deliveries/:id/claim',
+  'POST businesses/:id/school/pay', // payer → school (a parent pays a fee from their own wallet)
+]);
+/** Operator routes with no route-level permission: object-level rules instead (covered by their own suites). */
+export const ADMIN_OBJECT_LEVEL = {
+  'POST admin/auth/logout': 'own session only',
+  'POST admin/approvals/:id/approve': 'maker ≠ checker, permission of the requested action (tests/j3 approvals)',
+  'POST admin/approvals/:id/reject': 'maker ≠ checker, permission of the requested action (tests/j3 approvals)',
+};
+

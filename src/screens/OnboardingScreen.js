@@ -108,7 +108,7 @@ export default function OnboardingScreen({ onComplete, onBack }) {
       <View style={{ flex: 1 }}>
         <View style={styles.header}>
           {onBack ? (
-            <PressScale scaleTo={0.9} onPress={onBack} style={styles.backBtn}>
+            <PressScale scaleTo={0.9} onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
               <Text style={{ fontSize: 15, color: ob.ink }}>←</Text>
             </PressScale>
           ) : null}

@@ -72,7 +72,7 @@ function StepHeader({ lang, title, step, total = 4, onBack }) {
   return (
     <>
       <View style={styles.headRow}>
-        <PressScale scaleTo={0.9} onPress={onBack} style={styles.backBtn}>
+        <PressScale scaleTo={0.9} onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
           <Text style={{ fontSize: 14, color: ob.ink }}>←</Text>
         </PressScale>
         <Text style={styles.headTitle}>{title}</Text>
@@ -316,7 +316,7 @@ function ProfileStep({ name, setName, handle, setHandle, avatarUrl, setAvatarUrl
 
       <View style={styles.inputGroup}>
         <Text style={styles.igLabel}>Prénom et nom</Text>
-        <TextInput style={styles.igField} placeholder="Saliou Diallo" placeholderTextColor={ob.faint} value={name} onChangeText={setName} />
+        <TextInput accessibilityLabel="Saliou Diallo" style={styles.igField} placeholder="Saliou Diallo" placeholderTextColor={ob.faint} value={name} onChangeText={setName} />
       </View>
       <View style={styles.inputGroup}>
         <Text style={styles.igLabel}>Ton handle</Text>
@@ -389,7 +389,7 @@ function FundStep({ lang, amount, setAmount, method, setMethod, loading, stripeE
   return (
     <Animated.View style={[styles.body, entrance]}>
       <View style={styles.headRow}>
-        <PressScale scaleTo={0.9} onPress={onBack} style={styles.backBtn}>
+        <PressScale scaleTo={0.9} onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
           <Text style={{ fontSize: 14, color: ob.ink }}>←</Text>
         </PressScale>
         <Text style={styles.headTitle}>Alimenter mon compte</Text>

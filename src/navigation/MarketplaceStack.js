@@ -12,6 +12,7 @@ import DiscoverScreen from '../screens/DiscoverScreen';
 import DistributionHubScreen from '../screens/DistributionHubScreen';
 import TradeInvoicesScreen from '../screens/TradeInvoicesScreen';
 import B2BOrderPortalScreen from '../screens/B2BOrderPortalScreen';
+import RestockScreen from '../screens/RestockScreen';
 import AlertDetailScreen from '../screens/AlertDetailScreen';
 
 const Stack = createNativeStackNavigator();
@@ -32,6 +33,7 @@ export default function MarketplaceStack() {
       <Stack.Screen name="AlertDetail" component={AlertDetailScreen} />
       <Stack.Screen name="DistributionHub" component={DistributionHubScreen} />
       <Stack.Screen name="B2BOrderPortal" component={B2BOrderPortalScreen} />
+      <Stack.Screen name="Restock" component={RestockScreen} />
       <Stack.Screen name="TradeInvoices" component={TradeInvoicesScreen} />
     </Stack.Navigator>
   );

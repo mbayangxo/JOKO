@@ -62,6 +62,9 @@
       <button class="tab" data-tab="distributors">Distributors</button>
       <button class="tab" data-tab="deliveries">Deliveries &amp; riders</button>
       <button class="tab" data-tab="agents">Agents &amp; cash</button>
+      <button class="tab" data-tab="work">Work</button>
+      <button class="tab" data-tab="community">Community</button>
+      <button class="tab" data-tab="collective">Collectif</button>
       <button class="tab" data-tab="ops">Ops health</button>
       <button class="tab" data-tab="audit">Audit log</button>
       <button class="tab" data-tab="actions">Actions</button>
@@ -205,6 +208,62 @@
           </div>
           <div class="panel-body" id="float-requests-table"></div>
         </div>
+      </div>
+    </div>
+
+    <div id="tab-work" class="tab-panel hidden">
+      <p class="hint">J9 Work &amp; Opportunity. Rulings never move money: a work-dispute settlement needs a second operator holding <code>work.disputes.settle</code> (finance).</p>
+      <div class="panels">
+        <div class="panel">
+          <div class="panel-head"><h2>Postings held for review</h2></div>
+          <div class="panel-body" id="work-review-opps"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Qualifications to verify</h2></div>
+          <div class="panel-body" id="work-review-quals"></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:20px">
+        <div class="panel-head"><h2>Open work disputes</h2></div>
+        <div class="panel-body" id="work-disputes"></div>
+      </div>
+      <div class="panels" style="margin-top:20px">
+        <div class="panel">
+          <div class="panel-head"><h2>Settlements awaiting a second operator</h2></div>
+          <div class="panel-body" id="work-settlements"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Contested feedback</h2></div>
+          <div class="panel-body" id="work-feedback"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-collective" class="tab-panel hidden">
+      <p class="hint">J11 collective money. Operators rule disputes and may freeze a group; they never move money. A ruling with a money consequence, and every protected-fund release or cancellation, is executed only by a DIFFERENT finance operator (Approvals below). Identities are ids only.</p>
+      <div class="panel">
+        <div class="panel-head"><h2>Open disputes</h2></div>
+        <div class="panel-body" id="collective-disputes"></div>
+      </div>
+      <div class="panel" style="margin-top:20px">
+        <div class="panel-head"><h2>Pending money approvals (finance)</h2></div>
+        <div class="panel-body" id="collective-approvals"></div>
+      </div>
+      <div class="panel" style="margin-top:20px">
+        <div class="panel-head"><h2>Groups</h2></div>
+        <div class="panel-body" id="collective-groups"></div>
+      </div>
+    </div>
+
+    <div id="tab-community" class="tab-panel hidden">
+      <p class="hint">J10 trust &amp; safety. Decisions never touch money: a messaging restriction stops new conversations and posts only. An appeal is decided by a different operator.</p>
+      <div class="panel">
+        <div class="panel-head"><h2>Open reports</h2></div>
+        <div class="panel-body" id="community-reports"></div>
+      </div>
+      <div class="panel" style="margin-top:20px">
+        <div class="panel-head"><h2>Appeals</h2></div>
+        <div class="panel-body" id="community-appeals"></div>
       </div>
     </div>
 

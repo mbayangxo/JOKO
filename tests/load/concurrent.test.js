@@ -8,6 +8,7 @@ import { startCashOut } from '../../lib/rail-service.js';
 import {
   LOAD_CONCURRENCY,
   createUserWithWallet,
+  fundUser,
   prisma,
   retryTransient,
   runWithConcurrency,
@@ -49,13 +50,19 @@ test(`${CONCURRENT_USERS} users sending simultaneously: no lost money, no duplic
     data: senders.map((s) => ({
       id: s.walletId,
       userId: s.userId,
-      balance: STARTING_BALANCE,
       currency: 'XOF',
     })),
   });
+  // J2: wallets are created at 0 and funded through the kernel (test faucet).
+  const funding = await runWithConcurrency(
+    senders.map((s) => () => retryTransient(() => fundUser(s.userId, STARTING_BALANCE))),
+    LOAD_CONCURRENCY,
+  );
+  assert.equal(funding.filter((r) => !r.ok).length, 0, 'every sender is funded');
 
+  // ₭ (koriBalance) is the only spendable balance — Wallet.balance is legacy.
   const totalBefore =
-    (await prisma.wallet.aggregate({ _sum: { balance: true } }))._sum.balance ?? 0;
+    (await prisma.wallet.aggregate({ _sum: { koriBalance: true } }))._sum.koriBalance ?? 0;
 
   const tasks = senders.map(
     (s) => () =>
@@ -80,24 +87,24 @@ test(`${CONCURRENT_USERS} users sending simultaneously: no lost money, no duplic
   assert.equal(
     failures.length,
     0,
-    `all sends must succeed; first error: ${failures[0]?.error?.message}`,
+    `all sends must succeed; first error: ${failures[0]?.error?.name} ${failures[0]?.error?.code ?? ""} ${failures[0]?.error?.message}`,
   );
 
   const recipientWallet = await prisma.wallet.findUnique({ where: { id: recipient.wallet.id } });
-  assert.equal(recipientWallet.balance, CONCURRENT_USERS * SEND_AMOUNT);
+  assert.equal(recipientWallet.koriBalance, CONCURRENT_USERS * SEND_AMOUNT);
 
   const senderBalances = await prisma.wallet.findMany({
     where: { id: { in: senders.map((s) => s.walletId) } },
-    select: { balance: true },
+    select: { koriBalance: true },
   });
   assert.ok(
-    senderBalances.every((w) => w.balance === STARTING_BALANCE - SEND_AMOUNT),
+    senderBalances.every((w) => w.koriBalance === STARTING_BALANCE - SEND_AMOUNT),
     'every sender must end at exactly starting balance minus one send',
   );
 
   const totalAfter =
-    (await prisma.wallet.aggregate({ _sum: { balance: true } }))._sum.balance ?? 0;
-  assert.equal(totalAfter, totalBefore, 'total XOF in the system must not change');
+    (await prisma.wallet.aggregate({ _sum: { koriBalance: true } }))._sum.koriBalance ?? 0;
+  assert.equal(totalAfter, totalBefore, 'total ₭ in the system must not change');
 
   const debitCount = await prisma.ledgerEntry.count({
     where: { reference: { in: senders.map((s) => `LOAD-${s.userId}`) } },
@@ -151,11 +158,11 @@ test('race on one wallet: concurrent overdraft attempts never push balance below
   );
 
   const wallet = await prisma.wallet.findUnique({ where: { id: sender.wallet.id } });
-  assert.equal(wallet.balance, 0, 'never below zero, never above');
-  assert.ok(wallet.balance >= 0, 'balance floor invariant');
+  assert.equal(wallet.koriBalance, 0, 'never below zero, never above');
+  assert.ok(wallet.koriBalance >= 0, 'balance floor invariant');
 
   const recipientWallet = await prisma.wallet.findUnique({ where: { id: recipient.wallet.id } });
-  assert.equal(recipientWallet.balance, AMOUNT * succeeded);
+  assert.equal(recipientWallet.koriBalance, AMOUNT * succeeded);
 });
 
 test('duplicate submission storm: one idempotency key debits exactly once', async () => {
@@ -183,6 +190,7 @@ test('duplicate submission storm: one idempotency key debits exactly once', asyn
     'exactly one rail transaction created for the key',
   );
 
+  // 10 000 XOF cash-out = 1 000 ₭, held once at initiation.
   const wallet = await prisma.wallet.findUnique({ where: { id: user.wallet.id } });
-  assert.equal(wallet.balance, 90_000, 'wallet debited exactly once despite 10 submissions');
+  assert.equal(wallet.koriBalance, 99_000, 'wallet debited exactly once despite 10 submissions');
 });

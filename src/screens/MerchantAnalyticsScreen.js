@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import PressScale from '../components/PressScale';
+import LoadErrorState from '../components/LoadErrorState';
 import ScreenBackground from '../components/ScreenBackground';
 import { getMerchantAnalytics } from '../lib/api-client';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
@@ -19,12 +20,16 @@ export default function MerchantAnalyticsScreen({ navigation, route }) {
   const businessId = route.params?.businessId;
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const load = useCallback(async () => {
     if (!businessId) return;
     setLoading(true);
     try {
       setData(await getMerchantAnalytics(businessId));
+      setLoadFailed(false);
+    } catch {
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -39,13 +44,15 @@ export default function MerchantAnalyticsScreen({ navigation, route }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 18 }}>←</Text>
           </PressScale>
           <Text style={styles.title}>Analytics marché</Text>
         </View>
         {loading ? (
           <ActivityIndicator color={colors.greenDark} style={{ marginTop: 40 }} />
+        ) : loadFailed && !data ? (
+          <LoadErrorState what="les statistiques" onRetry={load} />
         ) : !data ? (
           <Text style={styles.empty}>Données indisponibles</Text>
         ) : (

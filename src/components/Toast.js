@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createToastScheduler } from './toast-scheduler';
 import { Animated, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontFamily, radius, spacing } from '../theme';
@@ -12,22 +13,19 @@ const ToastContext = createContext(null);
 export function ToastProvider({ children }) {
   const [message, setMessage] = useState(null);
   const anim = useRef(new Animated.Value(0)).current;
-  const hideTimer = useRef(null);
-
-  const showToast = useCallback(
-    (text) => {
-      if (hideTimer.current) clearTimeout(hideTimer.current);
-      setMessage(text);
-      Animated.spring(anim, { toValue: 1, useNativeDriver: true, friction: 8 }).start();
-      // Longer messages (error explanations, debug-tagged auth failures)
-      // need more than a beat to read — and to screenshot.
-      const visibleMs = Math.min(2200 + Math.max(0, String(text).length - 30) * 60, 6000);
-      hideTimer.current = setTimeout(() => {
-        Animated.timing(anim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => setMessage(null));
-      }, visibleMs);
-    },
+  // J12-F16: scheduling lives in toast-scheduler.js (unit-tested): a toast shown while the previous one was
+  // fading out is no longer erased by the old fade's completion callback.
+  const showToast = useMemo(
+    () =>
+      createToastScheduler({
+        setMessage,
+        stop: () => anim.stopAnimation(),
+        show: () => Animated.spring(anim, { toValue: 1, useNativeDriver: true, friction: 8 }).start(),
+        hide: (done) => Animated.timing(anim, { toValue: 0, duration: 200, useNativeDriver: true }).start(done),
+      }),
     [anim]
   );
+  useEffect(() => () => showToast.dispose(), [showToast]);
 
   return (
     <ToastContext.Provider value={showToast}>

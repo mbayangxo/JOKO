@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>Joko</title>
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        overflow: hidden;
+      }
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+      /* J12: shown until the app replaces #root — a slow or interrupted download is never a blank page. */
+      #k21-boot {
+        margin: auto;
+        max-width: 320px;
+        padding: 24px;
+        text-align: center;
+        font-family: system-ui, -apple-system, Roboto, sans-serif;
+        color: #050805;
+      }
+      #k21-boot button {
+        margin-top: 12px;
+        padding: 10px 18px;
+        border-radius: 10px;
+        border: 0;
+        background: #00853f;
+        color: #fff;
+        font-size: 15px;
+      }
+    </style>
+  </head>
+
+  <body style="background: #f2f8ec">
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <div id="root">
+      <div id="k21-boot" role="status" aria-live="polite">
+        <p id="k21-boot-text">K21 se charge…</p>
+      </div>
+    </div>
+    <script>
+      // J12-F15: if the app bundle download is cut (weak network), say so and retry — never a silent
+      // blank page. No money, no data: this only reloads the page shell.
+      (function () {
+        var failed = false;
+        var tries = Number(sessionStorage.getItem('k21_boot_tries') || '0');
+        function msg(text, button) {
+          var box = document.getElementById('k21-boot');
+          if (!box) return; // the app is already on screen
+          box.innerHTML = '<p>' + text + '</p>' + (button ? '<button type="button" id="k21-retry">Réessayer</button>' : '');
+          var b = document.getElementById('k21-retry');
+          if (b) b.onclick = function () { location.reload(); };
+        }
+        function retry() {
+          try { sessionStorage.setItem('k21_boot_tries', String(tries + 1)); } catch (e) {}
+          location.reload();
+        }
+        window.addEventListener('error', function (e) {
+          var t = e && e.target;
+          if (t && t.tagName === 'SCRIPT') {
+            failed = true;
+            msg('Connexion interrompue pendant le chargement de K21. Aucune opération n’a été faite.', true);
+            if (tries < 3) setTimeout(function () { if (navigator.onLine !== false) retry(); }, 4000 * (tries + 1));
+          }
+        }, true);
+        window.addEventListener('online', function () { if (failed) retry(); });
+        setTimeout(function () {
+          if (!failed) msg('Connexion lente — K21 continue de se charger…', false);
+        }, 15000);
+        // The retry budget resets only once the app is really on screen (the boot box is gone) — never on
+        // window "load", which also fires after a failed script and would loop.
+        var ok = setInterval(function () {
+          if (!document.getElementById('k21-boot')) {
+            clearInterval(ok);
+            try { sessionStorage.removeItem('k21_boot_tries'); } catch (e) {}
+          }
+        }, 1000);
+      })();
+    </script>
+  </body>
+</html>

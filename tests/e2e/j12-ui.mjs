@@ -1,0 +1,308 @@
+/**
+ * J12 browser-level E2E — weak network, lost responses, restarts (Chromium, exported web app, production-mode API).
+ *
+ *   1. LOST RESPONSE: a P2P send reaches the server and executes, but the response never comes back
+ *      (and the client's automatic retry is cut too). The app must show "en vérification", NEVER "Envoyé !",
+ *      and a second tap must not send a second payment.
+ *   2. RESTART while the outcome is unknown: the page is reloaded with the network still cut for intent
+ *      lookups. After reload the screen resumes the LOOKUP (never a re-submit), and only once the server
+ *      answers does it say "Paiement effectué".
+ *   3. AIRPLANE MODE before sending: nothing reaches the server; nothing is shown as sent; no money moves.
+ *   4. ACCOUNT SWITCH on the same browser profile: user B never sees user A's pending payment.
+ *
+ * Every money assertion is checked in the DATABASE: exactly one debit, exactly one credit, J2 invariants.
+ *
+ *   WEB_DIR=<expo export dir> PLAYWRIGHT_CORE=<playwright-core> CHROMIUM=<chrome> DATABASE_URL=… node tests/e2e/j12-ui.mjs
+ */
+import '../helpers/setup.js';
+import assert from 'node:assert/strict';
+import bcrypt from 'bcryptjs';
+import { startApiServer } from '../helpers/http-harness.js';
+import { prisma } from '../helpers/db.js';
+import { serveWeb } from './serve-web.mjs';
+import { customer, signedIn } from '../j3/helpers.js';
+import { assertInvariants } from '../../lib/money-kernel/invariants.js';
+import { checkCollectiveInvariants } from '../../lib/collective/invariants.js';
+import * as Coll from '../../lib/collective/engine.js';
+
+const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? 'playwright-core');
+const log = (m) => process.stdout.write(`${m}\n`);
+const results = [];
+const step = async (name, fn) => {
+  try {
+    await fn();
+    results.push(['PASS', name]);
+    log(`PASS ${name}`);
+  } catch (e) {
+    results.push(['FAIL', name, String(e.message).slice(0, 300)]);
+    log(`FAIL ${name}: ${String(e.message).slice(0, 300)}`);
+    throw e;
+  }
+};
+
+process.env.JOKKO_COLLECTIVE_ENABLED = 'true'; // the J11 engine is used below to set up a group (dark by default)
+const api = await startApiServer({ JOKKO_COLLECTIVE_ENABLED: 'true' });
+const web = await serveWeb({ dir: process.env.WEB_DIR, apiPort: Number(new URL(api.base).port) });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM });
+const errors = [];
+const PIN = '482913';
+
+const sessionInit = ({ token, refresh, device }) => {
+  sessionStorage.setItem('k21_access_token', token);
+  sessionStorage.setItem('k21_refresh_token', refresh);
+  sessionStorage.setItem('k21_device_id', device);
+  sessionStorage.setItem('k21_pin_configured', '1');
+  sessionStorage.setItem('k21_last_activity', String(Date.now()));
+};
+async function sessionPage(ctx, person, label) {
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(`${label}: ${String(e).slice(0, 200)}`));
+  await page.addInitScript(sessionInit, { token: person.token, refresh: person.refresh, device: person.device });
+  await page.goto(`http://127.0.0.1:${web.port}/`);
+  return page;
+}
+const tap = async (page, text, { exact = false, last = false } = {}) => {
+  const all = page.getByText(text, { exact }).filter({ visible: true });
+  const loc = last ? all.last() : all.first();
+  await loc.waitFor({ state: 'visible', timeout: 20_000 });
+  await loc.click();
+};
+const see = async (page, text, timeout = 20_000) => {
+  try {
+    await page.getByText(text).filter({ visible: true }).first().waitFor({ state: 'visible', timeout });
+  } catch {
+    const body = (await page.innerText('body').catch(() => '')).replace(/\s+/g, ' ');
+    throw new Error(`"${text}" not visible; screen: …${body.slice(-600)}`);
+  }
+};
+const until = async (fn, what) => {
+  for (let i = 0; i < 80; i += 1) {
+    if (await fn()) return true;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`timed out: ${what}`);
+};
+const visible = async (page, text) => (await page.getByText(text).filter({ visible: true }).count()) > 0;
+const bal = async (userId) => (await prisma.wallet.findUnique({ where: { userId } })).koriBalance;
+
+async function openSend(page, toHandle) {
+  await tap(page, 'Yónnee', { exact: true });
+  await see(page, 'À qui ?');
+  await tap(page, 'Handle', { exact: true });
+  await page.getByPlaceholder('@handle').filter({ visible: true }).first().fill(`@${toHandle}`);
+  await see(page, 'Continuer →');
+  await page.waitForTimeout(900); // recipient lookup is debounced (400 ms) + network
+  await tap(page, 'Continuer →');
+  await see(page, 'Oui — Envoyer');
+}
+async function pinIfAsked(page) {
+  const asked = await page.getByText('Confirme ton PIN').filter({ visible: true }).first().waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);
+  if (asked) for (const d of PIN) await tap(page, d, { exact: true, last: true });
+  return asked;
+}
+
+try {
+  const aC = await customer({ koriBalance: 50_000 });
+  const bC = await customer({ koriBalance: 0 });
+  const cC = await customer({ koriBalance: 50_000 });
+  for (const u of [aC, cC]) await prisma.user.update({ where: { id: u.id }, data: { pinHash: await bcrypt.hash(PIN, 4) } });
+  const A = await signedIn(api, aC);
+  const C = await signedIn(api, cC);
+
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  let page = await sessionPage(ctx, A, 'A');
+  const a0 = await bal(A.id);
+  const b0 = await bal(bC.id);
+  let sendHits = 0;
+  let executed = 0;
+  let intentsCut = true;
+  let serverAnswer = null;
+
+  await step('lost response: the server executes, the reply is lost → "en vérification", never "Envoyé !", no second payment', async () => {
+    await page.route('**/api/transfers/send', async (route) => {
+      // The PIN challenge (403 step_up_required, nothing executed) passes through untouched; the
+      // PIN-confirmed request is the one that executes — and its answer is lost.
+      if (!route.request().headers()['x-step-up-token']) return route.continue();
+      sendHits += 1;
+      if (sendHits === 1) {
+        const r = await route.fetch(); // reaches the server and executes …
+        executed += 1;
+        serverAnswer = `${r.status()} ${(await r.text()).slice(0, 300)}`;
+      }
+      await route.abort('failed'); // … but the client never gets the answer (and its auto-retry is cut too)
+    });
+    await page.route('**/api/money/intents/**', (route) => (intentsCut ? route.abort('failed') : route.continue()));
+    await openSend(page, bC.handle);
+    await tap(page, 'Oui — Envoyer');
+    await pinIfAsked(page);
+    await see(page, 'Nous vérifions le statut de ce paiement');
+    assert.ok(!(await visible(page, 'Envoyé !')), 'never shown as sent before the server confirms');
+    // a nervous second tap while checking must not fire a second payment
+    await page.getByText('Oui — Envoyer').filter({ visible: true }).first().click({ timeout: 2000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    assert.equal(executed, 1);
+    assert.equal(await bal(A.id), a0 - 5000, `debited exactly once on the server (server said: ${serverAnswer})`);
+    assert.equal(await bal(bC.id), b0 + 5000);
+    const pending = await page.evaluate(() => JSON.parse(localStorage.getItem('k21_pending_intents_v1') ?? '[]'));
+    assert.equal(pending.length, 1, 'the unknown outcome is remembered for lookup');
+    assert.deepEqual(Object.keys(pending[0]).sort(), ['createdAt', 'flow', 'fp', 'key', 'userId'], 'a lookup handle + instruction hash only');
+    assert.match(pending[0].fp, /^fp1-[0-9a-f]{16}$/);
+    assert.ok(!JSON.stringify(pending[0]).includes(bC.handle), 'no recipient in clear (the fp is a hash — see tests/j12/money-safety-i18n.test.js)');
+  });
+
+  await step('restart while unknown: the app resumes the LOOKUP (never re-sends) and confirms only from the server', async () => {
+    await page.reload();
+    await openSend(page, bC.handle).catch(() => {}); // land on the Send screen again (the banner shows at the top)
+    await see(page, 'Nous vérifions le statut d’un paiement précédent'); // J13-F17 provisional wording
+    assert.ok(!(await visible(page, 'Paiement effectué')), 'still unknown while lookups fail');
+    intentsCut = false; // network back
+    await see(page, 'Paiement effectué', 40_000);
+    assert.equal(sendHits <= 2, true, `no re-submit after restart (send hits: ${sendHits})`);
+    assert.equal(executed, 1);
+    assert.equal(await bal(A.id), a0 - 5000, 'still exactly one debit');
+    const pending = await page.evaluate(() => JSON.parse(localStorage.getItem('k21_pending_intents_v1') ?? '[]'));
+    assert.equal(pending.length, 0, 'resolved → forgotten');
+  });
+
+  await step('airplane mode before sending: nothing is sent, nothing is shown as sent, no money moves', async () => {
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await page.reload();
+    await openSend(page, bC.handle);
+    const before = await bal(A.id);
+    await ctx.setOffline(true);
+    await tap(page, 'Oui — Envoyer');
+    await pinIfAsked(page);
+    await page.waitForTimeout(4000);
+    assert.ok(!(await visible(page, 'Envoyé !')), 'offline: never shown as sent');
+    await ctx.setOffline(false);
+    // J13-F17: "nothing received YET" is provisional — never "not received / no money debited" until the
+    // server has CLOSED the attempt (after which a late original is refused).
+    await see(page, 'Nous vérifions le statut de ce paiement', 45_000);
+    await page.waitForTimeout(15_000);
+    assert.ok(!(await visible(page, 'pas été reçu')), 'never a definitive "not received" while the original may still arrive');
+    await see(page, 'Le paiement n’a pas été reçu : il a été annulé', 150_000);
+    assert.equal(await bal(A.id), before, 'no money moved');
+  });
+
+  await step('account switch on the same browser: user C never sees user A’s pending payment', async () => {
+    await page.evaluate(({ k, userId }) => localStorage.setItem('k21_pending_intents_v1', JSON.stringify([{ key: k, userId, flow: 'p2p', createdAt: Date.now() }])), { k: 'k-a-private-intent', userId: A.id });
+    await page.close();
+    page = await sessionPage(ctx, C, 'C');
+    let lookups = 0;
+    await page.route('**/api/money/intents/**', (route) => {
+      lookups += 1;
+      return route.continue();
+    });
+    await openSend(page, bC.handle);
+    await page.waitForTimeout(3000);
+    assert.ok(!(await visible(page, 'paiement précédent')), 'C is not shown A’s pending payment');
+    assert.equal(lookups, 0, 'C’s session never looks up A’s intent');
+  });
+
+  await step('J11 contribution, reply lost: shown as "vérification" then confirmed by the server — paid once', async () => {
+    const m1 = await customer({ koriBalance: 20_000 });
+    const m2 = await customer({ koriBalance: 20_000 });
+    const name = `Tontine J12 ${Date.now().toString(36).slice(-4)}`;
+    const g = await Coll.createGroup(m1.id, { kind: 'rotating', name, contributionKori: 1000, frequency: 'weekly', graceDays: 1, rotationMethod: 'fixed' });
+    await Coll.inviteMembers(g.id, m1.id, [m2.handle]);
+    await Coll.respondToInvite(g.id, m2.id, true);
+    const p = await Coll.proposeRules(g.id, m1.id, { order: [m2.id, m1.id], startAt: new Date(Date.now() + 1000) });
+    for (const u of [m1, m2]) await Coll.acceptRules(g.id, u.id, { rulesHash: p.rulesHash });
+    const M1 = await signedIn(api, m1);
+    const gctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const gp = await sessionPage(gctx, M1, 'M1');
+    let hits = 0;
+    await gp.route('**/api/collective/groups/*/contribute', async (route) => {
+      hits += 1;
+      if (hits === 1) await route.fetch(); // executes on the server …
+      await route.abort('failed'); // … the reply (and the client's auto-retry) is lost
+    });
+    const before = await bal(m1.id);
+    await tap(gp, 'Natta', { exact: true });
+    await tap(gp, 'Groupes d’épargne (nouveau)');
+    await tap(gp, name);
+    await tap(gp, 'Cotiser 1000 ₭', { exact: true });
+    await see(gp, 'Nous vérifions le statut de ce paiement');
+    assert.ok(!(await visible(gp, 'Cotisation enregistrée')), 'never shown as paid before the server confirms');
+    await see(gp, 'Paiement effectué', 40_000); // the intent lookup — not a re-send — confirms it
+    assert.equal(await prisma.collectivePayment.count({ where: { groupId: g.id, userId: m1.id, kind: 'contribution' } }), 1, 'one contribution');
+    assert.equal(await bal(m1.id), before - 1000, 'debited exactly once');
+    await gctx.close();
+  });
+
+  await step('chat, reply lost: the message is queued once, retried with the SAME id, stored exactly once', async () => {
+    const e1 = await customer();
+    const f1 = await customer();
+    await prisma.user.update({ where: { id: f1.id }, data: { name: 'Fatou Sow' } });
+    await prisma.userFriend.createMany({ data: [{ userId: e1.id, friendId: f1.id }, { userId: f1.id, friendId: e1.id }] });
+    const E1 = await signedIn(api, e1);
+    const th = await E1.call('POST', 'mbolo/threads', { memberHandles: [f1.handle] });
+    assert.equal(th.status, 201, JSON.stringify(th.body));
+    const cctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const cp = await sessionPage(cctx, E1, 'E1');
+    let posts = 0;
+    await cp.route('**/api/mbolo/threads/*/messages', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      posts += 1;
+      if (posts === 1) {
+        await route.fetch(); // stored on the server …
+        return route.abort('failed'); // … reply lost
+      }
+      if (posts === 2) return route.abort('failed'); // the client's automatic retry is cut too
+      return route.continue();
+    });
+    await tap(cp, 'Mboolo', { exact: true });
+    await tap(cp, 'Fatou Sow');
+    const box = cp.getByPlaceholder('Message…').filter({ visible: true }).first();
+    await box.fill('On se retrouve au marché à 17h');
+    await box.press('Enter');
+    await see(cp, 'en attente d’envoi', 20_000);
+    await until(async () => (await prisma.mboloMessage.count({ where: { threadId: th.body.id } })) === 1 && posts >= 3, 'outbox flushed');
+    await cp.waitForTimeout(4000);
+    assert.equal(await prisma.mboloMessage.count({ where: { threadId: th.body.id } }), 1, 'stored exactly once despite the retries');
+    const row = await prisma.mboloMessage.findFirst({ where: { threadId: th.body.id } });
+    assert.match(row.clientMessageId ?? '', /^cm-/);
+    assert.ok(!(await visible(cp, 'en attente d’envoi')), 'the pending state clears once the server has it');
+
+    await step('network banner: offline is announced honestly, cleared on reconnect', async () => {
+      await cctx.setOffline(true);
+      await cp.evaluate(() => window.dispatchEvent(new Event('offline')));
+      await see(cp, 'un paiement ne part jamais hors ligne');
+      await cctx.setOffline(false);
+      await cp.evaluate(() => window.dispatchEvent(new Event('online')));
+      await cp.waitForTimeout(500);
+      assert.ok(!(await visible(cp, 'un paiement ne part jamais hors ligne')));
+    });
+
+    await step('draft survives a reload; a revoked session shows no private content after reload', async () => {
+      await box.fill('Brouillon pas encore envoyé');
+      await cp.waitForTimeout(1200); // debounced save
+      await cp.reload();
+      await tap(cp, 'Mboolo', { exact: true });
+      await tap(cp, 'Fatou Sow');
+      const restored = cp.getByPlaceholder('Message…').filter({ visible: true }).first();
+      await until(async () => (await restored.inputValue()) === 'Brouillon pas encore envoyé', 'draft restored');
+      await prisma.authSession.updateMany({ where: { userId: e1.id }, data: { revokedAt: new Date() } });
+      await cp.reload();
+      await cp.waitForTimeout(4000);
+      const body = await cp.innerText('body');
+      assert.ok(!body.includes('On se retrouve au marché'), 'no message history for a revoked session');
+      assert.ok(!body.includes('Brouillon pas encore envoyé'), 'no draft shown without a valid session');
+    });
+    await cctx.close();
+  });
+
+  await step('no uncaught page errors', async () => {
+    assert.deepEqual(errors, []);
+  });
+  await assertInvariants(prisma);
+  const ci = await checkCollectiveInvariants();
+  assert.ok(ci.ok, JSON.stringify(ci.violations));
+  log('INVARIANTS OK');
+} finally {
+  log(JSON.stringify({ passed: results.filter((r) => r[0] === 'PASS').length, failed: results.filter((r) => r[0] === 'FAIL').length }));
+  await browser.close();
+  web.close();
+  await api.stop();
+  await prisma.$disconnect();
+}

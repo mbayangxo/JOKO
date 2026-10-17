@@ -1,0 +1,41 @@
+diff --git a/lib/cron/tontine-processor.js b/lib/cron/tontine-processor.js
+index 1cb8d80..24b24db 100644
+--- a/lib/cron/tontine-processor.js
++++ b/lib/cron/tontine-processor.js
+@@ -1,4 +1,4 @@
+-import { processTontineGroup } from '../tontine-service.js';
++import { LEGACY_TONTINE_MONEY_SUSPENDED, processTontineGroup } from '../tontine-service.js';
+ import { prisma } from '../prisma.js';
+ import { writeSecureLog } from '../secure-log.js';
+ 
+@@ -7,6 +7,8 @@ import { writeSecureLog } from '../secure-log.js';
+  */
+ export async function runTontineProcessor(db = prisma) {
+   const now = new Date();
++  // P0 containment: no automatic collection from members' wallets.
++  if (LEGACY_TONTINE_MONEY_SUSPENDED) return { job: 'tontine_processor', processed: 0, skipped: 'legacy_tontine_money_suspended', ranAt: now.toISOString() };
+   const due = await db.tontineGroup.findMany({
+     where: {
+       active: true,
+diff --git a/lib/tontine-service.js b/lib/tontine-service.js
+index c8252ca..4aa3333 100644
+--- a/lib/tontine-service.js
++++ b/lib/tontine-service.js
+@@ -29,7 +29,17 @@ export class TontineError extends Error {
+  * Collect member dues and release pot to rotation winner when all paid.
+  * Same logic as the daily cron, scoped to one group.
+  */
++/**
++ * P0 containment (tontine drain): legacy collection debits every listed member — who never consented —
++ * into the creator's personal wallet. Money movement is suspended until the consent + escrow model ships.
++ * Fail-closed: no environment change is needed to stay safe.
++ */
++export const LEGACY_TONTINE_MONEY_SUSPENDED = true;
++
+ export async function processTontineGroup(groupId, db = prisma, now = new Date()) {
++  if (LEGACY_TONTINE_MONEY_SUSPENDED) {
++    throw new TontineError('tontine_suspended', 'Les tontines sont temporairement suspendues pour votre sécurité. Aucun prélèvement n’est effectué.', 503);
++  }
+   const group = await db.tontineGroup.findUnique({
+     where: { id: groupId },
+     include: {

@@ -26,7 +26,7 @@ export default function QrScanScreen({ navigation, route }) {
       : mode === 'friend'
         ? 'Ajouter un ami'
         : mode === 'agent'
-          ? 'Scanner dépôt client'
+          ? 'Scanner le code client'
           : mode === 'tontine_member'
             ? 'Scanner un membre'
             : mode === 'group_join'
@@ -77,7 +77,7 @@ export default function QrScanScreen({ navigation, route }) {
 
           <Text style={styles.orLabel}>ou colle un code</Text>
 
-          <TextInput
+          <TextInput accessibilityLabel="k21://pay/@fatou ou @fatou"
             style={styles.input}
             value={raw}
             onChangeText={setRaw}

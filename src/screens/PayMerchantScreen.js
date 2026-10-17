@@ -18,8 +18,10 @@ import { useCountUp, useEntrance, usePopIn, useSuccessHaptic } from '../hooks/an
 import { useScreenshotBlock } from '../hooks/useScreenshotBlock';
 import { useToast } from '../components/Toast';
 import StepUpOverlay from '../components/StepUpOverlay';
+import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
 import { useSecurity } from '../context/SecurityContext';
-import { merchantPay, getBusinesses, getMerchantPublic } from '../lib/api-client';
+import { merchantPay, getBusinesses, getMerchantPublic, viewMerchantCharge, payMerchantCharge } from '../lib/api-client';
+import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import { formatKori, KORI_SYMBOL } from '../lib/kori.js';
 import KoriAmount from '../components/KoriAmount';
 
@@ -218,7 +220,7 @@ function ConfirmStep({ merchant, amount, balance, onPay, onCancel, submitting })
   );
 }
 
-function SuccessStep({ merchant, amount, oldBalance, newBalance, reference, onDone, onMarkedUndone, onShareMbolo, undone }) {
+function SuccessStep({ merchant, amount, oldBalance, newBalance, reference, onDone, onMarkedUndone, onShareMbolo, undone, held = false }) {
   useSuccessHaptic();
   const ring = usePopIn(0, 500, 0.4);
   const title = useEntrance(200, 500, 10);
@@ -230,14 +232,19 @@ function SuccessStep({ merchant, amount, oldBalance, newBalance, reference, onDo
   return (
     <View style={styles.successRoot}>
       <Animated.View style={[styles.ssRing, ring]}>
-        <Text style={{ fontSize: 38, color: colors.greenDark }}>{undone ? '↩' : '✓'}</Text>
+        <Text style={{ fontSize: 38, color: held ? colors.goldDark : colors.greenDark }}>{undone ? '↩' : held ? '🔎' : '✓'}</Text>
       </Animated.View>
-      <Animated.Text style={[styles.ssTitle, title]}>{undone ? 'Annulé' : 'Payé !'}</Animated.Text>
+      {/* J13-F17: a payment held for review is NOT paid — never "Payé !" until the server completes it. */}
+      <Animated.Text style={[styles.ssTitle, title]}>{undone ? 'Annulé' : held ? 'En vérification' : 'Payé !'}</Animated.Text>
       <Animated.Text style={[styles.ssSub, sub]}>
-        {undone ? 'Paiement annulé — argent récupéré.' : `${merchant.name} a reçu\nton paiement instantanément.`}
+        {undone
+          ? 'Paiement annulé — argent récupéré.'
+          : held
+            ? `Ton paiement à ${merchant.name} est en vérification par K21.\nIl n’est pas encore effectué — ne le renouvelle pas.\nTon historique se mettra à jour.`
+            : `${merchant.name} a reçu\nton paiement instantanément.`}
       </Animated.Text>
 
-      {!undone && <UndoTransferBar reference={reference} amount={amount} onUndone={onMarkedUndone} />}
+      {!undone && !held && <UndoTransferBar reference={reference} amount={amount} onUndone={onMarkedUndone} />}
 
       <Animated.View style={receipt}>
         <ReceiptCard
@@ -250,7 +257,7 @@ function SuccessStep({ merchant, amount, oldBalance, newBalance, reference, onDo
             { key: 'ref', label: 'Référence', value: reference, small: true },
           ]}
         />
-        {!undone && (
+        {!undone && !held && (
           <ReceiptShareButtons
             type="merchant"
             amount={amount}
@@ -261,7 +268,7 @@ function SuccessStep({ merchant, amount, oldBalance, newBalance, reference, onDo
         )}
       </Animated.View>
 
-      {!undone && (
+      {!undone && !held && (
         <Animated.View style={[styles.wakhnaBonus, bonus]}>
           <Text style={{ fontSize: 16 }}>✦</Text>
           <Text style={styles.wakhnaBonusText}>
@@ -285,10 +292,14 @@ export default function PayMerchantScreen({ navigation, route }) {
   const [newBalance, setNewBalance] = useState(0);
   const [reference, setReference] = useState('');
   const [undone, setUndone] = useState(false);
+  const [held, setHeld] = useState(false); // J13-F17: answered 202 — under review, not paid
   const [submitting, setSubmitting] = useState(false);
   const [stepUpVisible, setStepUpVisible] = useState(false);
   const [merchants, setMerchants] = useState([]);
   const [merchant, setMerchant] = useState(DEFAULT_MERCHANT);
+  // J4: an amount-bearing QR is an opaque charge code; amount comes from the server.
+  const [charge, setCharge] = useState(null);
+  const moneySubmit = useMoneySubmit('merchant');
   const { balance, refreshWallet, setPendingMboloShare } = useAppState();
 
   const applyMerchant = (m, params = route.params) => {
@@ -300,6 +311,23 @@ export default function PayMerchantScreen({ navigation, route }) {
       verified: params?.merchantVerified ?? m.verified ?? false,
     });
   };
+
+  useEffect(() => {
+    const code = route.params?.chargeCode;
+    if (!code) return;
+    viewMerchantCharge(code)
+      .then((c) => {
+        if (c.status !== 'open') {
+          showToast(c.status === 'paid' ? 'Cette demande de paiement est déjà réglée' : 'Cette demande de paiement n’est plus valable');
+          return;
+        }
+        setCharge(c);
+        setAmount(c.amountKori);
+        // The charge pays by code; businessId only marks the merchant as chosen.
+        setMerchant({ name: c.merchant?.name ?? 'Marchand', arr: c.label ?? 'K21', emoji: '🏪', businessId: `charge:${c.code}`, verified: false });
+      })
+      .catch((err) => showToast(err.message ?? 'Demande de paiement introuvable'));
+  }, [route.params?.chargeCode]);
 
   useEffect(() => {
     const presetId = route.params?.merchantId;
@@ -319,6 +347,7 @@ export default function PayMerchantScreen({ navigation, route }) {
   }, [route.params?.merchantId, route.params?.merchantName, route.params?.merchantVerified, route.params?.merchantArr]);
 
   const selectMerchant = (m) => {
+    setCharge(null);
     setMerchant({
       name: m.name,
       arr: m.arrondissement ?? m.category ?? 'K21',
@@ -333,24 +362,32 @@ export default function PayMerchantScreen({ navigation, route }) {
       showToast('Aucun marchand K21 — scanne un QR ou choisis dans la liste');
       return;
     }
+    if (moneySubmit.busy) return;
     setSubmitting(true);
     setOldBalance(balance);
     try {
-      const result = await merchantPay(merchant.businessId, {
-        amount,
-        stepUpToken: stepUpToken ?? security.stepUpToken,
-      });
-      setReference(result.reference);
-      setUndone(false);
-      const wallet = await refreshWallet();
-      setNewBalance(wallet.balance ?? wallet.koriBalance ?? balance - amount);
-      setStep('success');
-    } catch (err) {
-      if (err.code === 'step_up_required') {
+      const token = stepUpToken ?? security.stepUpToken;
+      const out = await moneySubmit.submit((intentKey) =>
+        charge
+          ? payMerchantCharge(charge.code, { expectedAmountKori: charge.amountKori, stepUpToken: token, intentKey })
+          : merchantPay(merchant.businessId, { amount, stepUpToken: token, intentKey }),
+        { instruction: charge ? { charge: charge.code, amountKori: charge.amountKori } : { business: merchant.businessId, amount } },
+      );
+      if (out.state === 'needs_pin') {
         setStepUpVisible(true);
         return;
       }
-      showToast(err.message ?? 'Paiement impossible');
+      if (out.state === 'done' || out.state === 'accepted_pending') {
+        setReference(out.response?.reference ?? out.response?.receiptReference ?? out.references?.[0] ?? '');
+        setUndone(false);
+        setHeld(out.state === 'accepted_pending');
+        const wallet = await refreshWallet();
+        setNewBalance(wallet.balance ?? wallet.koriBalance ?? balance - amount);
+        setStep('success');
+        if (out.state === 'accepted_pending') showToast(out.message);
+        return;
+      }
+      showToast(out.nextStep ? `${out.message} ${out.nextStep}` : out.message ?? 'Paiement impossible');
     } finally {
       setSubmitting(false);
     }
@@ -375,6 +412,8 @@ export default function PayMerchantScreen({ navigation, route }) {
   };
 
   const finish = () => {
+    moneySubmit.reset();
+    setCharge(null);
     setStep('scan');
     setAmount(2500);
     navigation.goBack();
@@ -384,6 +423,7 @@ export default function PayMerchantScreen({ navigation, route }) {
     <View style={styles.root}>
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <MoneyPhaseBanner phase={moneySubmit.phase} />
         {step === 'scan' && (
           <StepTransition>
             <ScanStep
@@ -391,7 +431,8 @@ export default function PayMerchantScreen({ navigation, route }) {
               merchants={merchants}
               onSelectMerchant={selectMerchant}
               amount={amount}
-              setAmount={setAmount}
+              // A charge's amount is fixed by the server: the keypad cannot change it.
+              setAmount={charge ? () => {} : setAmount}
               onBack={() => navigation.goBack()}
               onContinue={() => {
                 if (!merchant.businessId) {
@@ -421,6 +462,7 @@ export default function PayMerchantScreen({ navigation, route }) {
               onMarkedUndone={handleUndone}
               onShareMbolo={shareMbolo}
               undone={undone}
+              held={held}
             />
           </StepTransition>
         )}

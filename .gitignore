@@ -44,3 +44,6 @@ yarn-error.*
 /android
 .vercel
 server/
+
+# J15 torture-lab run output (local only)
+lab-runs/

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { useReduceMotion } from '../context/PreferencesContext';
 
 // Shared animation hooks mapping 1:1 to the @keyframes reused across every
 // K21 prototype file (dot-blink, badge-bounce, ci-in/ti-in entrance, etc).
@@ -23,7 +24,9 @@ export function useSuccessHaptic() {
 // `ha-float` / `act-float` / `pill-float` / `sc-float`: translateY 0 -> -distance -> 0, infinite, staggered.
 export function useFloatLoop(delay = 0, distance = 4, halfDuration = 1500) {
   const val = useRef(new Animated.Value(0)).current;
+  const still = useReduceMotion();
   useEffect(() => {
+    if (still) return undefined; // J13-F10: no infinite decorative loop under reduce-motion / low data
     const anim = Animated.loop(
       Animated.sequence([
         Animated.timing(val, { toValue: -distance, duration: halfDuration, delay, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
@@ -32,14 +35,16 @@ export function useFloatLoop(delay = 0, distance = 4, halfDuration = 1500) {
     );
     anim.start();
     return () => anim.stop();
-  }, [val, delay, distance, halfDuration]);
+  }, [val, delay, distance, halfDuration, still]);
   return val;
 }
 
 // `dot-blink` / `online-blink`: opacity 1 -> low -> 1, infinite.
 export function useBlink(periodMs = 800, lowOpacity = 0.3) {
   const val = useRef(new Animated.Value(1)).current;
+  const still = useReduceMotion();
   useEffect(() => {
+    if (still) return undefined; // J13-F10: no infinite decorative loop under reduce-motion / low data
     const anim = Animated.loop(
       Animated.sequence([
         Animated.timing(val, { toValue: lowOpacity, duration: periodMs / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
@@ -48,14 +53,16 @@ export function useBlink(periodMs = 800, lowOpacity = 0.3) {
     );
     anim.start();
     return () => anim.stop();
-  }, [val, periodMs, lowOpacity]);
+  }, [val, periodMs, lowOpacity, still]);
   return val;
 }
 
 // `badge-bounce` / `badge-breathe` / `score-star` / `logo-bounce` / `ring-wobble`: scale 1 -> peak -> 1, infinite.
 export function useScalePulse(periodMs = 1500, peak = 1.15) {
   const val = useRef(new Animated.Value(1)).current;
+  const still = useReduceMotion();
   useEffect(() => {
+    if (still) return undefined; // J13-F10: no infinite decorative loop under reduce-motion / low data
     const anim = Animated.loop(
       Animated.sequence([
         Animated.timing(val, { toValue: peak, duration: periodMs / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
@@ -64,14 +71,16 @@ export function useScalePulse(periodMs = 1500, peak = 1.15) {
     );
     anim.start();
     return () => anim.stop();
-  }, [val, periodMs, peak]);
+  }, [val, periodMs, peak, still]);
   return val;
 }
 
 // `mboolo-pulse` / `search-glow` / `field-breathe` / `pay-shimmer`: color oscillates between two values, infinite.
 export function useColorPulse(from, to, periodMs = 3000) {
   const val = useRef(new Animated.Value(0)).current;
+  const still = useReduceMotion();
   useEffect(() => {
+    if (still) return undefined; // J13-F10: no infinite decorative loop under reduce-motion / low data
     const anim = Animated.loop(
       Animated.sequence([
         Animated.timing(val, { toValue: 1, duration: periodMs / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
@@ -80,14 +89,16 @@ export function useColorPulse(from, to, periodMs = 3000) {
     );
     anim.start();
     return () => anim.stop();
-  }, [val, periodMs]);
+  }, [val, periodMs, still]);
   return val.interpolate({ inputRange: [0, 1], outputRange: [from, to] });
 }
 
 // `rect-glow` / `music-glow` / `gift-shine`: shadow/opacity 0 -> peak -> 0, infinite.
 export function useGlowPulse(periodMs = 4000, peakOpacity = 0.5) {
   const val = useRef(new Animated.Value(0)).current;
+  const still = useReduceMotion();
   useEffect(() => {
+    if (still) return undefined; // J13-F10: no infinite decorative loop under reduce-motion / low data
     const anim = Animated.loop(
       Animated.sequence([
         Animated.timing(val, { toValue: peakOpacity, duration: periodMs / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
@@ -96,14 +107,16 @@ export function useGlowPulse(periodMs = 4000, peakOpacity = 0.5) {
     );
     anim.start();
     return () => anim.stop();
-  }, [val, periodMs, peakOpacity]);
+  }, [val, periodMs, peakOpacity, still]);
   return val;
 }
 
 // `bar-d`: scaleY 1 -> .3/.35 -> 1, .5s, infinite, staggered per bar.
 export function useBarLoop(delay, bottom = 0.3) {
   const val = useRef(new Animated.Value(1)).current;
+  const still = useReduceMotion();
   useEffect(() => {
+    if (still) return undefined; // J13-F10: no infinite decorative loop under reduce-motion / low data
     const anim = Animated.loop(
       Animated.sequence([
         Animated.timing(val, { toValue: bottom, duration: 250, delay, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
@@ -112,14 +125,16 @@ export function useBarLoop(delay, bottom = 0.3) {
     );
     anim.start();
     return () => anim.stop();
-  }, [val, delay, bottom]);
+  }, [val, delay, bottom, still]);
   return val;
 }
 
 // `cover-spin`: holds still, then flicks a full 360 spin near the end of each cycle.
 export function useSpinFlick(cycleMs = 8000, spinMs = 800) {
   const val = useRef(new Animated.Value(0)).current;
+  const still = useReduceMotion();
   useEffect(() => {
+    if (still) return undefined;
     let cancelled = false;
     const run = () => {
       val.setValue(0);
@@ -135,20 +150,22 @@ export function useSpinFlick(cycleMs = 8000, spinMs = 800) {
       cancelled = true;
       val.stopAnimation();
     };
-  }, [val, cycleMs, spinMs]);
+  }, [val, cycleMs, spinMs, still]);
   return val.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'] });
 }
 
 // `wait-spin`: continuous linear rotation, infinite.
 export function useSpinLoop(periodMs = 3000) {
   const val = useRef(new Animated.Value(0)).current;
+  const still = useReduceMotion();
   useEffect(() => {
+    if (still) return undefined; // J13-F10: no infinite decorative loop under reduce-motion / low data
     const anim = Animated.loop(
       Animated.timing(val, { toValue: 1, duration: periodMs, easing: Easing.linear, useNativeDriver: true })
     );
     anim.start();
     return () => anim.stop();
-  }, [val, periodMs]);
+  }, [val, periodMs, still]);
   return val.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 }
 
@@ -158,13 +175,15 @@ export function useSpinLoop(periodMs = 3000) {
 // around the element it decorates.
 export function useRipple(periodMs = 2000, maxScale = 1.18) {
   const val = useRef(new Animated.Value(0)).current;
+  const still = useReduceMotion();
   useEffect(() => {
+    if (still) return undefined; // J13-F10: no infinite decorative loop under reduce-motion / low data
     const anim = Animated.loop(
       Animated.timing(val, { toValue: 1, duration: periodMs, easing: Easing.out(Easing.ease), useNativeDriver: true })
     );
     anim.start();
     return () => anim.stop();
-  }, [val, periodMs]);
+  }, [val, periodMs, still]);
   return {
     scale: val.interpolate({ inputRange: [0, 1], outputRange: [1, maxScale] }),
     opacity: val.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0.5, 0.2, 0] }),

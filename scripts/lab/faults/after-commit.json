@@ -1,0 +1,7 @@
+{
+  "description": "L5: kill -9 right after COMMIT (money moved, response lost) on every 4th money transaction per process, plus slow commits that widen the in-flight window.",
+  "faults": [
+    { "point": "money.after_commit", "every": 4, "action": "crash" },
+    { "point": "money.before_commit", "every": 3, "action": "delay", "ms": 250 }
+  ]
+}

@@ -151,7 +151,7 @@ export default function ChartsScreen({ navigation }) {
             <Text style={styles.pollQuestion}>🎶 {chart?.question ?? 'Ta chanson préférée cette semaine ?'}</Text>
             <View style={styles.searchRow}>
               <Text style={{ fontSize: 13 }}>🔍</Text>
-              <TextInput
+              <TextInput accessibilityLabel="Cherche la chanson sur YouTube"
                 style={styles.searchInput}
                 placeholder="Cherche la chanson sur YouTube…"
                 placeholderTextColor={'rgba(5,8,5,0.45)'}

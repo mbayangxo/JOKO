@@ -1,7 +1,8 @@
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
+import { getToday, getUnreadNotifications } from '../lib/api-client';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import ScreenBackground from '../components/ScreenBackground';
@@ -58,12 +59,17 @@ export default function HomeScreen({ navigation }) {
   const balanceEntrance = useEntrance(0, 1000, 12);
   const balanceGlow = useGlowPulse(3400, 0.4);
   const walletPulse = useGlowPulse(2800, 1);
-  const { profile, balance, refreshWallet } = useAppState();
+  const { profile, balance, refreshWallet, walletRefreshError } = useAppState();
   const firstName = profile.name.split(' ')[0];
 
+  // J10: the bell only signals something real (unread, not muted) — no permanent attention dot.
+  const [unread, setUnread] = useState(0);
+  const [todayCount, setTodayCount] = useState(null);
   useFocusEffect(
     useCallback(() => {
       refreshWallet().catch(() => {});
+      getUnreadNotifications().then((u) => setUnread(u?.total ?? 0)).catch(() => setUnread(0));
+      getToday().then((t) => setTodayCount(t?.items?.length ?? 0)).catch(() => setTodayCount(null));
     }, [refreshWallet]),
   );
 
@@ -81,7 +87,7 @@ export default function HomeScreen({ navigation }) {
             </View>
             <PressScale scaleTo={0.9} onPress={() => open('Main', { screen: 'NotificationsTab' })} style={styles.notifBtn}>
               <Text style={{ fontSize: 16 }}>🔔</Text>
-              <Animated.View style={[styles.notifDot, { opacity: notifBlink }]} />
+              {unread > 0 ? <Animated.View style={[styles.notifDot, { opacity: notifBlink }]} accessibilityLabel={`${unread} notification${unread > 1 ? 's' : ''} non lue${unread > 1 ? 's' : ''}`} /> : null}
             </PressScale>
           </View>
 
@@ -101,9 +107,18 @@ export default function HomeScreen({ navigation }) {
             <Animated.View style={balanceEntrance}>
               <KoriAmount value={balance} textStyle={styles.balanceAmount} style={{ justifyContent: 'center' }} />
             </Animated.View>
-            <View style={styles.zeroFeesPill}>
-              <Text style={styles.zeroFeesText}>✦ Zéro frais sur tous tes envois</Text>
-            </View>
+            {walletRefreshError ? (
+              // J13-F8: a balance that could not be refreshed is flagged — never silently shown as current.
+              // It takes the pill's slot (one line, same box) so nothing below ever moves under a finger
+              // (J13-F16: the flag toggling on a lossy network shifted the action tiles mid-tap).
+              <PressScale onPress={() => refreshWallet().catch(() => {})} style={[styles.zeroFeesPill, styles.stalePill]} accessibilityRole="button" accessibilityLabel="Solde peut-être pas à jour. Actualiser le solde">
+                <Text style={[styles.zeroFeesText, styles.staleText]} numberOfLines={1}>⚠️ Solde peut-être pas à jour · actualiser</Text>
+              </PressScale>
+            ) : (
+              <View style={styles.zeroFeesPill}>
+                <Text style={styles.zeroFeesText} numberOfLines={1}>✦ Zéro frais sur tous tes envois</Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.homeActions}>
@@ -123,6 +138,14 @@ export default function HomeScreen({ navigation }) {
             ))}
           </View>
 
+          <PressScale scaleTo={0.97} onPress={() => open('Today')} style={[styles.walletCard, { marginBottom: spacing.md }]} accessibilityLabel="Aujourd'hui : ce qui t'attend">
+            <Text style={{ fontSize: 22 }}>📋</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.todayTitle}>Aujourd'hui</Text>
+              <Text style={styles.todaySub}>{todayCount == null ? 'Ce qui t’attend' : todayCount === 0 ? 'Rien ne t’attend' : `${todayCount} chose${todayCount > 1 ? 's' : ''} t’attend${todayCount > 1 ? 'ent' : ''}`}</Text>
+            </View>
+          </PressScale>
+
           <PressScale scaleTo={0.97} onPress={() => open('Wallet')} style={styles.walletCard}>
             <Animated.View style={[styles.walletIcon, { opacity: Animated.add(0.75, Animated.multiply(walletPulse, 0.25)) }]}>
               <Text style={{ fontSize: 22 }}>💼</Text>
@@ -140,6 +163,8 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  todayTitle: { fontFamily: fontFamily.bodyBold, color: colors.ink, fontSize: 15 },
+  todaySub: { ...type.caption, marginTop: 2 },
   root: { flex: 1, backgroundColor: colors.appCanvas.base },
 
   hero: { flex: 1, paddingHorizontal: spacing.huge, paddingTop: spacing.giant },
@@ -151,6 +176,8 @@ const styles = StyleSheet.create({
   notifDot: { position: 'absolute', top: 8, right: 9, width: 6, height: 6, borderRadius: 3, backgroundColor: colors.orange, borderWidth: 1.5, borderColor: colors.appCanvas.base },
 
   balanceDisplay: { alignItems: 'center', marginBottom: spacing.giant, marginTop: spacing.giant },
+  stalePill: { backgroundColor: 'rgba(232,92,26,0.10)', borderColor: 'rgba(232,92,26,0.35)' },
+  staleText: { color: colors.terracottaDark },
   balanceGlow: {
     position: 'absolute', top: -20, width: 220, height: 100, borderRadius: 100,
     backgroundColor: colors.green, alignSelf: 'center',

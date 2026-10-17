@@ -473,7 +473,7 @@ export default function DiscoverScreen({ navigation, route }) {
         <View style={styles.hero}>
           <View style={styles.searchRow}>
             <Text style={{ fontSize: 12 }}>🔍</Text>
-            <TextInput
+            <TextInput accessibilityLabel="Chercher..."
               style={styles.searchInput}
               placeholder="Chercher..."
               placeholderTextColor={'rgba(5,8,5,0.4)'}

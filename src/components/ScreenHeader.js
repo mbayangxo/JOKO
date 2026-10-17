@@ -8,7 +8,7 @@ import { colors, fontFamily, radius, spacing, type } from '../theme';
 export default function ScreenHeader({ onBack, title, eyebrow, style, titleStyle, backBg }) {
   return (
     <View style={[styles.row, style]}>
-      <PressScale scaleTo={0.9} onPress={onBack} style={[styles.backBtn, backBg && { backgroundColor: backBg }]}>
+      <PressScale scaleTo={0.9} onPress={onBack} style={[styles.backBtn, backBg && { backgroundColor: backBg }]} accessibilityRole="button" accessibilityLabel="Retour">
         <Text style={styles.backIcon}>←</Text>
       </PressScale>
       {(title || eyebrow) && (

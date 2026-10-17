@@ -133,7 +133,17 @@ test('sender identity comes from the token, not the request body', async () => {
   const victimWallet = await prisma.wallet.findUnique({ where: { id: richVictim.wallet.id } });
   const attackerWallet = await prisma.wallet.findUnique({ where: { id: attacker.wallet.id } });
   assert.equal(victimWallet.koriBalance, 1_000_000, 'victim never debited');
-  assert.equal(attackerWallet.koriBalance, 4_802, 'attacker pays from their own wallet (200 ₭ send + 2 ₭ earn)');
+  // An earn reward is allowed only when paid from the funded incentive budget
+  // (another test may have left it funded); nothing may be minted.
+  const [{ funded }] = await prisma.$queryRaw`
+    SELECT COALESCE(SUM(c.amount), 0)::int AS funded
+      FROM "Posting" c
+      JOIN "LedgerAccount" ca ON ca.id = c."accountId"
+      JOIN "JournalEntry" j ON j.id = c."entryId" AND j.kind = 'reward'
+     WHERE ca.code = ${`customer:${attacker.id}:available`} AND c.side = 'credit'
+       AND EXISTS (SELECT 1 FROM "Posting" d JOIN "LedgerAccount" da ON da.id = d."accountId"
+                    WHERE d."entryId" = j.id AND da.code = 'incentives:funded' AND d.side = 'debit')`;
+  assert.equal(attackerWallet.koriBalance, 4_800 + funded, 'attacker pays from their own wallet (200 ₭ send; rewards only from the funded budget)');
 });
 
 test('ATTACK: session expired after 30 minutes of inactivity → API refreshes activity (client PIN gate)', async () => {
@@ -175,32 +185,46 @@ test('ATTACK: brute-force PIN — locked after 5 wrong attempts, CNI required to
   assert.equal(res.statusCode, 423);
   assert.equal(res.body.code, 'account_locked');
 
-  // Wrong CNI does not unlock; correct CNI does.
+  // Wrong CNI does not unlock; correct CNI does — and (J3) the unlock is a
+  // RECOVERY: the PIN is reset (no further guessing of it) and the cool-off opens.
   await assert.rejects(unlockAccountWithCni(user.id, 'WRONG-CNI'), PinError);
   const unlocked = await unlockAccountWithCni(user.id, UNIQUE_CNI.toLowerCase());
   assert.equal(unlocked.unlocked, true);
-  const result = await verifyUserPin(user.id, '135790');
-  assert.equal(result.verified, true);
+  assert.equal(unlocked.pinReset, true);
+  await assert.rejects(verifyUserPin(user.id, '135790'), (e) => e.code === 'pin_not_set');
+  const after = await prisma.user.findUnique({ where: { id: user.id } });
+  assert.ok(after.accountRecoveredAt, 'recovery cool-off opened');
 });
 
-test('ATTACK: manipulate Kori balance directly → reconciliation freezes all conversions', async () => {
-  await resetReserveToWallets();
-  const attacker = await createUserWithWallet({ koriBalance: 0 });
+test('ATTACK: manipulate Kori balance directly → the database refuses it (J2 projection guard)', async () => {
+  const attacker = await createUserWithWallet({ koriBalance: 10 }); // ledger account exists
 
-  // Attacker with DB write access inflates their own Kori balance.
-  await prisma.wallet.update({
-    where: { id: attacker.wallet.id },
-    data: { koriBalance: 1_000_000 },
-  });
-
-  const check = await reconcileKoriReserve(prisma);
-  assert.equal(check.ok, false, 'unbacked Kori must be detected');
-  assert.equal(check.conversionsFrozen, true, 'cash-out path frozen before attacker can extract');
-
-  // Clean up: restore balance and thaw.
-  await prisma.wallet.update({ where: { id: attacker.wallet.id }, data: { koriBalance: 0 } });
-  const repaired = await reconcileKoriReserve(prisma);
-  assert.equal(repaired.ok, true);
+  // Attacker with DB write access tries to inflate their own balance.
+  await assert.rejects(
+    prisma.wallet.update({ where: { id: attacker.wallet.id }, data: { koriBalance: 1_000_000 } }),
+    /ledger projection/,
+  );
+  await assert.rejects(
+    prisma.$executeRawUnsafe(`UPDATE "Wallet" SET "koriBalance" = 1000000 WHERE id = '${attacker.wallet.id}'`),
+    /ledger projection/,
+  );
+  // …or the ledger account itself.
+  await assert.rejects(
+    prisma.$executeRawUnsafe(`UPDATE "LedgerAccount" SET "balance" = 1000000 WHERE "code" = 'customer:${attacker.id}:available'`),
+    /only change through journal postings/,
+  );
+  // …or a one-sided posting (value from nothing): rejected at COMMIT.
+  await assert.rejects(
+    prisma.$transaction(async (tx) => {
+      const acct = await tx.ledgerAccount.findUnique({ where: { code: `customer:${attacker.id}:available` } })
+        ?? (await import('../../lib/money-kernel/index.js')).customer(tx, attacker.id);
+      const entry = await tx.journalEntry.create({ data: { reference: `ATTACK-${Date.now()}`, kind: 'attack', payloadHash: 'x', actorType: 'user' } });
+      await tx.posting.create({ data: { entryId: entry.id, accountId: (await acct).id, side: 'credit', amount: 1_000_000n, currency: 'KRI' } });
+    }),
+    /does not balance|at least 2/,
+  );
+  const after = await prisma.wallet.findUnique({ where: { id: attacker.wallet.id } });
+  assert.equal(after.koriBalance, 10, 'no value created');
 });
 
 test('ATTACK: SQL injection in every input field is stored/compared literally', async () => {

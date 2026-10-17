@@ -1,0 +1,30 @@
+diff --git a/App.js b/App.js
+index 12cf047..0fdb7c0 100644
+--- a/App.js
++++ b/App.js
+@@ -43,7 +43,15 @@ const navTheme = {
+ };
+ 
+ export default Sentry.wrap(function App() {
+-  const [fontsLoaded] = useFonts(fontsToLoad);
++  const [fontsLoaded, fontError] = useFonts(fontsToLoad);
++  // Web on a slow network: expo-font gives up after ~3 s and `fontsLoaded` never becomes true, so the app
++  // stayed on the loading screen forever. Start with system fonts if the fonts failed or after 10 s.
++  const [fontWaitOver, setFontWaitOver] = useState(false);
++  useEffect(() => {
++    const t = setTimeout(() => setFontWaitOver(true), 10_000);
++    return () => clearTimeout(t);
++  }, []);
++  const fontsReady = fontsLoaded || Boolean(fontError) || fontWaitOver;
+   const navigationRef = useRef(null);
+   const [navReady, setNavReady] = useState(false);
+ 
+@@ -63,7 +71,7 @@ export default Sentry.wrap(function App() {
+     await ExpoSplashScreen.hideAsync().catch(() => {});
+   }, []);
+ 
+-  if (!fontsLoaded) {
++  if (!fontsReady) {
+     return (
+       <SafeAreaProvider>
+         <View style={styles.root}>

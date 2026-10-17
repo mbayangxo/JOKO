@@ -10,6 +10,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import AmountChips from '../components/AmountChips';
 import ReceiptCard from '../components/ReceiptCard';
 import StepUpOverlay from '../components/StepUpOverlay';
+import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
 import { useAppState } from '../state/AppState';
 import { useSecurity } from '../context/SecurityContext';
 import { usePlatformFeatures } from '../lib/platform-features';
@@ -18,6 +19,7 @@ import { useCountUp, useEntrance, usePopIn, useSuccessHaptic } from '../hooks/an
 import { useScreenshotBlock } from '../hooks/useScreenshotBlock';
 import { useToast } from '../components/Toast';
 import { cashIn, cashOut, depositNational, createStripeDepositSession, getMe } from '../lib/api-client';
+import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import KoriAmount from '../components/KoriAmount';
 
 const QUICK_AMOUNTS = [2000, 5000, 10000, 25000];
@@ -274,6 +276,7 @@ export default function CashScreen({ navigation, route }) {
   useScreenshotBlock(true);
   const showToast = useToast();
   const security = useSecurity();
+  const moneySubmit = useMoneySubmit('cash');
   const { feature } = usePlatformFeatures();
   const betaEnabled = feature('cash', 'betaDeposits') || process.env.EXPO_PUBLIC_ALLOW_BETA_DEPOSITS === 'true';
   const agentEnabled = feature('cash', 'agentDeposits');
@@ -301,6 +304,7 @@ export default function CashScreen({ navigation, route }) {
   }, []);
 
   const finish = () => {
+    moneySubmit.reset();
     setStep('amount');
     setAmount(5000);
     setOperator('orange_money');
@@ -329,30 +333,41 @@ export default function CashScreen({ navigation, route }) {
       showToast('Ajoute ton numéro de téléphone dans ton profil');
       return;
     }
+    // One intent key per attempt: a lost response is resolved by asking the
+    // server (intent outcome), never by sending a second cash-in / cash-out.
+    if (moneySubmit.busy) return;
     setLoading(true);
     setOldBalance(balance);
     try {
-      const result =
+      const out = await moneySubmit.submit((intentKey) =>
         mode === 'in'
-          ? await cashIn({ amount, operator, phone })
-          : await cashOut({ amount, operator, phone, stepUpToken: stepUpToken ?? security.stepUpToken });
-
-      if (result.rail?.status === 'pending') {
-        setPendingMessage(result.message ?? result.rail?.message ?? null);
-        setStep('pending');
-        return;
-      }
-
-      const wallet = await refreshWallet();
-      setNewBalance(wallet.balance ?? wallet.koriBalance ?? balance);
-      setIsBetaSuccess(false);
-      setStep('success');
-    } catch (err) {
-      if (err.code === 'step_up_required') {
+          ? cashIn({ amount, operator, phone, intentKey })
+          : cashOut({ amount, operator, phone, stepUpToken: stepUpToken ?? security.stepUpToken, intentKey }),
+        { instruction: { mode, amount, operator, phone } },
+      );
+      if (out.state === 'needs_pin') {
         setStepUpVisible(true);
         return;
       }
-      showToast(err.message ?? 'Opération impossible');
+      if (out.state === 'accepted_pending') {
+        setPendingMessage(out.response?.message ?? out.response?.rail?.message ?? out.message ?? null);
+        setStep('pending');
+        return;
+      }
+      if (out.state === 'done') {
+        const wallet = await refreshWallet();
+        setNewBalance(wallet.balance ?? wallet.koriBalance ?? balance);
+        setIsBetaSuccess(false);
+        setStep('success');
+        return;
+      }
+      if (out.state === 'checking') {
+        // Still unknown after polling: show pending, never invite a new attempt.
+        setPendingMessage(out.message);
+        setStep('pending');
+        return;
+      }
+      showToast(out.nextStep ? `${out.message} ${out.nextStep}` : out.message ?? 'Opération impossible');
     } finally {
       setLoading(false);
     }
@@ -387,6 +402,7 @@ export default function CashScreen({ navigation, route }) {
     <View style={styles.root}>
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <MoneyPhaseBanner phase={moneySubmit.phase} />
         {step === 'amount' && (
           <StepTransition>
             <AmountStep

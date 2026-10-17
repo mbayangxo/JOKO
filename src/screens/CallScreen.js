@@ -163,7 +163,7 @@ export default function CallScreen({ navigation, route }) {
           <View style={styles.center}>
             <Text style={{ fontSize: 40, marginBottom: spacing.lg }}>{wantsVideo ? '🎥' : '📞'}</Text>
             <Text style={styles.errorText}>{error}</Text>
-            <PressScale scaleTo={0.95} onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <PressScale scaleTo={0.95} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
               <Text style={styles.backBtnText}>← Retour au chat</Text>
             </PressScale>
           </View>
@@ -191,7 +191,7 @@ export default function CallScreen({ navigation, route }) {
             ) : (
               <ActivityIndicator color={colors.green} style={{ marginTop: spacing.xxl }} />
             )}
-            <PressScale scaleTo={0.96} onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <PressScale scaleTo={0.96} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
               <Text style={styles.backBtnText}>Annuler</Text>
             </PressScale>
           </View>

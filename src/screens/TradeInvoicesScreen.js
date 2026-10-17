@@ -3,6 +3,7 @@ import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, View
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import PressScale from '../components/PressScale';
+import LoadErrorState from '../components/LoadErrorState';
 import ScreenBackground from '../components/ScreenBackground';
 import GlowButton from '../components/GlowButton';
 import StepUpOverlay from '../components/StepUpOverlay';
@@ -18,6 +19,7 @@ export default function TradeInvoicesScreen({ navigation }) {
   const security = useSecurity();
   const { refreshWallet } = useAppState();
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [invoices, setInvoices] = useState([]);
   const [payingId, setPayingId] = useState(null);
   const [stepUpVisible, setStepUpVisible] = useState(false);
@@ -57,8 +59,11 @@ export default function TradeInvoicesScreen({ navigation }) {
     try {
       const res = await getMyTradeInvoices('open');
       setInvoices(res.invoices ?? []);
+      setLoadFailed(false);
     } catch {
+      // J13-F7: never "Aucune facture ouverte" when the list simply did not load — a debt would look settled.
       setInvoices([]);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -122,7 +127,7 @@ export default function TradeInvoicesScreen({ navigation }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 16 }}>←</Text>
           </PressScale>
           <Text style={styles.title}>Factures B2B</Text>
@@ -179,6 +184,8 @@ export default function TradeInvoicesScreen({ navigation }) {
                   </View>
                 ) : null}
               </View>
+            ) : loadFailed ? (
+              <LoadErrorState what="tes factures" onRetry={load} />
             ) : (
               <Text style={styles.empty}>Aucune facture ouverte.</Text>
             )}
@@ -245,7 +252,7 @@ export default function TradeInvoicesScreen({ navigation }) {
             <Text style={styles.modalHint}>
               Le fournisseur sera prévenu et la facture ne pourra pas être payée tant qu'il n'a pas répondu.
             </Text>
-            <TextInput
+            <TextInput accessibilityLabel="Qu'est-ce qui ne va pas ?"
               style={styles.modalInput}
               placeholder="Qu'est-ce qui ne va pas ?"
               placeholderTextColor="rgba(5,8,5,0.4)"

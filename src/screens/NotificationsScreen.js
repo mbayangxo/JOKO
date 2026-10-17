@@ -5,35 +5,20 @@ import { useFocusEffect, useRoute } from '@react-navigation/native';
 import PressScale from '../components/PressScale';
 import ScreenBackground from '../components/ScreenBackground';
 import { colors, fontFamily, radius, spacing } from '../theme';
+import { inferKind, routeForKind } from '../lib/notification-route';
+import LoadErrorState from '../components/LoadErrorState';
 import { useEntrance, useScalePulse } from '../hooks/animations';
-import { getNotifications, markNotificationRead } from '../lib/api-client';
+import { getCommunitySettings, getNotificationsFeed, markAllNotificationsRead, markNotificationRead, saveCommunitySettings } from '../lib/api-client';
+
+/** J10 categories (money and security can never be muted). */
+const CATEGORY_LABELS = { money: 'Argent', orders: 'Commandes', deliveries: 'Livraisons', work: 'Travail', community: 'Communauté', school: 'École', security: 'Sécurité' };
 
 const ACCENT_COLORS = { g: colors.green, o: colors.terracotta, r: colors.terracotta, y: colors.flagGold };
 
-function inferKind(notification) {
-  if (notification.kind === 'alert') return 'alert';
-  if (notification.kind === 'friend') return 'friend';
-  if (notification.kind === 'call') return 'call';
-  if (notification.kind === 'gift_receive') return 'gift';
-  if (notification.kind === 'affiliate') return 'affiliate';
-  if (notification.kind === 'money_request') return 'money';
-  const t = `${notification.title} ${notification.body}`
-    .toLowerCase()
-    .replace(/[''`´]/g, "'");
-  if (t.includes("demande d'ami") || t.includes('ajouter sur k21')) return 'friend';
-  if (t.includes('appel entrant') || t.includes('appel vidéo') || t.includes('t’appelle sur mboolo')) return 'call';
-  if (t.includes('demande')) return 'money';
-  if (t.includes('mboolo') || t.includes('message')) return 'mboolo';
-  if (t.includes('événement') || t.includes('event') || t.includes('concert')) return 'event';
-  if (t.includes('tontine')) return 'tontine';
-  if (t.includes('ngor') || t.includes('kersa') || t.includes('wakhna')) return 'ngor';
-  return 'generic';
-}
-
 function mapNotification(n) {
   const kind = inferKind(n);
-  const icons = { money: '💸', gift: '🎁', jekkal: '🤝', affiliate: '🛍️', mboolo: '💬', event: '🎉', tontine: '🏦', ngor: '✦', alert: '🌊', friend: '🧑‍🤝‍🧑', call: '📞', generic: '🔔' };
-  const accents = { money: 'g', gift: 'g', jekkal: 'o', mboolo: 'r', event: 'o', tontine: 'y', ngor: 'g', alert: 'o', friend: 'g', call: 'o', generic: 'g' };
+  const icons = { delivery: '📦', work: '🧰', money: '💸', gift: '🎁', jekkal: '🤝', affiliate: '🛍️', mboolo: '💬', event: '🎉', tontine: '🏦', ngor: '✦', alert: '🌊', friend: '🧑‍🤝‍🧑', call: '📞', parcel: '📦', order: '🛍️', stock: '📉', support: '🛟', trade: '🧾', scheduled: '🗓️', agent: '🏧', business: '🏪', generic: '🔔' };
+  const accents = { delivery: 'g', work: 'o', money: 'g', gift: 'g', jekkal: 'o', mboolo: 'r', event: 'o', tontine: 'y', ngor: 'g', alert: 'o', friend: 'g', call: 'o', parcel: 'g', order: 'g', stock: 'o', support: 'o', trade: 'y', scheduled: 'g', agent: 'g', business: 'o', generic: 'g' };
   const time = new Date(n.createdAt).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   return {
     id: n.id,
@@ -46,7 +31,7 @@ function mapNotification(n) {
     iconBg: colors.greenA10,
     text: n.body || n.title,
     time,
-    action: kind === 'money' ? '✓' : kind === 'gift' ? 'Ouvrir' : kind === 'jekkal' ? 'Voir' : kind === 'friend' ? 'Voir' : kind === 'call' ? 'Rejoindre' : kind === 'mboolo' ? 'Répondre' : kind === 'event' || kind === 'alert' ? 'Voir' : null,
+    action: routeForKind(kind, n.refId) ? 'Voir' : kind === 'delivery' || kind === 'work' ? 'Voir' : kind === 'money' ? '✓' : kind === 'gift' ? 'Ouvrir' : kind === 'jekkal' ? 'Voir' : kind === 'friend' ? 'Voir' : kind === 'call' ? 'Rejoindre' : kind === 'mboolo' ? 'Répondre' : kind === 'event' || kind === 'alert' ? 'Voir' : null,
     actionStyle: kind === 'money' ? 'g' : 'o',
     refId: n.refId ?? null,
     read: n.read,
@@ -64,6 +49,8 @@ function NotifItem({ item, delay, onAction }) {
         <Text style={{ fontSize: 17 }}>{item.icon}</Text>
       </View>
       <View style={{ flex: 1 }}>
+        {/* J13-F2: the title carries the meaning ("Paiement reçu", "Objectif atteint"); it was dropped. */}
+        {item.title && item.title !== item.text ? <Text style={styles.itemTitle}>{item.title}</Text> : null}
         <Text style={styles.text}>{item.text}</Text>
         <Text style={styles.time}>{item.time}</Text>
       </View>
@@ -85,17 +72,42 @@ export default function NotificationsScreen({ navigation }) {
   const isTabRoot = route.name === 'NotificationsTab';
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState(null);
+  const [muted, setMuted] = useState([]);
 
+  // J13-F7: a failed load is an error with retry, not "Aucune notification".
+  const [loadFailed, setLoadFailed] = useState(false);
   const load = useCallback(async () => {
     try {
-      const list = await getNotifications();
-      setItems((Array.isArray(list) ? list : []).map(mapNotification));
+      const feed = await getNotificationsFeed({ category });
+      setItems((feed?.items ?? []).map(mapNotification));
+      setLoadFailed(false);
+      getCommunitySettings().then((st) => setMuted(st.mutedCategories ?? [])).catch(() => {});
     } catch {
       setItems([]);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [category]);
+
+  const markAll = async () => {
+    try {
+      await markAllNotificationsRead(category ?? undefined);
+      setItems((prev) => prev.map((n) => ({ ...n, unread: false, read: true })));
+    } catch {
+      /* ignore */
+    }
+  };
+  const toggleMute = async (c) => {
+    const next = muted.includes(c) ? muted.filter((x) => x !== c) : [...muted, c];
+    try {
+      const st = await saveCommunitySettings({ mutedCategories: next });
+      setMuted(st.mutedCategories ?? []);
+    } catch {
+      /* ignore */
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -113,6 +125,12 @@ export default function NotificationsScreen({ navigation }) {
     }
 
     switch (item.kind) {
+      case 'delivery':
+        if (item.refId) navigation.navigate('Shipment', { shipmentId: item.refId });
+        break;
+      case 'work':
+        navigation.navigate('Work');
+        break;
       case 'mboolo':
         navigation.navigate('Main', { screen: 'MbooloTab' });
         break;
@@ -171,9 +189,14 @@ export default function NotificationsScreen({ navigation }) {
       case 'wakhna':
         navigation.navigate('Main', { screen: 'MoiTab' });
         break;
-      default:
-        navigation.navigate('Main', { screen: 'HomeTab' });
+      default: {
+        // J13-F5: parcels, orders, stock, support, trade invoices, scheduled payments, agent and business
+        // notices used to open nothing useful (they fell back to Home).
+        const r = routeForKind(item.kind, item.refId);
+        if (r) navigation.navigate(r.screen, r.params);
+        else navigation.navigate('Main', { screen: 'HomeTab' });
         break;
+      }
     }
   };
 
@@ -183,7 +206,7 @@ export default function NotificationsScreen({ navigation }) {
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
           {!isTabRoot ? (
-            <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
               <Text style={{ fontSize: 14, color: colors.ink }}>←</Text>
             </PressScale>
           ) : (
@@ -195,13 +218,31 @@ export default function NotificationsScreen({ navigation }) {
           </View>
         </View>
 
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+          <PressScale onPress={() => setCategory(null)} style={[styles.chip, !category && styles.chipOn]}><Text style={styles.chipText}>Tout</Text></PressScale>
+          {Object.entries(CATEGORY_LABELS).map(([c, label]) => (
+            <PressScale key={c} onPress={() => setCategory(c)} style={[styles.chip, category === c && styles.chipOn]} accessibilityLabel={`Filtre ${label}`}>
+              <Text style={styles.chipText}>{label}{muted.includes(c) ? ' 🔕' : ''}</Text>
+            </PressScale>
+          ))}
+        </ScrollView>
+        <View style={styles.toolsRow}>
+          <PressScale onPress={markAll} accessibilityLabel="Tout marquer lu"><Text style={styles.toolText}>Tout marquer lu</Text></PressScale>
+          {category && category !== 'money' && category !== 'security' ? (
+            <PressScale onPress={() => toggleMute(category)} accessibilityLabel="Couper ou réactiver cette catégorie">
+              <Text style={styles.toolText}>{muted.includes(category) ? 'Réactiver' : 'Couper'} « {CATEGORY_LABELS[category]} »</Text>
+            </PressScale>
+          ) : null}
+        </View>
+
         {loading && (
           <View style={{ padding: spacing.giant, alignItems: 'center' }}>
             <ActivityIndicator color={colors.green} />
           </View>
         )}
 
-        {!loading && items.length === 0 && (
+        {!loading && items.length === 0 && loadFailed ? <LoadErrorState what="tes notifications" onRetry={() => { setLoading(true); load(); }} /> : null}
+        {!loading && items.length === 0 && !loadFailed && (
           <Text style={styles.empty}>Aucune notification pour l'instant.</Text>
         )}
 
@@ -216,6 +257,12 @@ export default function NotificationsScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  chips: { paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.sm },
+  chip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.round, borderWidth: 1, borderColor: colors.ink },
+  chipOn: { backgroundColor: colors.greenA10 },
+  chipText: { fontFamily: fontFamily.bodySemiBold, fontSize: 12, color: colors.ink },
+  toolsRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+  toolText: { fontFamily: fontFamily.bodySemiBold, fontSize: 12, color: colors.green },
   root: { flex: 1, backgroundColor: '#f2f8ec' },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.xl, paddingHorizontal: spacing.huge, paddingTop: spacing.xxl, paddingBottom: spacing.xl, backgroundColor: colors.greenA08, borderBottomWidth: 1, borderBottomColor: colors.greenA10 },
   backBtn: { width: 36, height: 36, borderRadius: radius.lg, backgroundColor: 'rgba(255,255,255,0.75)', borderWidth: 1, borderColor: 'rgba(5,8,5,0.1)', alignItems: 'center', justifyContent: 'center' },
@@ -230,6 +277,7 @@ const styles = StyleSheet.create({
   itemCelebrate: { backgroundColor: 'rgba(250,216,54,0.08)', borderWidth: 1.5, borderColor: 'rgba(250,216,54,0.2)' },
   accentBar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   iconWrap: { width: 38, height: 38, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center' },
+  itemTitle: { fontSize: 12.5, lineHeight: 17, color: 'rgba(5,8,5,0.92)', fontFamily: fontFamily.bodySemiBold },
   text: { fontSize: 11, lineHeight: 16.5, color: 'rgba(5,8,5,0.7)' },
   time: { fontSize: 10, color: 'rgba(5,8,5,0.5)', marginTop: 2 },
   actionBtn: { height: 26, paddingHorizontal: spacing.lg, borderRadius: radius.round, alignItems: 'center', justifyContent: 'center' },

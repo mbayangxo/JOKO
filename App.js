@@ -16,12 +16,18 @@ import { SessionProvider } from './src/context/SessionContext';
 import { SecurityProvider, useSecurity } from './src/context/SecurityContext';
 import PinGateScreen from './src/screens/PinGateScreen';
 import DeviceSecurityBanner from './src/components/DeviceSecurityBanner';
+import NetworkStatusBanner from './src/components/NetworkStatusBanner';
+import IntentReconciliationRunner from './src/components/IntentReconciliationRunner';
 import { ToastProvider } from './src/components/Toast';
 import { navigationIntegration, Sentry } from './src/lib/sentry';
 import NavSideEffects from './src/hooks/NavSideEffects';
 
 function AppShell() {
-  const { locked, pinReady, deviceRisk } = useSecurity();
+  const { locked, pinReady, pinResetRequired, deviceRisk } = useSecurity();
+
+  if (pinResetRequired) {
+    return <PinGateScreen mode="setup" subtitle="Pour ta sécurité, choisis un nouveau code PIN." onSuccess={() => {}} />;
+  }
 
   if (locked && pinReady) {
     return <PinGateScreen mode="unlock" onSuccess={() => {}} />;
@@ -30,6 +36,8 @@ function AppShell() {
   return (
     <>
       <DeviceSecurityBanner risk={deviceRisk} />
+      <NetworkStatusBanner />
+      <IntentReconciliationRunner />
       <RootNavigator />
     </>
   );
@@ -43,7 +51,16 @@ const navTheme = {
 };
 
 export default Sentry.wrap(function App() {
-  const [fontsLoaded] = useFonts(fontsToLoad);
+  const [fontsLoaded, fontError] = useFonts(fontsToLoad);
+  // J12-F14: on web, expo-font gives up after ~3 s (FontFaceObserver timeout) — on 2G/3G the fonts arrive
+  // later, `fontsLoaded` never becomes true and the app sat on the loading screen FOREVER. Start with the
+  // system fonts if the custom ones failed or are still missing after 10 s (they apply when they arrive).
+  const [fontWaitOver, setFontWaitOver] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setFontWaitOver(true), 10_000);
+    return () => clearTimeout(t);
+  }, []);
+  const fontsReady = fontsLoaded || Boolean(fontError) || fontWaitOver;
   const navigationRef = useRef(null);
   const [navReady, setNavReady] = useState(false);
 
@@ -63,7 +80,7 @@ export default Sentry.wrap(function App() {
     await ExpoSplashScreen.hideAsync().catch(() => {});
   }, []);
 
-  if (!fontsLoaded) {
+  if (!fontsReady) {
     return (
       <SafeAreaProvider>
         <View style={styles.root}>

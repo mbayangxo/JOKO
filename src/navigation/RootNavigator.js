@@ -6,6 +6,7 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import WelcomeCelebrationScreen from '../screens/WelcomeCelebrationScreen';
 import BusinessHubScreen from '../screens/BusinessHubScreen';
+import BusinessOSScreen from '../screens/BusinessOSScreen';
 import AccessibilityScreen from '../screens/AccessibilityScreen';
 import MainTabs from './MainTabs';
 import SendMoneyScreen from '../screens/SendMoneyScreen';
@@ -13,6 +14,13 @@ import PayMerchantScreen from '../screens/PayMerchantScreen';
 import CashScreen from '../screens/CashScreen';
 import MoreActionsScreen from '../screens/MoreActionsScreen';
 import MovementScreen from '../screens/MovementScreen';
+import GiftRevealScreen from '../screens/GiftRevealScreen';
+import ShipmentScreen from '../screens/ShipmentScreen';
+import CourierWorkScreen from '../screens/CourierWorkScreen';
+import WorkScreen from '../screens/WorkScreen';
+import BusinessWorkScreen from '../screens/BusinessWorkScreen';
+import DeliveriesScreen from '../screens/DeliveriesScreen';
+import DispatchScreen from '../screens/DispatchScreen';
 import WorkerProfileScreen from '../screens/WorkerProfileScreen';
 import NuLekkScreen from '../screens/NuLekkScreen';
 import ReceiveScreen from '../screens/ReceiveScreen';
@@ -43,9 +51,16 @@ import FriendsScreen from '../screens/FriendsScreen';
 import StudentPassScreen from '../screens/StudentPassScreen';
 import PinGateScreen from '../screens/PinGateScreen';
 import ScheduledPaymentsScreen from '../screens/ScheduledPaymentsScreen';
+import PartnerDebitsScreen from '../screens/PartnerDebitsScreen';
+import PartnerDebitDetailScreen from '../screens/PartnerDebitDetailScreen';
 import JekkalScreen from '../screens/JekkalScreen';
 import JekkalDetailScreen from '../screens/JekkalDetailScreen';
 import MyTicketsScreen from '../screens/MyTicketsScreen';
+import TodayScreen from '../screens/TodayScreen';
+import CollectiveGroupsScreen from '../screens/CollectiveGroupsScreen';
+import CollectiveGroupScreen from '../screens/CollectiveGroupScreen';
+import CoopCapitalScreen from '../screens/CoopCapitalScreen';
+import NeighbourhoodScreen from '../screens/NeighbourhoodScreen';
 import EventCreateScreen from '../screens/EventCreateScreen';
 import EventScannerScreen from '../screens/EventScannerScreen';
 import InfoScreen from '../screens/InfoScreen';
@@ -193,12 +208,21 @@ export default function RootNavigator() {
       </Stack.Screen>
       <Stack.Screen name="Main" component={MainTabs} />
       <Stack.Screen name="BusinessMain" component={BusinessHubScreen} />
+      <Stack.Screen name="BusinessOS" component={BusinessOSScreen} />
       <Stack.Screen name="SendMoney" component={SendMoneyScreen} />
       <Stack.Screen name="ScheduledPayments" component={ScheduledPaymentsScreen} />
+      <Stack.Screen name="PartnerDebits" component={PartnerDebitsScreen} />
+      <Stack.Screen name="PartnerDebitDetail" component={PartnerDebitDetailScreen} />
       <Stack.Screen name="PayMerchant" component={PayMerchantScreen} />
       <Stack.Screen name="Cash" component={CashScreen} />
       <Stack.Screen name="MoreActions" component={MoreActionsScreen} />
       <Stack.Screen name="Movement" component={MovementScreen} />
+      <Stack.Screen name="Shipment" component={ShipmentScreen} />
+      <Stack.Screen name="CourierWork" component={CourierWorkScreen} />
+      <Stack.Screen name="Work" component={WorkScreen} />
+      <Stack.Screen name="BusinessWork" component={BusinessWorkScreen} />
+      <Stack.Screen name="Deliveries" component={DeliveriesScreen} />
+      <Stack.Screen name="Dispatch" component={DispatchScreen} />
       <Stack.Screen name="WorkerProfile" component={WorkerProfileScreen} />
       <Stack.Screen name="NuLekk" component={NuLekkScreen} />
       <Stack.Screen name="Receive" component={ReceiveScreen} />
@@ -230,6 +254,11 @@ export default function RootNavigator() {
       <Stack.Screen name="Jekkal" component={JekkalScreen} />
       <Stack.Screen name="JekkalDetail" component={JekkalDetailScreen} />
       <Stack.Screen name="MyTickets" component={MyTicketsScreen} />
+      <Stack.Screen name="Today" component={TodayScreen} />
+      <Stack.Screen name="CollectiveGroups" component={CollectiveGroupsScreen} />
+      <Stack.Screen name="CollectiveGroup" component={CollectiveGroupScreen} />
+      <Stack.Screen name="CoopCapital" component={CoopCapitalScreen} />
+      <Stack.Screen name="Neighbourhood" component={NeighbourhoodScreen} />
       <Stack.Screen name="EventCreate" component={EventCreateScreen} />
       <Stack.Screen name="EventScanner" component={EventScannerScreen} />
       <Stack.Screen name="GiftReveal" component={GiftRevealScreen} />

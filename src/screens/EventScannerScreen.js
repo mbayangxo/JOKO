@@ -54,7 +54,7 @@ export default function EventScannerScreen({ navigation, route }) {
         <View style={styles.body}>
           <Text style={styles.hero}>Porte d'entrée</Text>
           <Text style={styles.sub}>Scanne le QR ou entre le code TKT-…</Text>
-          <TextInput
+          <TextInput accessibilityLabel="TKT-"
             value={code}
             onChangeText={setCode}
             placeholder="TKT-…"

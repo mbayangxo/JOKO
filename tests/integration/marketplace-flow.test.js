@@ -13,6 +13,8 @@ import {
 import { deliveriesNearby } from '../../lib/handlers.js';
 import { createUserWithWallet, mockReq, mockRes, prisma, resetReserveToWallets, createVerifiedDevice } from '../helpers/db.js';
 import { signAccessToken } from '../../api/_lib/auth.js';
+// D41: the legacy open-claim courier marketplace is off by default; these tests cover it explicitly re-enabled.
+process.env.LEGACY_CONSUMER_DELIVERY_ENABLED = 'true';
 
 after(async () => {
   await prisma.$disconnect();
@@ -62,6 +64,7 @@ test('marketplace E2E: publish → search → order pickup → order delivery �
   const merchant = await createUserWithWallet({ koriBalance: 0, name: 'Marchand Test' });
   const buyer = await createUserWithWallet({ koriBalance: 5000, name: 'Acheteur Test' });
   const rider = await createUserWithWallet({ koriBalance: 2000, name: 'Livreur Test' });
+  await prisma.accountRole.create({ data: { userId: rider.id, role: 'driver', status: 'active' } }); // open jobs are courier-only
   const buyerDevice = await createVerifiedDevice(buyer.id);
 
   const business = await prisma.business.create({
@@ -132,14 +135,18 @@ test('marketplace E2E: publish → search → order pickup → order delivery �
     },
   });
   assert.equal(pickupRes.statusCode, 201, JSON.stringify(pickupRes.body));
-  assert.equal(pickupRes.body.status, 'ready_for_pickup');
+  // J5: a paid order waits for the merchant (confirmed → preparing → ready).
+  assert.equal(pickupRes.body.status, 'confirmed');
   assert.equal(pickupRes.body.totalKori, 1000);
 
   const buyerWalletAfterPickup = await prisma.wallet.findUnique({ where: { userId: buyer.id } });
   assert.equal(buyerWalletAfterPickup.koriBalance, 4000);
 
+  // J5: new businesses settle to the business wallet, not the owner's personal wallet.
   const merchantWalletAfterPickup = await prisma.wallet.findUnique({ where: { userId: merchant.id } });
-  assert.equal(merchantWalletAfterPickup.koriBalance, 1000);
+  assert.equal(merchantWalletAfterPickup.koriBalance, 0);
+  const bizAccount = await prisma.ledgerAccount.findUnique({ where: { code: `business:${business.id}:wallet` } });
+  assert.equal(Number(bizAccount.balance), 1000);
 
   const stockAfterPickup = await prisma.product.findUnique({ where: { id: product.id } });
   assert.equal(stockAfterPickup.inventory, 18);

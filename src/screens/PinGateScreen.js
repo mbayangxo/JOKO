@@ -54,7 +54,15 @@ export default function PinGateScreen({ mode = 'unlock', title, subtitle, onSucc
           setLoading(false);
           return;
         }
-        await security.setupPin(value);
+        try {
+          await security.setupPin(value);
+        } catch (err) {
+          setError(err?.message ?? 'Impossible d’enregistrer le PIN');
+          setPin('');
+          setPhase('enter');
+          setConfirmPin('');
+          return;
+        }
         onSetupComplete?.();
         onSuccess?.();
         return;

@@ -1,0 +1,210 @@
+# Jokko J9: Work & Opportunity report
+
+**Verdict: J9 is LOCALLY INTERNAL-PILOT READY (code and tests), with J9 money OFF.** This is **not** production approval:
+- **The production delivery-dispute P0 remains OPEN** until the emergency patch is deployed on `7d262de` (never `19ac203`) and verified.
+- Nothing was deployed. Production was not touched, and Kebu Supabase was not accessed.
+- No live J9 money can move: `JOKKO_WORK_MONEY_ENABLED` is unset everywhere, and only the local test ledger was used.
+
+## 1. J8 follow-ups (closed locally)
+
+| # | What | Commit | Evidence |
+|---|---|---|---|
+| D42 | Role- and action-aware rate limits: per-class budgets for reads, dispatch and custody codes; no account lockout for busy dispatchers; no blanket bypass; batch endpoints. The 40-merchant pilot runs without a block. | `f172eb5` | `tests/j8/rate-limits.test.js` 6/6; pilot test |
+| D43 | Read-only legacy delivery inventory: open tasks, held escrow, in-flight couriers, disputes, migration eligibility. Opaque ids only. **Not run against production.** | `f696618` | Local run; rehearsal on the migrated DB |
+| D44 | Buyer-side return stock: holds on ship (never on request), quarantine without negative stock, damaged units bounded by receiving, verified courier handover, release once on a cancelled or failed collection, re-ship attempts, DB guard, invariant L9. | `a1a8282` | `tests/j8/return-stock.test.js` 11/11 |
+
+## 2. J9.0 audit (`docs/JOKKO-J9-AUDIT.md`, `2652d17`)
+- **Classified:** gigs, jobs, worker profiles, staff, payroll, Kabu payroll, cooperative payouts, reps, affiliate / agent / courier commissions, pickup points, apprenticeships, school, OpportunityOS, Kebu / Kabu Team/Work, trust signals.
+- **F1 (P1, live route), fixed locally:** cooperative payouts paid a farmer once **per concurrent request** (4 parallel requests produced 4 transfers). Paying two or more logs failed *after* the money moved. The fix claims logs first, marks them paid inside the money transaction, uses per-log references, and releases the claim on failure (`tests/j9/coop-payout.test.js` 3/3). **Production keeps the defect until a separate authorized deploy (P-J9-10).**
+- **F2–F5, reported (owner decisions):**
+  - F2: produce payments recorded as wages;
+  - F3: "reputation for loans" over-claims;
+  - F4: the affiliate commission (5 %, at purchase, never reversed on refund). It is on the default branch, **not** in the live `7d262de` (§9);
+  - F5: gigs as products. Gig listings are now refused (410).
+
+## 3. What J9 delivers
+Design: `docs/JOKKO-J9-WORK.md`.
+
+**Lifecycle:**
+1. verified-business postings;
+2. applications and invitations;
+3. structured screening;
+4. offers with immutable, hashed terms, **funded before acceptance**;
+5. worker acceptance (age rules, explicit role grants);
+6. attendance by counterpart codes;
+7. evidence;
+8. business acceptance or dispute, with auto-accept after the agreed window;
+9. a held earning;
+10. payout.
+
+**Employment vs contract:** employment goes through the employer's payroll (an obligation recorded, never paid by J9). Job-like contracts are refused.
+
+**Types A–G:**
+
+| Type | How it pays |
+|---|---|
+| A. own-fleet courier | once per verified J8 delivery, never alongside a J8 earning |
+| B. rep | only the merchant's first **received and paid** order; dual-controlled, prefunded rule; self-dealing refused |
+| C. pickup-point fee | on a verified release |
+| D. staffing | accepted milestones; attendance codes when terms say so |
+| E. gigs | accepted milestones |
+| F. apprenticeships | stipend on accepted milestones; learning plan; 16–17 allowed (non-hazardous) |
+| G. cooperative work | member work payment; never wages, never dividends |
+
+**Disputes:**
+- party evidence (append-only);
+- a ruling by `work_ops`;
+- money executed only by a **second** operator (finance), once;
+- no automatic clawback of paid earnings.
+
+**Trust:**
+- a worker-owned profile with no protected-attribute fields;
+- operator-verified qualifications;
+- contestable feedback, shown only from 3 ratings;
+- blocks;
+- fair discovery.
+
+**UI:**
+- worker *Travail*;
+- business *Recruter & missions*;
+- the ops console *Work* tab.
+
+## 4. Gate at the latest HEAD (fresh database)
+
+Commit **`5fb2d02`** was run on a **fresh database** (`joko_gatej9`, schema plus guards from scratch).
+
+| Check | Result |
+|---|---|
+| Full regression (`npm test`, J1–J9) | **660 / 660** |
+| J2 money invariants after the suite / after load and sweeps | **OK / OK** |
+| J8 logistics invariants (L1–L9) after the suite / after all | **OK / OK** |
+| J9 work invariants (W1–W7) after the suite / after all | **OK / OK** |
+| Load (`npm run test:load`, incl. J9: 6 employers × 10 workers, storms) | **4 / 4**; J9 240 requests, p95 1.18 s (local) |
+| Authorization-boundary gate + mutation sweep + data-exposure sweep + admin sweep | **5 / 5**; the data-exposure sweep was re-run after adding J9 probe objects (see below) |
+| Migration rehearsal on production shape (incl. D44 + J9 step) | **20 / 20** (`dd5f568`; no migration change since) |
+| Migrations ⇄ `schema.prisma` diff | **empty** |
+| Web build (`expo export`) | **OK** |
+| Browser E2E J8 (distributor → driver → merchant) | **12 / 12** |
+| Browser E2E J9 (employer → worker → ops → finance) | **11 / 11** |
+| `npm audit --omit=dev --audit-level=critical` | **0 critical** (31 high / 13 moderate; no J9 dependency added) |
+| Deploy-inert | `JOKKO_WORK_MONEY_ENABLED` is set nowhere; no `cron/work` schedule; the J9 migration is additive |
+
+**What the gate caught, and was fixed:**
+1. The first full run at `ca4b7ee` failed 25 tests. 24 of them were a **test-harness** fault: every test process reused the same synthetic IPs, so J9's extra logins exhausted the shared per-IP OTP buckets. The 25th was a flood test made outdated by D42's read budget.
+2. The authorization-boundary sweep found a **real ordering defect**: `POST businesses/:id/work/rules/:id/fund` answered "money not activated" before checking authority, revealing activation state to an outsider. It now authorizes first.
+3. The data-exposure sweep had no J9 probe objects. They were added, and the sweep was re-run on the gate database: **4 / 4**, nothing leaks.
+
+All fixes are in `5fb2d02` (and the sweep table in the report commit).
+
+## 5. Commits
+- **D42:** `f172eb5`
+- **D43:** `f696618`
+- **D44:** `a1a8282`
+- **J9.0 audit, F1 fix, gig retirement:** `2652d17`
+- **J9 core:** `687ae32`
+- **Pilots:** `60ca872`
+- **Trust and gate entries:** `0899791`
+- **UI and E2E:** `b149aec`
+- **Rehearsal:** `dd5f568`
+- **Docs and load:** `ca4b7ee`
+- **Gate fixes:** `5fb2d02`
+- **This report and the sweep probe table:** see `git log`
+
+## 6. Unresolved risks (honest)
+1. **The production P0 is open.** The F1 cooperative double-payout is live in production (`7d262de`) until an authorized deploy. **Correction (§9):** F4 is *not* in `7d262de`. It is latent on the default branch (`19ac203`) and goes live with any deploy containing `494991d`.
+2. ~~Auto-accept versus the false-completion window.~~ **Fixed locally by A2 (§9):** payout eligibility is now never before the contest window closes (72 h for deemed acceptance, 24 h explicit).
+3. **Strict rate limits on J9 business money routes.** They use the default class (80/min, then a 15-minute account block, as in D42). A large employer validating many milestones at once could be blocked. A batch-accept endpoint (D42 pattern) is the follow-up.
+4. **Evidence is weak.** It is text and references only (`photo_ref` / `document_ref`, no file storage). Strong completion proof for gigs still depends on counterparts (attendance codes) and ops judgement.
+5. **Unknown-age workers** self-attest for non-hazardous work. Verified dates of birth exist only from KYC tier 2.
+6. **Policy needs counsel:** the employment threshold (P-J9-2) and the minors policy (P-J9-7).
+7. **Worker payouts land in the Jokko wallet only.** Off-platform withdrawal uses the existing J4 cash-out rails. No J9-specific mobile-money payout.
+8. **The ops console uses browser prompts** for rulings. It works and is escaped, but it is not a polished case tool.
+9. **Discovery is newest-first with no ranking.** A fairness review is needed at scale. OpportunityOS stays dormant.
+10. **Measured locally only:** 60 concurrent lifecycles, p95 ≈ 1.2–1.7 s on one local node. No production capacity claim.
+
+## 7. Proposed decisions
+P-J9-1 … P-J9-10 are in `docs/JOKKO-DECISIONS.md`:
+- J9 money off and finance hold periods;
+- the employment threshold (counsel);
+- cooperative reclassification;
+- affiliate commission;
+- platform fee 0;
+- legacy reputation wording;
+- minors (counsel);
+- rep eligibility;
+- no clawback;
+- F1 shipped as its own patch after the P0.
+
+## 8. J10 recommendation
+**J10 = activation and operations readiness, before any new vertical (J11 collective capital).** J2–J9 built a large surface that is verified locally but **inert or unpatched in production**. The highest-value, lowest-risk next phase is to make what exists safely live:
+
+1. **Close the P0.** Deploy the emergency patch on `7d262de` and verify it in production; record the evidence.
+2. **Read-only production inspections** (authorized access only): D32 (J7), D43 (legacy delivery), and an F1 exposure query (cooperative payouts that paid more than their logs).
+3. **Small, separate remediation deploys:** the F1 cooperative payout fix, and the F4 affiliate decision.
+4. **Finance activation pack:** J8 pricing and holds (D35), J9 holds and window (P-J9-1), rule budgets. Each switch is flipped individually, with reconciliation dashboards and the morning checklist (`K21-QUALITY-CONTROL`).
+5. **Operations:**
+   - schedule `cron/logistics` and `cron/work`;
+   - Sentry / UptimeRobot on the new routes;
+   - an ops runbook for work disputes and settlements;
+   - a batch-accept endpoint (risk 3).
+6. **A controlled internal pilot:** one distributor, a handful of merchants, couriers and workers, with real but capped money, before any public exposure.
+
+J11 (collective capital) should start only when J10 shows that money, custody and work run cleanly in production.
+
+## 9. Provisional acceptance follow-ups (A1–A6)
+J9 is provisionally accepted as a **local engineering milestone only**: no live J9 money and no production deploy.
+
+### A1: gate at the actual latest HEAD
+- **`ec733fa`: run INVALID, discarded.** During the run I regenerated the shared `node_modules` Prisma client for another worktree, so the gate server answered `503 db_schema_outdated`. It validates nothing.
+- **Gate fix:** the gate worktree now gets its **own copied `node_modules`**. The gate refuses a symlinked one and checks `client_matches_schema` at the start and the end.
+- **`f1af16f` (HEAD at the time; contains `ec733fa`), fresh DB `joko_gatej9`:**
+
+| Check | Result |
+|---|---|
+| Client matches schema (start / end) | yes / yes |
+| Full regression | **665 / 665** |
+| J2 money invariants (after suite / after load and sweeps) | OK / OK |
+| Logistics (L1–L9) / work (W1–W7) invariants | OK / OK |
+| Load | 4 / 4 (J9 p95 1.07 s, local) |
+| Sweeps | 5 / 5 |
+| Web build | OK |
+| E2E J8 / J9 | 12 / 12, 11 / 11 |
+| `npm audit` | 0 critical (31 high / 13 moderate; triage in A6) |
+
+These results cover `f1af16f` only. Later commits (A4, A5/A6, J10) get their own fresh-DB gate; the J10 gate covers them.
+
+### A2: settlement policy (`f1af16f`)
+Completion, acceptance (explicit or deemed), contest window, payout eligibility, appeal and finality are separate. Details: `docs/JOKKO-J9-WORK.md` §4a; tests: `tests/j9/settlement.test.js` 5/5.
+
+### A3: F1 hotfix package (`dc6b600`)
+See `docs/incidents/2026-10-f1-coop-double-payout/`. It is an isolated patch on `7d262de`; unpatched code fails 2/3 tests, patched passes 3/3, and the `7d262de` suite passes 125/125 with it. **Not deployed.**
+
+### A4: refund-aware affiliate lifecycle
+See `docs/incidents/2026-10-f4-affiliate-commission/`. It is inactive by default (`AFFILIATE_DEFERRED_SETTLEMENT`), has no clawback, and ships with read-only exposure SQL. Tests: `tests/j9/affiliate-settlement.test.js` 7/7.
+- **Deploy identity correction:** `git grep` shows **no affiliate code in `7d262de`**, the live production deployment. The programme arrived in `494991d`, which is in `19ac203`. F4 is therefore latent, not live, and **it must be decided before any deploy of the default branch**.
+- **Flake to watch:** in one local batch run, 4 J4 P2P journey tests (`tests/j4/journeys-pay.test.js`) failed. Rerun alone and in the same batch, they passed (153/153). The cause is not established. The J10 gate runs them again on a fresh DB; a repeat failure will be root-caused, not dismissed.
+
+### A5: decision review
+`docs/JOKKO-J9-DECISION-REVIEW.md` covers P-J9-1 … P-J9-10: the policy, its implications, the safe default in code, local status and the approvals needed. **None is approved.**
+
+### A6
+- **Batch milestone validation:** `POST businesses/:id/work/milestones/accept-batch`.
+  - At most 50 items; the business is authorized before any item; each item is its own atomic money transaction.
+  - It counts **once** on the strict account-wide limiter and **per item** on a new `work_accept` budget: a targeted 429, no lockout. Abuse protection is not disabled.
+  - Tests: `tests/j9/batch-accept.test.js` 2/2.
+- **Evidence attachments:** `lib/work/evidence-files.js`, alongside text evidence.
+  - Private bytes, served only to the parties (`no-store`, `nosniff`); operators read only on a disputed assignment, with a reason.
+  - Every read is audited (`WorkEvidenceAccess`).
+  - The type is sniffed: JPEG, PNG, WebP or PDF; PDFs with active content are refused; ≤ 1 MB.
+  - EXIF / GPS / text metadata is stripped.
+  - Caps: 20 per assignment (holds under concurrency), 30 per person per day.
+  - Retention: 180 days (bounded 30–730), with a hold while disputed; after that the hash record is kept and reads return 410.
+  - Worker UI: "Joindre une photo".
+  - Tests: `tests/j9/evidence-files.test.js` 4/4, including the new API body cap (413).
+- **Legal review flags:** classification, minors, payroll boundary and evidence retention are flagged for **jurisdiction-specific counsel review** (decision review). A generic threshold is not compliance.
+- **Dependency advisories:** `docs/JOKKO-DEPENDENCY-ADVISORIES.md`.
+  - Highs went from 31 to **20** with no forced or major change; `undici` (server runtime, through `@vercel/blob`) is fixed.
+  - The remaining highs are all Expo / Metro / Prisma-CLI build tooling, with no server-runtime exposure; mitigations are documented.
+
+### J10 scope (owner decision)
+§8's activation-first recommendation is **superseded**: J10 = **Community & Daily Life**, and the original roadmap is preserved. The production incidents (P0, F1, F4) stay on their own separate track (C) and are not part of J10.

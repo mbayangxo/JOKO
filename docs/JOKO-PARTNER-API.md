@@ -77,7 +77,21 @@ Response:
 
 `payment_url` always present — hosted Joko pay page. Buyer enters phone; MM is push-to-phone in live mode.
 
-Idempotency: same `partnerId` + `reference` + same `amount_xof` returns existing session.
+Idempotency: same `partnerId` + `reference` + same `amount_xof` + same merchant returns the existing session; a different amount or merchant is `409 idempotency_conflict`.
+
+### Per-merchant settlement (J6.0 — mapped merchants)
+
+Send the Kabu shop id of a merchant linked through `POST /v1/business-links`:
+
+```json
+{ "reference": "shop_order_…", "amount_xof": 5000, "merchant": { "external_business_id": "kabu_shop_123" } }
+```
+
+- Resolves **only** through the consented, active link of the calling partner. Unknown / revoked → `409 merchant_not_linked`; suspended merchant → `409 merchant_inactive`. Optional `merchant.jokko_business_id` is an assertion (`409 mapping_mismatch` if different), never an instruction.
+- On provider confirmation the money settles to **that merchant's business wallet** — never the platform settlement wallet, never another business.
+- If the link was revoked / re-pointed or the merchant suspended between creation and confirmation, the collected funds are **held for review** (`settlement.status = held_for_review`) and released only by Jokko finance (maker/checker) to the merchant the payment was created for.
+- Every response and the `paid` webhook carry `settlement: { target, legacy, external_business_id, status, ledger_reference }`.
+- **LEGACY:** a payment without `merchant.external_business_id` settles to `PARTNER_SETTLEMENT_USER_ID` (`settlement.target = legacy_platform`). `PARTNER_LEGACY_PLATFORM_SETTLEMENT=false` refuses such requests (`400 merchant_required`). Payouts still debit the platform settlement wallet (per-merchant payouts: DORMANT).
 
 ### `POST /v1/payments/collect`
 
@@ -208,6 +222,202 @@ Hire agents who already have Joko accounts; open order threads; reply in Mbolo.
 If customer has no Joko account, thread opens without Mbolo — use `/v1/messages/send` (SMS) until they install Joko. Agent registration fails honestly (`user_not_found`) if phone is not a Joko user.
 
 Requires `PARTNER_MESSAGING_USER_ID` (system sender) for auto messages / thread creation.
+
+## Event subscriptions (J14-S1, disabled by default)
+
+**Status:** local engineering only. Off unless `PARTNER_EVENTS_ENABLED=true`. Not activated in production. This is separate from the per-payment `webhook_url` above, which is unchanged.
+
+A partner subscribes an HTTPS endpoint to a minimal allowlist of events (D-J14-2). Only events of businesses **explicitly linked** to that partner are sent (active `ExternalLink`, `objectType=business`). Nothing is sent for another partner's business, an unlinked business or a revoked link; the link is re-checked at send time.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/v1/event-subscriptions` | `{ url, event_types? }`. Returns `secret` **once**. |
+| GET | `/v1/event-subscriptions` | Your subscriptions only (no secrets) |
+| POST | `/v1/event-subscriptions/:id/rotate-secret` | New secret, returned once; the old one is still used for signing for 24 h |
+| POST | `/v1/event-subscriptions/:id/disable` | Stops delivery |
+| GET | `/v1/event-deliveries` | Your delivery log (30 days) |
+
+**Event types:**
+- `order.placed`, `order.paid`, `order.accepted`, `order.ready_for_fulfillment`, `order.out_for_delivery`, `order.delivered`, `order.completed`, `order.cancelled`, `order.refunded`
+- `payment.recorded`
+- `settlement.completed`, `settlement.held`
+- `fulfillment.requested`, `shipment.created`
+
+Payloads carry ids, amounts and statuses only, never names, phones, addresses or notes:
+
+```json
+{
+  "id": "evt id (stable across retries)",
+  "type": "settlement.completed",
+  "created_at": "2026-10-13T12:00:00.000Z",
+  "business": { "external_id": "your shop id" },
+  "object": { "type": "partner_payment", "jokko_id": "…", "external_id": null },
+  "data": { "amountKori": 15000, "partnerReference": "shop_order_…" },
+  "api_version": "2026-10-j14"
+}
+```
+
+### Verifying a delivery
+
+Headers:
+
+```
+X-Jokko-Event-Id:        <event id>
+X-Jokko-Event-Timestamp: <unix seconds>
+X-Jokko-Event-Signature: v1=<hex>[,v1=<hex>]
+```
+
+Each signature is `HMAC_SHA256(secret, "<timestamp>.<event id>.<raw body>")`, hex-encoded. During a rotation overlap there are two signatures; accept the request if **any** of them matches. The receiver must:
+
+1. compute the HMAC over the **raw** body bytes, before parsing the JSON;
+2. compare in constant time;
+3. reject a timestamp more than **300 s** from its own clock (replay window);
+4. dedupe on `X-Jokko-Event-Id`. Delivery is at-least-once, so the same id can arrive more than once, for example after a retry or an operator replay.
+
+```js
+import crypto from 'node:crypto';
+function verify(secret, { timestamp, eventId, rawBody, header }) {
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  const want = Buffer.from('v1=' + crypto.createHmac('sha256', secret).update(`${timestamp}.${eventId}.${rawBody}`).digest('hex'));
+  return header.split(',').some((s) => { const got = Buffer.from(s.trim()); return got.length === want.length && crypto.timingSafeEqual(got, want); });
+}
+```
+
+A delivery succeeds only on a `2xx` response. Redirects are not followed. On failure, Jokko retries with backoff (0 s, 30 s, 2 min, 10 min, 30 min, 1 h, 3 h, 6 h). After 8 attempts the delivery is dead-lettered. An authorized operator can replay it, with a reason that is audited; the replay carries the same event id. Delivery logs are purged after 30 days. Events and financial audit records keep their own retention. A delivery never changes money on either side.
+
+## Product mapping (J14-S3, disabled by default)
+
+**Status:** local engineering only. Off unless `PARTNER_PRODUCT_MAPPING_ENABLED=true`. Requires scopes `partner.products.map` and `partner.products.read`.
+
+| Method | Path | Body / query |
+|---|---|---|
+| POST | `/v1/product-links` | `{ external_business_id, external_product_id, jokko_product_id \| jokko_sku }` → `201` created, `200` same mapping again (idempotent), `409 already_mapped` if pointed elsewhere |
+| GET | `/v1/product-links?external_business_id=…` | Your links for that linked shop |
+| POST | `/v1/product-links/:id/unlink` | Revokes the link; mapping again reactivates the same row |
+
+Rules:
+- The business link must be active, and the product must belong to **that** business. Another business's product, an unknown shop and a revoked link all return `404`.
+- Only ids cross. No title, price, stock or image is copied.
+- External product ids are namespaced per shop, so two shops can reuse the same SKU string.
+- The business owner sees these links, and can revoke them, under the existing business-links screen. Revoking the business link disables all of its product links.
+
+## Fulfilment requests → Jokko Logistics (J14-S2, disabled by default)
+
+**Status:** local engineering only. Off unless `PARTNER_FULFILLMENT_ENABLED=true`. Requires scopes `partner.fulfillment.request` and `partner.fulfillment.read`.
+
+`POST /v1/fulfillment-requests`
+
+```json
+{
+  "external_business_id": "your shop id",
+  "external_order_id": "your order id",
+  "mode": "merchant_fleet",
+  "lines": [{ "external_product_id": "kabu-riz", "qty": 2 }],
+  "destination": { "area": "Médina", "precise": "…", "lat": 14.68, "lng": -17.44 },
+  "pickup_point_id": "only for customer_pickup"
+}
+```
+
+Responses:
+- `201` for a new request, `200` for a retry of the same order. Retries are idempotent per (partner, shop, order).
+- The body is `{ reference, external_order_id, mode, request_status, shipment: { reference, status } }`. The destination is never echoed back.
+
+Rules:
+- The shop link must be active, and the business active (`409 business_inactive` otherwise).
+- Every line must be mapped through `/v1/product-links`. Otherwise `422 product_not_mapped` lists the unmapped ids and nothing is created.
+- **No money moves.** Only `merchant_fleet` and `customer_pickup` are accepted. `jokko_logistics` is refused with `409 requires_merchant_approval`: it holds a delivery fee from the business wallet, and D-J14-1 requires an in-Jokko approval for any partner-initiated business debit.
+- Ids may not contain `:`.
+
+Use `GET /v1/fulfillment-requests/:reference` for status. It returns your own requests only; any other request reads as `404`. Status changes also arrive as signed `shipment.*` events (S1), only for shipments **you** requested.
+
+## Debit instructions — request only, approved in Jokko (J14-F1 / S4, disabled by default)
+
+**Status:** local engineering only. Off unless `PARTNER_DEBIT_INSTRUCTIONS_ENABLED=true`. Scopes `partner.debits.request` and `partner.debits.read`.
+
+A partner can **request** a debit of a linked business's wallet. **Nothing moves** until an authorized financial approver of that business (`business.pay`: owner, finance, HR admin) approves **that** instruction inside Jokko (D-J14-1 option A). There are no automatic debits and no standing mandates.
+
+`POST /v1/debit-instructions`
+
+```json
+{
+  "external_business_id": "your shop id",
+  "external_ref": "your idempotency / instruction ref",
+  "kind": "payroll_batch",
+  "lines": [{ "recipient_handle": "awa", "amount_kori": 25000, "reference": "may-2026" }],
+  "memo": "Salaires mai"
+}
+```
+
+- `kind` is `payout` (exactly one line) or `payroll_batch` (1–200 lines; every recipient must be an active employee of that business).
+- Recipients are bound to their **account** at request time. A handle that changed owner in the last 30 days, a frozen account or an unknown handle refuses the whole request (`422 recipients_refused` with `problems`).
+- **Immutable:** the same `external_ref` with the same details returns the same instruction. Different details → `409 instruction_immutable`. A changed request is a new instruction.
+- `201 { id, status: "requested", total_kori, line_count, expires_at }`. The approval window is **15 minutes**; after that the status is `expired`.
+- `GET /v1/debit-instructions/:id` returns `requested | executed | rejected | cancelled | expired | invalidated | failed`, and `POST /v1/debit-instructions/:id/cancel` cancels while still requested. Outcomes also arrive as signed `debit_instruction.*` events (S1).
+
+**In Jokko, the approver:**
+- sees **every** recipient (name, current handle, the handle the partner sent, amount) and the instruction's `detailsHash`;
+- must pass a **fresh step-up** and send that exact `detailsHash`, so the approval applies only to what was shown.
+
+**Re-checked before anything moves:**
+- the link is still active and the business is still active;
+- no recipient is frozen;
+- for a payroll batch, the roster is unchanged (any change → `invalidated`);
+- the approver is not a recipient;
+- the daily limits per business hold.
+
+**Execution:** all lines in one money transaction, exactly once, with references `pdi-<id>-<i>`. Insufficient funds → `failed`, and nothing moves.
+
+**PROVISIONAL LOCAL TEST LIMITS — not approved production limits** (J15 decision 1). Expressed in XOF and converted to ₭ through the ledger peg (10 XOF = 1 ₭):
+
+| Limit | Variable | Value |
+|---|---|---|
+| Per line | `PARTNER_DEBIT_LINE_MAX_XOF` | 500 000 XOF (50 000 ₭) |
+| Per request | `PARTNER_DEBIT_INSTRUCTION_MAX_XOF` | 5 000 000 XOF (500 000 ₭) |
+| Per business per 24 h | `PARTNER_DEBIT_DAILY_MAX_XOF` / `PARTNER_DEBIT_DAILY_MAX_COUNT` | 10 000 000 XOF (1 000 000 ₭) or 20 payments |
+
+## Scoped partner keys (J14-S6, disabled by default)
+
+**Status:** local engineering only. Off unless `PARTNER_SCOPED_KEYS_ENABLED=true`. With the flag off, nothing changes: environment keys (`JOKO_API_KEYS`) authenticate exactly as before, at 60 requests/min per partner.
+
+With the flag on:
+
+- **Database keys** look like `jk_live_…` or `jk_test_…`. Only a SHA-256 hash is stored, and the key is shown once, at issue.
+- **Issuing a key is maker/checker:**
+  1. An operator with `partner_keys.issue` (role `integration_ops`) issues the key with its scopes, environment, and an optional rate limit and expiry.
+  2. The key stays **unusable** until a *different* operator with `partner_keys.approve` (role `risk`) approves it through `POST admin/approvals/:id/approve`.
+- **Scopes** are the route-policy permissions (for example `partner.collect`, `partner.payment.read`, `partner.events.subscribe`). A key calling a route outside its scopes gets `403 scope_required`. The check runs centrally for every partner route.
+- **Environment:** a `sandbox` key is refused while the server is live (`403 environment_mismatch`). A `live` key never reaches a sandbox-only route.
+- **Rotation:** `POST admin/partner-keys/:id/rotate` creates a new pending key with the same scopes. Once that key is approved, the old one expires after the overlap: at most 24 h, and 0 cuts it at approval.
+- **Revocation** (`POST admin/partner-keys/:id/revoke`, reason required) is immediate and audited. A revoked pending key can never be activated.
+- **Rate limits** apply per partner (`JOKO_PARTNER_RATE_LIMITS=kebu:120,rect:30`, default 60/min, shared by all of that partner's keys) and per key (`rate_limit_per_min`). Exceeding either returns `429`.
+- **Partner audit trail:** each mutating call writes one row recording partner, key, route and status code. No request body and no personal data are stored. Read it through `GET admin/partners/:partnerId/audit`. Environment keys are recorded too, as `credential=env`.
+
+Environment keys stay valid with every scope, so existing partners are never cut off. Moving a partner to a scoped key is a separate, authorized step.
+
+## Legacy unmapped settlement for new partners (D-J14-3)
+
+Unmapped payments (no `merchant.external_business_id`) settle to the platform settlement wallet (legacy, D23). **Default: unchanged.**
+
+`PARTNER_LEGACY_SETTLEMENT_PARTNERS=<existing partners>`, for example `kebu,rect`, keeps the legacy path for those partners only. Any other (new) partner must send mapped payments; an unmapped one gets `400 merchant_required` and nothing is created.
+
+The rule is applied at payment creation. A payment already created settles exactly as it was created, including a new partner's legacy payment from before the switch. `PARTNER_LEGACY_PLATFORM_SETTLEMENT=false` still closes the legacy path for everyone.
+
+Before switching, run the read-only settlement reconciliation (`reconcilePartnerSettlements`). Each completed payment must be booked exactly once, through one confirmed operation and one `-CONFIRM` entry, to the account its target names:
+- the business wallet, with one PaymentRecord;
+- the partner's unallocated account;
+- or the legacy settlement wallet.
+
+Mapped and legacy payments never mix.
+
+A new partner gets mapped merchants through the same consented link: the owner creates a one-time code naming that partner (`POST businesses/:id/os/integrations/link-code {system}`), and the partner redeems it with its key. A code for one partner is useless to another.
+
+## Rate limits (J15-D3)
+
+Partner rate limits are **shared and atomic across every API instance**: one Postgres counter per partner per minute (and per scoped key with `rate_limit_per_min`), incremented by a single upsert. Before J15 the counters were per process, so N instances allowed N × the limit.
+
+- Budget: `JOKO_PARTNER_RATE_LIMITS=kebu:120,rect:30`; otherwise `JOKO_PARTNER_RATE_LIMIT_DEFAULT`, or 60 / min.
+- Over budget → `429 rate_limited`.
+- **Enforcement unavailable** (counter store error) → money and identity routes (`checkout`, `collect`, `pos`, `payouts`, `sandbox`, `debit-instructions`, `business-links`, `messages/send`, and any route whose permission is unknown) **fail closed** with `503 rate_limit_unavailable` and execute nothing. Read routes proceed, degraded and logged.
 
 ## Sandbox checklist
 

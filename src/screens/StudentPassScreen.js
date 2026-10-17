@@ -107,7 +107,7 @@ export default function StudentPassScreen({ navigation }) {
           {pass?.status !== 'active' ? (
             <View style={styles.form}>
               <Text style={styles.label}>Établissement</Text>
-              <TextInput
+              <TextInput accessibilityLabel="Ex: UCAD, ESP, Lycée Blaise Diagne"
                 style={styles.input}
                 placeholder="Ex: UCAD, ESP, Lycée Blaise Diagne…"
                 placeholderTextColor={'rgba(5,8,5,0.4)'}

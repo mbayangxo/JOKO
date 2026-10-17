@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import PressScale from '../components/PressScale';
+import LoadErrorState from '../components/LoadErrorState';
 import ScreenBackground from '../components/ScreenBackground';
 import { useToast } from '../components/Toast';
 import { useLocale } from '../context/LocaleContext';
@@ -21,20 +22,17 @@ import { colors, fontFamily, radius, spacing, type } from '../theme';
 import { useEntrance } from '../hooks/animations';
 import {
   acceptDelivery,
-  createProduct,
   getMyActiveDeliveries,
   getNearbyDeliveries,
-  getProducts,
   markDeliveryDelivered,
   markDeliveryPickup,
   registerDriverProfile,
-  registerSellerProfile,
   requestDelivery,
 } from '../lib/api-client';
 
 const MODES = [
   { key: 'drive', label: 'Livraison' },
-  { key: 'gigs', label: 'Gigs' },
+  { key: 'gigs', label: 'Travail' },
 ];
 
 function ModeSwitch({ mode, onChange }) {
@@ -127,54 +125,24 @@ function PostSheet({ visible, title, fields, submitLabel, loading, onClose, onSu
   );
 }
 
-function GigsPanel({ onPostGig, refreshKey }) {
-  const [gigs, setGigs] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-      setLoading(true);
-      getProducts('gig')
-        .then((list) => {
-          if (cancelled) return;
-          setGigs(
-            (Array.isArray(list) ? list : []).map((g) => ({
-              key: g.id,
-              icon: '💼',
-              title: g.title,
-              meta: g.description ?? 'Dakar · Flexible',
-              pay: `${g.price.toLocaleString('fr-FR')} F`,
-            })),
-          );
-        })
-        .catch(() => setGigs([]))
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }, [refreshKey]),
-  );
-
+/** J9: work is never a product listing — real, funded opportunities live in the Work screen. */
+function WorkPanel({ navigation }) {
   return (
     <View style={styles.panel}>
-      <PressScale scaleTo={0.98} onPress={onPostGig} style={styles.postBtn}>
-        <Text style={styles.postBtnIcon}>＋</Text>
+      <PressScale scaleTo={0.98} onPress={() => navigation.navigate('Work')} style={styles.postBtn} accessibilityLabel="Trouver du travail">
+        <Text style={styles.postBtnIcon}>💼</Text>
         <View style={{ flex: 1 }}>
-          <Text style={styles.postBtnTitle}>Publier un gig</Text>
-          <Text style={styles.postBtnSub}>Propose une mission courte ou un petit boulot</Text>
+          <Text style={styles.postBtnTitle}>Trouver du travail</Text>
+          <Text style={styles.postBtnSub}>Entreprises vérifiées · paiement bloqué avant le début · jamais de frais pour travailler</Text>
         </View>
       </PressScale>
-      <Text style={styles.sectionLabel}>Gigs disponibles</Text>
-      {loading && <Text style={styles.emptyText}>Chargement…</Text>}
-      {!loading && gigs.length === 0 && (
-        <Text style={styles.emptyText}>Aucun gig publié pour l’instant.</Text>
-      )}
-      {gigs.map((item, i) => (
-        <ListRow key={item.key} icon={item.icon} title={item.title} meta={item.meta} tag={item.pay} tagColor={colors.green} delay={i * 60} />
-      ))}
+      <PressScale scaleTo={0.98} onPress={() => navigation.navigate('BusinessWork')} style={styles.postBtn} accessibilityLabel="Recruter">
+        <Text style={styles.postBtnIcon}>＋</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.postBtnTitle}>Recruter pour mon commerce</Text>
+          <Text style={styles.postBtnSub}>Mission, renfort, apprentissage : conditions claires et preuve du travail</Text>
+        </View>
+      </PressScale>
     </View>
   );
 }
@@ -184,6 +152,7 @@ function DrivePanel({ onRequestCourier, refreshKey, navigation, coords }) {
   const [online, setOnline] = useState(false);
   const [activating, setActivating] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [activeTasks, setActiveTasks] = useState([]);
   const [acceptingId, setAcceptingId] = useState(null);
@@ -217,8 +186,10 @@ function DrivePanel({ onRequestCourier, refreshKey, navigation, coords }) {
         loadActive(),
       ]);
       setJobs(Array.isArray(list) ? list : []);
+      setLoadFailed(false);
     } catch {
       setJobs([]);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -359,7 +330,8 @@ function DrivePanel({ onRequestCourier, refreshKey, navigation, coords }) {
       ) : null}
 
       {online && loading && <Text style={styles.emptyText}>Recherche de courses…</Text>}
-      {online && !loading && jobs.length === 0 && (
+      {online && !loading && loadFailed ? <LoadErrorState what="les courses" onRetry={loadJobs} /> : null}
+      {online && !loading && !loadFailed && jobs.length === 0 && (
         <Text style={styles.emptyText}>Aucune course disponible pour le moment.</Text>
       )}
       {online &&
@@ -391,7 +363,6 @@ export default function MovementScreen({ navigation, route }) {
   const initialMode = route.params?.initialMode === 'gigs' ? 'gigs' : 'drive';
   const [mode, setMode] = useState(initialMode);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [gigSheetOpen, setGigSheetOpen] = useState(false);
   const [courierSheetOpen, setCourierSheetOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -400,50 +371,6 @@ export default function MovementScreen({ navigation, route }) {
   }, [route.params?.initialMode]);
 
   const bump = () => setRefreshKey((k) => k + 1);
-
-  const ensureSeller = async () => {
-    try {
-      await registerSellerProfile({ shopName: profile.name || 'Mon shop' });
-    } catch (err) {
-      const msg = err.message ?? '';
-      if (msg.includes('profil travailleur') || msg.includes('worker')) {
-        navigation.navigate('WorkerProfile');
-        throw err;
-      }
-      /* seller profile may already exist */
-    }
-  };
-
-  const submitGig = async (values) => {
-    const title = values.title?.trim();
-    const price = parseInt(values.price, 10);
-    if (!title || !Number.isFinite(price) || price <= 0) {
-      showToast('Titre et prix requis');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await ensureSeller();
-      await createProduct({
-        title,
-        description: values.description?.trim() || undefined,
-        price,
-        category: 'gig',
-      });
-      showToast('Gig publié ✓');
-      setGigSheetOpen(false);
-      bump();
-    } catch (err) {
-      const msg = err.message ?? '';
-      if (msg.includes('profil travailleur') || msg.includes('worker')) {
-        navigation.navigate('WorkerProfile');
-      } else {
-        showToast(msg || 'Publication impossible');
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const submitCourier = async (values) => {
     const pickupLabel = values.pickupLabel?.trim();
@@ -474,7 +401,7 @@ export default function MovementScreen({ navigation, route }) {
         <View style={styles.header}>
           <View style={styles.headerTop}>
             {navigation.canGoBack() ? (
-              <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+              <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
                 <Text style={{ fontSize: 16, color: colors.ink }}>←</Text>
               </PressScale>
             ) : null}
@@ -490,14 +417,36 @@ export default function MovementScreen({ navigation, route }) {
           showsVerticalScrollIndicator={false}
         >
           {mode === 'drive' ? (
+            <View style={styles.panel}>
+              {/* J8: verified, ASSIGNED deliveries — the open-claim courier marketplace is closed to new requests (D41). */}
+              <PressScale scaleTo={0.98} onPress={() => navigation.navigate('CourierWork')} style={styles.postBtn}>
+                <Text style={styles.postBtnIcon}>🛵</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.postBtnTitle}>Mes livraisons attribuées</Text>
+                  <Text style={styles.postBtnSub}>Codes d’enlèvement et de livraison · gains et retenues</Text>
+                </View>
+              </PressScale>
+              <PressScale scaleTo={0.98} onPress={() => navigation.navigate('Deliveries')} style={styles.postBtn}>
+                <Text style={styles.postBtnIcon}>📦</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.postBtnTitle}>Mes réceptions</Text>
+                  <Text style={styles.postBtnSub}>Ce qui arrive pour moi ou mon commerce</Text>
+                </View>
+              </PressScale>
+            </View>
+          ) : null}
+          {mode === 'drive' ? (
             <DrivePanel
-              onRequestCourier={() => setCourierSheetOpen(true)}
+              onRequestCourier={() => {
+                showToast('Les courses libres sont fermées : la livraison se demande avec ta commande, et elle est prouvée par ton code.');
+                navigation.navigate('Deliveries');
+              }}
               refreshKey={refreshKey}
               navigation={navigation}
               coords={riderCoords}
             />
           ) : (
-            <GigsPanel onPostGig={() => setGigSheetOpen(true)} refreshKey={refreshKey} />
+            <WorkPanel navigation={navigation} />
           )}
 
           <View style={styles.pinRow}>
@@ -514,20 +463,6 @@ export default function MovementScreen({ navigation, route }) {
           </View>
         </ScrollView>
       </SafeAreaView>
-
-      <PostSheet
-        visible={gigSheetOpen}
-        title="Publier un gig"
-        submitLabel="Publier"
-        loading={submitting}
-        onClose={() => setGigSheetOpen(false)}
-        onSubmit={submitGig}
-        fields={[
-          { key: 'title', label: 'Titre', placeholder: 'Ex: Aide déménagement 2h' },
-          { key: 'description', label: 'Description', placeholder: 'Détails, lieu, horaire…', multiline: true },
-          { key: 'price', label: 'Rémunération (F CFA)', placeholder: '5000', numeric: true },
-        ]}
-      />
 
       <PostSheet
         visible={courierSheetOpen}

@@ -22,9 +22,12 @@ import { useScreenshotBlock } from '../hooks/useScreenshotBlock';
 import { useToast } from '../components/Toast';
 import ProfileAvatar from '../components/ProfileAvatar';
 import StepUpOverlay from '../components/StepUpOverlay';
+import MoneyPhaseBanner from '../components/MoneyPhaseBanner';
+import { useMoneySubmit } from '../hooks/useMoneySubmit';
 import { useSecurity } from '../context/SecurityContext';
 import { useLocale } from '../context/LocaleContext';
-import { transferSend, lookupUser, getMboloVideoUploadConfig } from '../lib/api-client';
+import { confirmP2p, transferSend, lookupUser, getMboloVideoUploadConfig } from '../lib/api-client';
+import { subscribeNetwork } from '../lib/network-state';
 import { toE164, isValidLocalPhone } from '../lib/phone';
 import { resolveAccountQuery } from '../lib/k21-qr';
 import { formatKori, KORI_SYMBOL } from '../lib/kori.js';
@@ -88,6 +91,7 @@ function AmountStep({
   recipientProfile,
   lookupLoading,
   lookupError,
+  onRetryLookup,
   recentRecipients,
   onPickRecent,
   onContinue,
@@ -183,7 +187,7 @@ function AmountStep({
                 <View style={styles.recAva}>
                   <Text style={{ fontSize: 20 }}>{recipientProfile?.avatarEmoji ?? '🧑🏾'}</Text>
                 </View>
-                <TextInput
+                <TextInput accessibilityLabel="k21://pay/@fatou ou @fatou"
                   style={styles.handleField}
                   placeholder="k21://pay/@fatou ou @fatou"
                   placeholderTextColor={'rgba(5,8,5,0.4)'}
@@ -200,7 +204,7 @@ function AmountStep({
               <View style={styles.dialBadge}>
                 <Text style={styles.dialBadgeText}>{countryDial}</Text>
               </View>
-              <TextInput
+              <TextInput accessibilityLabel="77 000 00 00"
                 style={styles.handleField}
                 placeholder="77 000 00 00"
                 placeholderTextColor={'rgba(5,8,5,0.4)'}
@@ -215,7 +219,7 @@ function AmountStep({
               <View style={styles.recAva}>
                 <Text style={{ fontSize: 20 }}>{recipientProfile?.avatarEmoji ?? '🧑🏾'}</Text>
               </View>
-              <TextInput
+              <TextInput accessibilityLabel="@handle"
                 style={styles.handleField}
                 placeholder="@handle"
                 placeholderTextColor={'rgba(5,8,5,0.4)'}
@@ -239,13 +243,22 @@ function AmountStep({
             </View>
           )}
           {lookupError && !lookupLoading && recipientQuery.length >= 3 && (
-            <Text style={styles.lookupError}>{lookupError}</Text>
+            <View style={styles.lookupErrorRow}>
+              <Text style={[styles.lookupError, { flex: 1 }]}>{lookupError}</Text>
+              {onRetryLookup ? (
+                // J13-F15: a lookup lost to the network can be retried in one tap (it also retries by itself
+                // when the connection returns).
+                <PressScale onPress={onRetryLookup} accessibilityRole="button" accessibilityLabel="Réessayer la recherche">
+                  <Text style={styles.lookupRetry}>Réessayer</Text>
+                </PressScale>
+              ) : null}
+            </View>
           )}
         </Animated.View>
 
         <Animated.View style={[styles.reasonWrap, reasonEntrance]}>
           <Text style={styles.lbl}>Pour quoi ? (optionnel)</Text>
-          <TextInput
+          <TextInput accessibilityLabel="Pour le taxi, pour manger..."
             style={styles.reasonField}
             placeholder="Pour le taxi, pour manger..."
             placeholderTextColor={'rgba(5,8,5,0.4)'}
@@ -269,16 +282,16 @@ function AmountStep({
                 {attachmentType === 'video' && 'Vidéo jointe'}
                 {attachmentType === 'voice' && 'Message vocal joint'}
               </Text>
-              <PressScale scaleTo={0.9} onPress={onRemoveAttachment} style={styles.attachRemove}>
+              <PressScale scaleTo={0.9} onPress={onRemoveAttachment} style={styles.attachRemove} accessibilityRole="button" accessibilityLabel="Retirer la pièce jointe">
                 <Text style={{ fontSize: 12, color: colors.terracotta }}>✕</Text>
               </PressScale>
             </View>
           ) : (
             <View style={styles.attachRow}>
-              <PressScale scaleTo={0.95} onPress={onAttachPhoto} style={styles.attachBtn} disabled={attaching}>
+              <PressScale scaleTo={0.95} onPress={onAttachPhoto} style={styles.attachBtn} disabled={attaching} accessibilityRole="button" accessibilityLabel="Joindre une photo">
                 <Text style={{ fontSize: 16 }}>📷</Text>
               </PressScale>
-              <PressScale scaleTo={0.95} onPress={onAttachVideo} style={styles.attachBtn} disabled={attaching}>
+              <PressScale scaleTo={0.95} onPress={onAttachVideo} style={styles.attachBtn} disabled={attaching} accessibilityRole="button" accessibilityLabel="Joindre une vidéo">
                 <Text style={{ fontSize: 16 }}>🎬</Text>
               </PressScale>
               <PressScale
@@ -381,7 +394,7 @@ function ConfirmStep({ amount, reason, balance, recipientProfile, onConfirm, onC
   );
 }
 
-function SuccessStep({ amount, reason, reference, recipientProfile, onDone, onMarkedUndone, onShareMbolo, undone }) {
+function SuccessStep({ amount, reason, reference, recipientProfile, onDone, onMarkedUndone, onShareMbolo, undone, held = false }) {
   useSuccessHaptic();
   const ring = usePopIn(0, 500, 0.3);
   const title = useEntrance(200, 500, 10);
@@ -392,19 +405,22 @@ function SuccessStep({ amount, reason, reference, recipientProfile, onDone, onMa
 
   return (
     <View style={styles.successRoot}>
-      {!undone ? <ConfettiBurst /> : null}
+      {!undone && !held ? <ConfettiBurst /> : null}
       <View style={styles.successContent}>
         <Animated.View style={[styles.ssRing, ring]}>
-          <Text style={{ fontSize: 38, color: colors.green }}>{undone ? '↩' : '✓'}</Text>
+          <Text style={{ fontSize: 38, color: held ? colors.goldDark : colors.green }}>{undone ? '↩' : held ? '🔎' : '✓'}</Text>
         </Animated.View>
-        <Animated.Text style={[styles.ssTitle, title]}>{undone ? 'Annulé' : 'Envoyé !'}</Animated.Text>
+        {/* J13-F17: a payment held for review is NOT sent — never "Envoyé !" until the server completes it. */}
+        <Animated.Text style={[styles.ssTitle, title]}>{undone ? 'Annulé' : held ? 'En vérification' : 'Envoyé !'}</Animated.Text>
         <Animated.Text style={[styles.ssSub, sub]}>
           {undone
             ? 'L\'argent est revenu sur ton compte.'
-            : `${label} a reçu ton argent\nen quelques secondes.`}
+            : held
+              ? `Ton envoi à ${label} est en vérification par K21.\nIl n’est pas encore effectué — ne le renouvelle pas.\nTon historique se mettra à jour.`
+              : `${label} a reçu ton argent\nen quelques secondes.`}
         </Animated.Text>
 
-        {!undone && (
+        {!undone && !held && (
           <UndoTransferBar reference={reference} amount={amount} onUndone={onMarkedUndone} />
         )}
 
@@ -419,7 +435,7 @@ function SuccessStep({ amount, reason, reference, recipientProfile, onDone, onMa
               { key: 'ref', label: 'Référence', value: reference, small: true },
             ]}
           />
-          {!undone && (
+          {!undone && !held && (
             <ReceiptShareButtons
               amount={amount}
               counterparty={label}
@@ -460,10 +476,14 @@ export default function SendMoneyScreen({ navigation, route }) {
   const [recipientProfile, setRecipientProfile] = useState(null);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState('');
+  // Set only when the lookup failed to REACH the server (not for "introuvable"): then it may retry.
+  const [lookupNetworkFail, setLookupNetworkFail] = useState(false);
+  const [held, setHeld] = useState(false); // J13-F17: answered 202 — under review, not sent
   const [reference, setReference] = useState('');
   const [undone, setUndone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [stepUpVisible, setStepUpVisible] = useState(false);
+  const moneySubmit = useMoneySubmit('p2p');
   const [attachmentType, setAttachmentType] = useState(null);
   const [attachmentUrl, setAttachmentUrl] = useState(null);
   const [attaching, setAttaching] = useState(false);
@@ -585,10 +605,12 @@ export default function SendMoneyScreen({ navigation, route }) {
           mode === 'phone'
             ? toE164(country, trimmed)
             : resolveAccountQuery(trimmed).replace(/^@/, '');
-        const profile = await lookupUser(query);
+        const profile = await lookupUser(query, { mode: mode === 'phone' ? 'phone' : 'handle' });
         setRecipientProfile(profile);
+        setLookupNetworkFail(false);
       } catch (err) {
         setRecipientProfile(null);
+        setLookupNetworkFail(err?.code === 'network' || err?.code === 'timeout');
         setLookupError(err.message ?? 'Personne introuvable');
       } finally {
         setLookupLoading(false);
@@ -605,6 +627,14 @@ export default function SendMoneyScreen({ navigation, route }) {
     };
   }, [recipientQuery, recipientMode, runLookup]);
 
+  // J13-F15: a lookup lost during a dropout re-runs by itself once requests get through again.
+  useEffect(() => {
+    if (!lookupNetworkFail) return undefined;
+    return subscribeNetwork((st) => {
+      if (st.status !== 'offline') runLookup(recipientQuery, recipientMode);
+    });
+  }, [lookupNetworkFail, recipientQuery, recipientMode, runLookup]);
+
   const changeRecipientMode = (mode) => {
     setRecipientMode(mode);
     setRecipientQuery('');
@@ -614,6 +644,7 @@ export default function SendMoneyScreen({ navigation, route }) {
 
   const executeSend = async (stepUpToken) => {
     if (!recipientProfile?.handle) return;
+    if (moneySubmit.busy) return; // a payment is in flight or being checked: never fire a second one
     setSubmitting(true);
     try {
       const attachmentParams =
@@ -626,24 +657,44 @@ export default function SendMoneyScreen({ navigation, route }) {
               : attachmentType === 'gif'
                 ? { gifUrl: attachmentUrl }
                 : {};
-      const result = await transferSend({
-        recipientHandle: recipientProfile.handle,
-        amount,
-        note: reason,
-        ...attachmentParams,
-        stepUpToken: stepUpToken ?? security.stepUpToken,
-      });
-      setReference(result.reference);
-      setUndone(false);
-      removeAttachment();
-      await refreshWallet();
-      setStep('success');
-    } catch (err) {
-      if (err.code === 'step_up_required') {
+      // J4: one intent key for this payment attempt, reused across step-up
+      // and retries; an unknown outcome is checked with the server, never re-sent.
+      const out = await moneySubmit.submit(async (intentKey) => {
+        // J13-4: the confirmed recipient + amount become a server-issued, single-payment instruction; the
+        // payment goes to the account confirmed on screen, or nowhere.
+        const { instructionRef } = await confirmP2p({ recipientRef: recipientProfile.recipientRef, amountKori: amount, intentKey });
+        return transferSend({
+          recipientHandle: recipientProfile.handle,
+          instructionRef,
+          amount,
+          note: reason,
+          ...attachmentParams,
+          stepUpToken: stepUpToken ?? security.stepUpToken,
+          intentKey,
+        });
+      },
+        { instruction: { to: recipientProfile.handle, ref: recipientProfile.recipientRef ?? null, amount, note: reason, ...attachmentParams } },
+      );
+      if (out.state === 'needs_pin') {
         setStepUpVisible(true);
         return;
       }
-      showToast(err.message ?? 'Envoi impossible');
+      if (out.state === 'done' || out.state === 'accepted_pending') {
+        setReference(out.response?.reference ?? out.references?.[0] ?? out.error?.data?.references?.[0] ?? null);
+        setUndone(false);
+        setHeld(out.state === 'accepted_pending');
+        removeAttachment();
+        await refreshWallet();
+        setStep('success');
+        if (out.state === 'accepted_pending') showToast(out.message);
+        return;
+      }
+      if (out.category === 'recipient_changed' || out.category === 'confirmation_required') {
+        // The handle now points at a different account: drop the stale recipient and make the sender look again.
+        setRecipientProfile(null);
+        setStep('amount');
+      }
+      showToast(out.message ?? 'Envoi impossible');
     } finally {
       setSubmitting(false);
     }
@@ -681,6 +732,7 @@ export default function SendMoneyScreen({ navigation, route }) {
     <View style={styles.root}>
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <MoneyPhaseBanner phase={moneySubmit.phase} />
         {step === 'amount' && (
           <StepTransition>
             <AmountStep
@@ -696,6 +748,7 @@ export default function SendMoneyScreen({ navigation, route }) {
               recipientProfile={recipientProfile}
               lookupLoading={lookupLoading}
               lookupError={lookupError}
+              onRetryLookup={lookupNetworkFail ? () => runLookup(recipientQuery, recipientMode) : undefined}
               recentRecipients={recentRecipients}
               onPickRecent={pickRecentRecipient}
               onContinue={() => setStep('confirm')}
@@ -739,6 +792,7 @@ export default function SendMoneyScreen({ navigation, route }) {
               onMarkedUndone={handleUndone}
               onShareMbolo={shareMbolo}
               undone={undone}
+              held={held}
             />
           </StepTransition>
         )}
@@ -847,6 +901,8 @@ const styles = StyleSheet.create({
   recipientPreviewMeta: { fontSize: 11, color: 'rgba(5,8,5,0.6)', marginTop: 2 },
   recipientPreviewPhone: { fontSize: 11, color: colors.green, marginTop: 4, fontFamily: fontFamily.bodyBold },
   lookupError: { fontSize: 11, color: colors.terracotta, marginTop: spacing.sm },
+  lookupErrorRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  lookupRetry: { fontSize: 12, fontFamily: fontFamily.bodySemiBold, color: colors.ink, marginTop: spacing.sm, textDecorationLine: 'underline' },
   recArr: { fontSize: 11, color: 'rgba(5,8,5,0.5)' },
 
   reasonWrap: { paddingHorizontal: spacing.huge, paddingBottom: spacing.xxl },

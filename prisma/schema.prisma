@@ -9,136 +9,159 @@ datasource db {
 }
 
 model User {
-  id                     String    @id @default(cuid())
-  phone                  String    @unique
-  country                String    @default("SN")
-  name                   String?
-  handle                 String?   @unique
-  statusText             String?
-  currentSong            String?
-  pinnedPhotos           Json?
-  arrondissementKey      String?
-  arrondissementIcon     String?
-  arrondissementName     String?
-  avatarEmoji            String?
-  avatarUrl              String?   @db.Text
-  identityChoice         String?
-  otpVerifiedAt          DateTime?
-  pinHash                String?
-  passwordHash           String?
-  pinFailedAttempts      Int       @default(0)
-  accountLockedAt        DateTime?
-  accountLockReason      String?
-  frozenByAdminAt        DateTime?
-  adminFreezeReason      String?
-  lastActivityAt         DateTime?
-  cniNumberEnc           String?
-  biometricEnabled       Boolean   @default(false)
-  stepUpVerifiedAt       DateTime?
-  isDiaspora             Boolean   @default(false)
-  verificationTier       Int       @default(1)
-  verificationStatus     String    @default("phone_only")
-  cniVerifiedAt          DateTime?
-  addressVerifiedAt      DateTime?
-  dateOfBirth            DateTime?
-  cniHash                String?   @unique
-  smsAlertsEnabled       Boolean   @default(true)
-  smsBalanceQueryEnabled Boolean   @default(true)
-  email                  String?   @unique
-  emailVerifiedAt        DateTime?
-  afriId                 String?   @unique
-  inviteCode             String?   @unique
-  referredByUserId       String?
-  studentPassSchool      String?
-  studentPassBusinessId  String?
-  studentPassStatus      String?
-  studentPassRequestedAt DateTime?
-  studentPassVerifiedAt  DateTime?
-  studentPassExpiresAt   DateTime?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  id                        String    @id @default(cuid())
+  phone                     String    @unique
+  country                   String    @default("SN")
+  name                      String?
+  handle                    String?   @unique
+  statusText                String?
+  currentSong               String?
+  pinnedPhotos              Json?
+  arrondissementKey         String?
+  arrondissementIcon        String?
+  arrondissementName        String?
+  avatarEmoji               String?
+  avatarUrl                 String?   @db.Text
+  identityChoice            String?
+  otpVerifiedAt             DateTime?
+  pinHash                   String?
+  passwordHash              String?
+  pinFailedAttempts         Int       @default(0)
+  accountLockedAt           DateTime?
+  accountLockReason         String?
+  frozenByAdminAt           DateTime?
+  adminFreezeReason         String?
+  /// Set when access is recovered via OTP; opens a 24h cool-off on outbound money.
+  accountRecoveredAt        DateTime?
+  /// Credential remediation: set when this account's PIN/password must be
+  /// re-established (e.g. hashes were exposed). Outbound money is held and new
+  /// credentials require a fresh OTP login AFTER this timestamp.
+  credentialResetRequiredAt DateTime?
+  credentialResetReason     String?
+  /// Access tokens issued (iat) before this instant are rejected (session revocation).
+  sessionsRevokedAt         DateTime?
+  lastActivityAt            DateTime?
+  cniNumberEnc              String?
+  biometricEnabled          Boolean   @default(false)
+  stepUpVerifiedAt          DateTime?
+  isDiaspora                Boolean   @default(false)
+  verificationTier          Int       @default(1)
+  verificationStatus        String    @default("phone_only")
+  cniVerifiedAt             DateTime?
+  addressVerifiedAt         DateTime?
+  dateOfBirth               DateTime?
+  cniHash                   String?   @unique
+  smsAlertsEnabled          Boolean   @default(true)
+  /// J12-F12 / P-J12-4: balance-by-SMS is OPT-IN (PIN-confirmed). Existing rows are NOT changed by the
+  /// migration — switching current users off is a production data decision.
+  smsBalanceQueryEnabled    Boolean   @default(false)
+  email                     String?   @unique
+  emailVerifiedAt           DateTime?
+  afriId                    String?   @unique
+  inviteCode                String?   @unique
+  referredByUserId          String?
+  studentPassSchool         String?
+  studentPassBusinessId     String?
+  studentPassStatus         String?
+  studentPassRequestedAt    DateTime?
+  studentPassVerifiedAt     DateTime?
+  studentPassExpiresAt      DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
-  wallet                Wallet?
-  koriSent              KoriTransaction[]      @relation("KoriSender")
-  koriReceived          KoriTransaction[]      @relation("KoriRecipient")
-  roles                 AccountRole[]
-  refreshTokens         RefreshToken[]
-  notifications         Notification[]
-  ledgerEntries         LedgerEntry[]
-  sellerProfile         SellerProfile?
-  driverProfile         DriverProfile?
-  workerProfile         WorkerProfile?
-  businessMemberships   BusinessMember[]
-  ownedBusinesses       Business[]             @relation("BusinessOwner")
-  studentPassBusiness   Business?              @relation("StudentPassLink", fields: [studentPassBusinessId], references: [id])
-  communityStatuses     BusinessCommunityStatus[]
-  sentMessages          MboloMessage[]
-  mboloMemberships      MboloMember[]
-  createdThreads        MboloThread[]          @relation("ThreadCreator")
-  createdTontines       TontineGroup[]         @relation("TontineCreator")
-  tontineMemberships    TontineMembership[]
-  createdEvents         Event[]                @relation("EventPromoter")
-  tickets               Ticket[]
-  deliveryAssignments   DeliveryTask[]         @relation("AssignedDriver")
-  hubParcels            HubParcel[]
-  moneyRequestsSent     MoneyRequest[]         @relation("MoneyRequester")
-  moneyRequestsReceived MoneyRequest[]         @relation("MoneyPayer")
-  ordersAsBuyer         Order[]                @relation("OrderBuyer")
-  merchantVouchers      MerchantVoucher[]
-  railTransactions      RailTransaction[]
-  apiIdempotencyKeys    ApiIdempotency[]
-  apiAuditLogs          ApiAuditLog[]
-  rateLimit             UserRateLimit?
-  devices               UserDevice[]
-  heldTransactions      HeldTransaction[]
-  fraudAlerts           FraudAlert[]
-  cniVerificationJobs   CniVerificationJob[]
-  dailyUsage            UserDailyUsage[]
-  smsMessages           SmsMessage[]
-  supportTickets        SupportTicket[]
-  supportTicketMessages SupportTicketMessage[]
-  supportCallLogs       SupportCallLog[]
-  partnerSupportAgents  PartnerSupportAgent[]
-  adminRefundsReceived  AdminRefund[]          @relation("RefundRecipient")
-  transferUndosSent     TransferUndo[]         @relation("UndoSender")
-  transferUndosReceived TransferUndo[]         @relation("UndoRecipient")
-  payrollEmployments    PayrollEmployee[]      @relation("PayrollEmployeeUser")
-  schoolChildren        SchoolStudent[]        @relation("SchoolParent")
-  farmerDeliveries      FarmerDeliveryLog[]    @relation("FarmerDeliveries")
-  verifiedDeliveries    FarmerDeliveryLog[]    @relation("VerifiedDeliveries")
-  blocksCreated         UserBlock[]            @relation("Blocker")
-  blocksReceived        UserBlock[]            @relation("BlockedUser")
-  reportsFiled          ContentReport[]        @relation("Reporter")
-  reportsReceived       ContentReport[]        @relation("ReportedUser")
-  offlineSyncItems      OfflineSyncQueue[]
-  friendsInitiated      UserFriend[]           @relation("FriendUser")
-  friendsReceived       UserFriend[]           @relation("FriendTarget")
-  friendRequestsSent     FriendRequest[]       @relation("FriendRequestFrom")
-  friendRequestsReceived FriendRequest[]       @relation("FriendRequestTo")
-  vouchesReceived        UserVouch[]           @relation("VouchReceived")
-  vouchesGiven           UserVouch[]           @relation("VouchGiven")
+  wallet                 Wallet?
+  koriSent               KoriTransaction[]         @relation("KoriSender")
+  koriReceived           KoriTransaction[]         @relation("KoriRecipient")
+  roles                  AccountRole[]
+  refreshTokens          RefreshToken[]
+  notifications          Notification[]
+  ledgerEntries          LedgerEntry[]
+  sellerProfile          SellerProfile?
+  driverProfile          DriverProfile?
+  workerProfile          WorkerProfile?
+  businessMemberships    BusinessMember[]
+  ownedBusinesses        Business[]                @relation("BusinessOwner")
+  studentPassBusiness    Business?                 @relation("StudentPassLink", fields: [studentPassBusinessId], references: [id])
+  communityStatuses      BusinessCommunityStatus[]
+  sentMessages           MboloMessage[]
+  mboloMemberships       MboloMember[]
+  createdThreads         MboloThread[]             @relation("ThreadCreator")
+  createdTontines        TontineGroup[]            @relation("TontineCreator")
+  tontineMemberships     TontineMembership[]
+  tontineContributions   TontineContribution[]     @relation("TontineContributor")
+  tontinePayouts         TontinePayout[]           @relation("TontinePayoutRecipient")
+  createdEvents          Event[]                   @relation("EventPromoter")
+  tickets                Ticket[]
+  deliveryAssignments    DeliveryTask[]            @relation("AssignedDriver")
+  hubParcels             HubParcel[]
+  moneyRequestsSent      MoneyRequest[]            @relation("MoneyRequester")
+  moneyRequestsReceived  MoneyRequest[]            @relation("MoneyPayer")
+  ordersAsBuyer          Order[]                   @relation("OrderBuyer")
+  merchantVouchers       MerchantVoucher[]
+  railTransactions       RailTransaction[]
+  apiIdempotencyKeys     ApiIdempotency[]
+  apiAuditLogs           ApiAuditLog[]
+  rateLimit              UserRateLimit?
+  devices                UserDevice[]
+  heldTransactions       HeldTransaction[]
+  fraudAlerts            FraudAlert[]
+  cniVerificationJobs    CniVerificationJob[]
+  dailyUsage             UserDailyUsage[]
+  smsMessages            SmsMessage[]
+  supportTickets         SupportTicket[]
+  supportTicketMessages  SupportTicketMessage[]
+  supportCallLogs        SupportCallLog[]
+  partnerSupportAgents   PartnerSupportAgent[]
+  adminRefundsReceived   AdminRefund[]             @relation("RefundRecipient")
+  transferUndosSent      TransferUndo[]            @relation("UndoSender")
+  transferUndosReceived  TransferUndo[]            @relation("UndoRecipient")
+  payrollEmployments     PayrollEmployee[]         @relation("PayrollEmployeeUser")
+  schoolChildren         SchoolStudent[]           @relation("SchoolParent")
+  farmerDeliveries       FarmerDeliveryLog[]       @relation("FarmerDeliveries")
+  verifiedDeliveries     FarmerDeliveryLog[]       @relation("VerifiedDeliveries")
+  blocksCreated          UserBlock[]               @relation("Blocker")
+  blocksReceived         UserBlock[]               @relation("BlockedUser")
+  reportsFiled           ContentReport[]           @relation("Reporter")
+  reportsReceived        ContentReport[]           @relation("ReportedUser")
+  offlineSyncItems       OfflineSyncQueue[]
+  friendsInitiated       UserFriend[]              @relation("FriendUser")
+  friendsReceived        UserFriend[]              @relation("FriendTarget")
+  friendRequestsSent     FriendRequest[]           @relation("FriendRequestFrom")
+  friendRequestsReceived FriendRequest[]           @relation("FriendRequestTo")
+  vouchesReceived        UserVouch[]               @relation("VouchReceived")
+  vouchesGiven           UserVouch[]               @relation("VouchGiven")
   alertReads             AlertRead[]
-  businessLedgerHits     BusinessLedgerEntry[]  @relation("BusinessLedgerUserCounterparty")
+  businessLedgerHits     BusinessLedgerEntry[]     @relation("BusinessLedgerUserCounterparty")
   agentProfile           AgentProfile?
   agentDeposits          AgentDeposit[]
   agentWithdrawals       AgentWithdrawal[]
-  referredBy             User?                  @relation("UserReferrals", fields: [referredByUserId], references: [id], onDelete: SetNull)
-  referrals              User[]                 @relation("UserReferrals")
+  referredBy             User?                     @relation("UserReferrals", fields: [referredByUserId], references: [id], onDelete: SetNull)
+  referrals              User[]                    @relation("UserReferrals")
   stripeDeposits         StripeDeposit[]
   paymentFunds           PaymentFund[]
   scheduledPayments      ScheduledPayment[]
   productViews           ProductView[]
-  solidarityCampaigns    SolidarityCampaign[]   @relation("SolidarityCreator")
-  solidarityBeneficiary  SolidarityCampaign[]   @relation("SolidarityBeneficiary")
-  solidarityDonations    SolidarityContribution[] @relation("SolidarityDonor")
+  solidarityCampaigns    SolidarityCampaign[]      @relation("SolidarityCreator")
+  solidarityBeneficiary  SolidarityCampaign[]      @relation("SolidarityBeneficiary")
+  solidarityDonations    SolidarityContribution[]  @relation("SolidarityDonor")
   affiliateProfile       AffiliateProfile?
-  tradeAccountsAsBuyer   TradeAccount[]           @relation("TradeBuyer")
-  tradeInvoicesAsBuyer   TradeInvoice[]           @relation("TradeInvoiceBuyer")
+  tradeAccountsAsBuyer   TradeAccount[]            @relation("TradeBuyer")
+  tradeInvoicesAsBuyer   TradeInvoice[]            @relation("TradeInvoiceBuyer")
   mediaVault             UserMediaVault?
   mboloMediaAssets       MbooloMediaAsset[]
-  mboloGifsCreated       MbooloGif[]              @relation("MbooloGifCreator")
+  mboloGifsCreated       MbooloGif[]               @relation("MbooloGifCreator")
   mboloStories           UserStory[]
   deviceKeys             UserDeviceKey[]
+
+  deliveriesAsBuyer          DeliveryTask[]              @relation("DeliveryBuyer")
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  afriClass                  String?
+  legacyKebuInvestments      KebuInvestment[]            @relation("LegacyKebuInvestor")
+  legacyKoriRedemptions      KoriRedemption[]            @relation("LegacyKoriRedemptionUser")
+  legacyPromoUses            MerchantPromoUse[]          @relation("LegacyPromoUseUser")
+  legacyNuLekkShares         NuLekkShare[]               @relation("LegacyNuLekkShareUser")
+  legacyNuLekkSplits         NuLekkSplit[]               @relation("LegacyNuLekkSplitCreator")
+  legacyTontineContributions LegacyTontineContribution[] @relation("LegacyTontineContributor")
 
   @@index([phone])
   @@index([afriId])
@@ -147,15 +170,23 @@ model User {
   @@index([handle])
   @@index([inviteCode])
   @@index([referredByUserId])
+  @@index([afriClass])
 }
 
 model AccountRole {
-  id        String   @id @default(cuid())
-  userId    String
-  role      String
-  status    String   @default("active")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String    @id @default(cuid())
+  userId          String
+  role            String
+  /// J3: pending (applied, awaiting approval) | active | suspended | revoked.
+  /// "inactive" is a legacy value treated as revoked. Only `active` grants anything.
+  status          String    @default("active")
+  /// J3 provenance: who granted / last changed the role, and why.
+  grantedBy       String?
+  statusReason    String?
+  statusChangedAt DateTime?
+  statusChangedBy String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -167,6 +198,8 @@ model OtpCode {
   id        String   @id @default(cuid())
   phone     String
   code      String
+  /// Wrong guesses against this code; burned at OTP_MAX_ATTEMPTS (lib/otp-service.js).
+  attempts  Int      @default(0)
   expiresAt DateTime
   createdAt DateTime @default(now())
 
@@ -176,14 +209,20 @@ model OtpCode {
 model RefreshToken {
   id        String    @id @default(cuid())
   userId    String
+  /// J3: the AuthSession this token belongs to (null for pre-J3 tokens).
+  sessionId String?
   tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
+  /// Set when this token was exchanged for a new one (rotation). Presenting
+  /// a rotated token again later means it was copied: the whole family dies.
+  rotatedAt DateTime?
   createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([sessionId])
 }
 
 model Wallet {
@@ -195,7 +234,7 @@ model Wallet {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
   ledgerEntries LedgerEntry[]
 }
 
@@ -213,8 +252,8 @@ model KoriTransaction {
   giftCardTheme   String?
   createdAt       DateTime @default(now())
 
-  sender    User? @relation("KoriSender", fields: [senderId], references: [id])
-  recipient User? @relation("KoriRecipient", fields: [recipientId], references: [id])
+  sender    User? @relation("KoriSender", fields: [senderId], references: [id], onDelete: Restrict)
+  recipient User? @relation("KoriRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
 
   @@index([senderId, createdAt])
   @@index([recipientId, createdAt])
@@ -247,8 +286,8 @@ model LedgerEntry {
   reference          String   @unique
   createdAt          DateTime @default(now())
 
-  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([walletId, createdAt])
   @@index([userId, createdAt])
@@ -256,54 +295,80 @@ model LedgerEntry {
 }
 
 model Business {
-  id             String   @id @default(cuid())
-  ownerId        String
-  name           String
-  type           String   @default("merchant")
-  category       String?
-  arrondissement String?
-  kebuId         String?  @unique
-  description    String?
-  statusText     String?
-  address        String?
-  lat            Float?
-  lng            Float?
-  imageUrl       String?
-  verified       Boolean  @default(false)
-  acceptOrdersWhenOutOfStock Boolean @default(false)
-  pauseOrders                Boolean @default(false)
-  lowStockAlertEnabled       Boolean @default(true)
-  distributionEnabled        Boolean @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                         String    @id @default(cuid())
+  ownerId                    String
+  name                       String
+  type                       String    @default("merchant")
+  category                   String?
+  arrondissement             String?
+  kebuId                     String?   @unique
+  description                String?
+  statusText                 String?
+  address                    String?
+  lat                        Float?
+  lng                        Float?
+  imageUrl                   String?
+  verified                   Boolean   @default(false)
+  acceptOrdersWhenOutOfStock Boolean   @default(false)
+  pauseOrders                Boolean   @default(false)
+  lowStockAlertEnabled       Boolean   @default(true)
+  distributionEnabled        Boolean   @default(false)
+  /// J5: merchant verification lifecycle (unverified → pending → verified | rejected).
+  /// `verified` stays the public badge and is kept equal to (status == verified).
+  verificationStatus         String    @default("unverified")
+  verificationNote           String?
+  verifiedAt                 DateTime?
+  verifiedBy                 String?
+  /// J5: where customer payments settle. 'business' = the business wallet
+  /// (default for every new payment); 'owner' = legacy owner-personal settlement.
+  settlementMode             String    @default("business")
+  /// J5: retail | services | restaurant | distribution | wholesale | manufacturer | cooperative.
+  /// Distribution / wholesale unlock merchant relationships + territories.
+  operatingMode              String    @default("retail")
+  /// J6.0: active | suspended | closed. A non-active business is refused as
+  /// a settlement target (partner payments are held for review instead).
+  status                     String    @default("active")
+  statusReason               String?
+  statusChangedAt            DateTime?
+  statusChangedBy            String?
+  phone                      String?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
-  owner            User               @relation("BusinessOwner", fields: [ownerId], references: [id])
-  members          BusinessMember[]
-  products         Product[]
-  orders           Order[]
-  events           Event[]
-  payrollGroups    PayrollGroup[]
-  payrollEmployees PayrollEmployee[]
-  schoolStudents   SchoolStudent[]
-  reviews          Review[]
-  schoolFeePeriods SchoolFeePeriod[]
-  deliveryLogs     FarmerDeliveryLog[]
-  contentReports   ContentReport[]
-  blocksReceived   UserBlock[]
-  wallet           BusinessWallet?
-  businessLedger   BusinessLedgerEntry[]
-  ledgerCounterparty BusinessLedgerEntry[] @relation("BusinessLedgerCounterparty")
-  studentPassHolders User[]                @relation("StudentPassLink")
-  communityStatuses  BusinessCommunityStatus[]
-  productViews       ProductView[]
-  affiliateLinks     AffiliateLink[]
-  merchantVouchers   MerchantVoucher[]
-  lockedMoneyRequests MoneyRequest[] @relation("LockedMoneyRequests")
-  tradeAccountsSupplied TradeAccount[] @relation("TradeSupplier")
-  tradeAccountsAsBuyer  TradeAccount[] @relation("TradeBuyerBusiness")
-  tradeInvoicesSupplied TradeInvoice[] @relation("TradeInvoiceSupplier")
-  tradeInvoicesAsBuyer  TradeInvoice[] @relation("TradeInvoiceBuyerBusiness")
-  ordersAsBuyer         Order[]        @relation("OrderBuyerBusiness")
+  locations             BusinessLocation[]
+  owner                 User                      @relation("BusinessOwner", fields: [ownerId], references: [id])
+  members               BusinessMember[]
+  products              Product[]
+  orders                Order[]
+  events                Event[]
+  payrollGroups         PayrollGroup[]
+  payrollEmployees      PayrollEmployee[]
+  schoolStudents        SchoolStudent[]
+  reviews               Review[]
+  schoolFeePeriods      SchoolFeePeriod[]
+  deliveryLogs          FarmerDeliveryLog[]
+  contentReports        ContentReport[]
+  blocksReceived        UserBlock[]
+  wallet                BusinessWallet?
+  businessLedger        BusinessLedgerEntry[]
+  ledgerCounterparty    BusinessLedgerEntry[]     @relation("BusinessLedgerCounterparty")
+  studentPassHolders    User[]                    @relation("StudentPassLink")
+  communityStatuses     BusinessCommunityStatus[]
+  productViews          ProductView[]
+  affiliateLinks        AffiliateLink[]
+  merchantVouchers      MerchantVoucher[]
+  lockedMoneyRequests   MoneyRequest[]            @relation("LockedMoneyRequests")
+  tradeAccountsSupplied TradeAccount[]            @relation("TradeSupplier")
+  tradeAccountsAsBuyer  TradeAccount[]            @relation("TradeBuyerBusiness")
+  tradeInvoicesSupplied TradeInvoice[]            @relation("TradeInvoiceSupplier")
+  tradeInvoicesAsBuyer  TradeInvoice[]            @relation("TradeInvoiceBuyerBusiness")
+  ordersAsBuyer         Order[]                   @relation("OrderBuyerBusiness")
+
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  legacyInvestmentOfferings KebuInvestmentOffering[] @relation("LegacyOfferingBusiness")
+  legacyRedemptionOffers    KoriRedemptionOffer[]    @relation("LegacyRedemptionOfferBusiness")
+  legacyPromos              MerchantPromo[]          @relation("LegacyPromoBusiness")
+  legacyNuLekkSplits        NuLekkSplit[]            @relation("LegacyNuLekkSplitBusiness")
 
   @@index([ownerId])
   @@index([category])
@@ -311,18 +376,28 @@ model Business {
 }
 
 model BusinessMember {
-  id         String   @id @default(cuid())
-  businessId String
-  userId     String
-  role       String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id            String    @id @default(cuid())
+  businessId    String
+  userId        String
+  role          String
+  /// J3: invited → active (invitee accepted) → removed. Rows are never deleted:
+  /// removal revokes authority immediately while history stays attributable.
+  status        String    @default("active")
+  invitedBy     String?
+  invitedAt     DateTime?
+  acceptedAt    DateTime?
+  removedAt     DateTime?
+  removedBy     String?
+  removedReason String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, userId, role])
   @@index([userId])
+  @@index([businessId, status])
 }
 
 /**
@@ -348,7 +423,9 @@ model BusinessCommunityStatus {
   @@index([businessId, expiresAt])
 }
 
-/** KEBU business wallet — separate from owner personal AFRI wallet. */
+/**
+ * KEBU business wallet — separate from owner personal AFRI wallet.
+ */
 model BusinessWallet {
   id         String   @id @default(cuid())
   businessId String   @unique
@@ -357,13 +434,15 @@ model BusinessWallet {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  business      Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business      Business              @relation(fields: [businessId], references: [id], onDelete: Restrict)
   ledgerEntries BusinessLedgerEntry[]
 
   @@index([businessId])
 }
 
-/** Ledger for KEBU wallet — payroll, B2B, owner draw, capital in. */
+/**
+ * Ledger for KEBU wallet — payroll, B2B, owner draw, capital in.
+ */
 model BusinessLedgerEntry {
   id                     String   @id @default(cuid())
   businessWalletId       String
@@ -378,8 +457,8 @@ model BusinessLedgerEntry {
   reference              String   @unique
   createdAt              DateTime @default(now())
 
-  businessWallet       BusinessWallet @relation(fields: [businessWalletId], references: [id], onDelete: Cascade)
-  business             Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessWallet       BusinessWallet @relation(fields: [businessWalletId], references: [id], onDelete: Restrict)
+  business             Business       @relation(fields: [businessId], references: [id], onDelete: Restrict)
   counterpartyBusiness Business?      @relation("BusinessLedgerCounterparty", fields: [counterpartyBusinessId], references: [id], onDelete: SetNull)
   counterpartyUser     User?          @relation("BusinessLedgerUserCounterparty", fields: [counterpartyUserId], references: [id], onDelete: SetNull)
 
@@ -415,7 +494,9 @@ model DriverProfile {
   @@index([status, lastActiveAt])
 }
 
-/** Worker mode — only activatable from a personal K21 account (not business signup). */
+/**
+ * Worker mode — only activatable from a personal K21 account (not business signup).
+ */
 model WorkerProfile {
   id                  String   @id @default(cuid())
   userId              String   @unique
@@ -436,7 +517,9 @@ model WorkerProfile {
   @@index([status])
 }
 
-/** Verifiable proof of completed platform work — for reputation and loan documentation. */
+/**
+ * Verifiable proof of completed platform work — for reputation and loan documentation.
+ */
 model WorkerReceipt {
   id              String   @id @default(cuid())
   workerProfileId String
@@ -451,7 +534,7 @@ model WorkerReceipt {
   completedAt     DateTime @default(now())
   createdAt       DateTime @default(now())
 
-  worker WorkerProfile @relation(fields: [workerProfileId], references: [id], onDelete: Cascade)
+  worker WorkerProfile @relation(fields: [workerProfileId], references: [id], onDelete: Restrict)
 
   @@index([workerProfileId, completedAt])
   @@index([userId])
@@ -459,71 +542,107 @@ model WorkerReceipt {
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  sellerId    String?
-  businessId  String?
-  title       String
-  description String?
-  imageUrl    String?
-  price       Int
-  category    String?
-  inventory   Int      @default(0)
-  trackInventory      Boolean  @default(true)
-  allowBackorder      Boolean  @default(false)
-  lowStockThreshold   Int      @default(5)
-  viewCount           Int      @default(0)
-  active      Boolean  @default(true)
-  flashPrice  Int?
-  flashExpiresAt DateTime?
-  unitLabel   String?
-  b2bPrice    Int?
-  b2bMinQty   Int      @default(1)
-  saleChannel String   @default("both")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String    @id @default(cuid())
+  sellerId          String?
+  businessId        String?
+  title             String
+  description       String?
+  imageUrl          String?
+  price             Int
+  category          String?
+  inventory         Int       @default(0)
+  trackInventory    Boolean   @default(true)
+  allowBackorder    Boolean   @default(false)
+  lowStockThreshold Int       @default(5)
+  viewCount         Int       @default(0)
+  active            Boolean   @default(true)
+  flashPrice        Int?
+  flashExpiresAt    DateTime?
+  unitLabel         String?
+  b2bPrice          Int?
+  b2bMinQty         Int       @default(1)
+  saleChannel       String    @default("both")
+  /// J5: 'product' (may track stock) | 'service' (never tracks stock).
+  kind              String    @default("product")
+  /// J5: merchant reference, unique per business when set.
+  sku               String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  seller     SellerProfile? @relation(fields: [sellerId], references: [id])
-  business   Business?      @relation(fields: [businessId], references: [id])
-  orderItems OrderItem[]
-  views      ProductView[]
+  stockMovements StockMovement[]
+  seller         SellerProfile?  @relation(fields: [sellerId], references: [id])
+  business       Business?       @relation(fields: [businessId], references: [id])
+  orderItems     OrderItem[]
+  views          ProductView[]
   affiliateLinks AffiliateLink[]
 
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  legacyPromosAsFree    MerchantPromo[] @relation("LegacyPromoFreeProduct")
+  legacyPromosAsTrigger MerchantPromo[] @relation("LegacyPromoTriggerProduct")
+
+  @@unique([businessId, sku])
   @@index([sellerId])
   @@index([businessId])
   @@index([category])
 }
 
 model Order {
-  id               String   @id @default(cuid())
-  buyerId          String
-  businessId       String?
-  buyerBusinessId  String?
-  status           String   @default("pending")
-  channel          String   @default("b2c")
-  paymentTerm      String   @default("immediate")
-  paymentStatus    String   @default("paid")
-  paidAmount       Int      @default(0)
-  paymentSource    String   @default("personal")
+  id                    String    @id @default(cuid())
+  buyerId               String
+  businessId            String?
+  buyerBusinessId       String?
+  status                String    @default("pending")
+  channel               String    @default("b2c")
+  paymentTerm           String    @default("immediate")
+  paymentStatus         String    @default("paid")
+  paidAmount            Int       @default(0)
+  paymentSource         String    @default("personal")
   preferredDeliveryDate DateTime?
-  orderReference   String?  @unique
-  fulfillmentType  String   @default("delivery")
-  totalAmount      Int
-  deliveryAddress  String?
-  hubId            String?
-  notes            String?
-  affiliateLinkCode String?
-  mboloThreadId     String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  orderReference        String?   @unique
+  fulfillmentType       String    @default("delivery")
+  totalAmount           Int
+  deliveryAddress       String?
+  hubId                 String?
+  notes                 String?
+  affiliateLinkCode     String?
+  mboloThreadId         String?
+  /// J5: where the payment settled ('business' wallet | 'owner' personal, legacy).
+  settledTo             String?
+  locationId            String?
+  /// J5 omnichannel: where the order entered (lib/commerce/channels.js) and,
+  /// for adapter channels, the source system's own reference.
+  sourceChannel         String    @default("jokko_app")
+  sourceSystem          String    @default("jokko")
+  externalOrderRef      String?
+  /// J5 fulfillment contract: 'merchant' (active) | 'jokko' (DORMANT, refused).
+  fulfillmentOwner      String    @default("merchant")
+  inventoryLocationId   String?
+  deliveryAddressId     String?
+  cancelledAt           DateTime?
+  cancelledBy           String?
+  cancelReason          String?
+  refundedAt            DateTime?
+  refundedBy            String?
+  refundReference       String?   @unique
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  business Business?     @relation(fields: [businessId], references: [id])
-  buyer    User          @relation("OrderBuyer", fields: [buyerId], references: [id])
-  buyerBusiness Business? @relation("OrderBuyerBusiness", fields: [buyerBusinessId], references: [id])
-  hub      DeliveryHub?  @relation(fields: [hubId], references: [id])
-  items    OrderItem[]
-  delivery DeliveryTask?
-  hubParcelLastMile HubParcel? @relation("HubParcelLastMile")
-  tradeInvoice TradeInvoice?
+  business          Business?     @relation(fields: [businessId], references: [id])
+  buyer             User          @relation("OrderBuyer", fields: [buyerId], references: [id])
+  buyerBusiness     Business?     @relation("OrderBuyerBusiness", fields: [buyerBusinessId], references: [id])
+  hub               DeliveryHub?  @relation(fields: [hubId], references: [id])
+  items             OrderItem[]
+  delivery          DeliveryTask?
+  hubParcelLastMile HubParcel?    @relation("HubParcelLastMile")
+  tradeInvoice      TradeInvoice?
+
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  subtotalKori    Int?
+  discountKori    Int                @default(0)
+  promoId         String?
+  promoCode       String?
+  legacyPromo     MerchantPromo?     @relation("LegacyOrderPromo", fields: [promoId], references: [id])
+  legacyPromoUses MerchantPromoUse[] @relation("LegacyPromoUseOrder")
 
   @@index([buyerId])
   @@index([businessId])
@@ -532,6 +651,7 @@ model Order {
   @@index([paymentStatus])
   @@index([preferredDeliveryDate])
   @@index([hubId])
+  @@index([promoId])
 }
 
 model DeliveryHub {
@@ -557,7 +677,9 @@ model DeliveryHub {
   @@index([country, city])
 }
 
-/** Inbound parcel to a K-21 pickup point — international, regional, or personal shipments. */
+/**
+ * Inbound parcel to a K-21 pickup point — international, regional, or personal shipments.
+ */
 model HubParcel {
   id              String    @id @default(cuid())
   ownerId         String
@@ -576,6 +698,8 @@ model HubParcel {
   dropoffLat      Float?
   dropoffLng      Float?
   pickupCode      String?
+  /// J8.0: wrong release codes entered at the pickup point (locks at 5)
+  pickupAttempts  Int       @default(0)
   lastMileOrderId String?   @unique
   arrivedAt       DateTime?
   pickedUpAt      DateTime?
@@ -584,9 +708,9 @@ model HubParcel {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  owner         User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  hub           DeliveryHub  @relation(fields: [hubId], references: [id])
-  lastMileOrder Order?       @relation("HubParcelLastMile", fields: [lastMileOrderId], references: [id])
+  owner         User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  hub           DeliveryHub @relation(fields: [hubId], references: [id])
+  lastMileOrder Order?      @relation("HubParcelLastMile", fields: [lastMileOrderId], references: [id])
 
   @@index([ownerId, status])
   @@index([hubId, status])
@@ -601,33 +725,44 @@ model OrderItem {
   quantity  Int
   unitPrice Int
 
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Restrict)
   product Product @relation(fields: [productId], references: [id])
+
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  isPromoFree Boolean        @default(false)
+  promoId     String?
+  legacyPromo MerchantPromo? @relation("LegacyOrderItemPromo", fields: [promoId], references: [id])
 
   @@index([orderId])
   @@index([productId])
+  @@index([promoId])
 }
 
-/** B2B buyer account with a supplier brand — pricing tier and payment terms. */
+/**
+ * B2B buyer account with a supplier brand — pricing tier and payment terms.
+ */
 model TradeAccount {
-  id                 String   @id @default(cuid())
-  supplierBusinessId String
-  buyerUserId        String
-  buyerBusinessId    String?
-  buyerLabel         String?
-  buyerType          String   @default("merchant")
-  paymentTerm        String   @default("net30")
-  creditLimitKori    Int      @default(0)
-  codEnabled         Boolean  @default(false)
-  trustTier          String   @default("new")
-  codLimitKori       Int      @default(50000)
-  priceLockUntil     DateTime?
-  active             Boolean  @default(true)
+  id                  String    @id @default(cuid())
+  supplierBusinessId  String
+  buyerUserId         String
+  buyerBusinessId     String?
+  buyerLabel          String?
+  buyerType           String    @default("merchant")
+  paymentTerm         String    @default("net30")
+  creditLimitKori     Int       @default(0)
+  codEnabled          Boolean   @default(false)
+  trustTier           String    @default("new")
+  codLimitKori        Int       @default(50000)
+  priceLockUntil      DateTime?
+  active              Boolean   @default(true)
   lastKnownBuyerScore Int?
   lastKnownBuyerTier  String?
   lastScoreCheckAt    DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  /// J7.8: revocation is explicit and attributed (active=false alone is legacy)
+  revokedAt           DateTime?
+  revokedBy           String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   supplier      Business       @relation("TradeSupplier", fields: [supplierBusinessId], references: [id], onDelete: Cascade)
   buyer         User           @relation("TradeBuyer", fields: [buyerUserId], references: [id], onDelete: Cascade)
@@ -639,30 +774,36 @@ model TradeAccount {
   @@index([supplierBusinessId, active])
 }
 
-/** Open invoice for B2B orders — collect later per trade terms. */
+/**
+ * Open invoice for B2B orders — collect later per trade terms.
+ */
 model TradeInvoice {
-  id                 String    @id @default(cuid())
-  supplierBusinessId String
-  buyerUserId        String
-  buyerBusinessId    String?
-  tradeAccountId     String?
-  orderId            String?   @unique
-  reference          String    @unique
-  amountKori         Int
-  amountPaid         Int       @default(0)
-  status             String    @default("open")
-  dueAt              DateTime
-  paidAt             DateTime?
-  reminderSentAt     DateTime?
-  notes              String?
+  id                    String    @id @default(cuid())
+  supplierBusinessId    String
+  buyerUserId           String
+  buyerBusinessId       String?
+  tradeAccountId        String?
+  orderId               String?   @unique
+  reference             String    @unique
+  amountKori            Int
+  amountPaid            Int       @default(0)
+  status                String    @default("open")
+  dueAt                 DateTime
+  paidAt                DateTime?
+  reminderSentAt        DateTime?
+  notes                 String?
   disputeReason         String?
   disputedAt            DateTime?
   disputeResolutionNote String?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  /// J7.10: principal (amountKori) is immutable once issued; corrections are CreditMemo rows,
+  /// payments are TradeInvoicePayment rows. amountPaid / creditedKori are their locked sums.
+  creditedKori          Int       @default(0)
+  purchaseOrderId       String?   @unique
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  supplier      Business      @relation("TradeInvoiceSupplier", fields: [supplierBusinessId], references: [id], onDelete: Cascade)
-  buyer         User          @relation("TradeInvoiceBuyer", fields: [buyerUserId], references: [id], onDelete: Cascade)
+  supplier      Business      @relation("TradeInvoiceSupplier", fields: [supplierBusinessId], references: [id], onDelete: Restrict)
+  buyer         User          @relation("TradeInvoiceBuyer", fields: [buyerUserId], references: [id], onDelete: Restrict)
   buyerBusiness Business?     @relation("TradeInvoiceBuyerBusiness", fields: [buyerBusinessId], references: [id], onDelete: SetNull)
   tradeAccount  TradeAccount? @relation(fields: [tradeAccountId], references: [id], onDelete: SetNull)
   order         Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
@@ -704,8 +845,20 @@ model DeliveryTask {
   order          Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
   hub            DeliveryHub?     @relation(fields: [hubId], references: [id])
   assignedDriver User?            @relation("AssignedDriver", fields: [assignedDriverId], references: [id])
+  /// Restored FK (production-shaped baseline has DeliveryTask_buyerId_fkey ON DELETE RESTRICT).
+  buyer          User             @relation("DeliveryBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
   escrow         DeliveryEscrow?
   dispute        DeliveryDispute?
+
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  proofRecipientUserId String?
+  proofRecipientHandle String?
+  proofScannedPayload  String?
+  proofSignatureUrl    String?
+  proofPhotoUrl        String?
+  proofLat             Float?
+  proofLng             Float?
+  proofSubmittedAt     DateTime?
 
   @@index([assignedDriverId])
   @@index([status])
@@ -721,6 +874,8 @@ model DeliveryEscrow {
   riderId        String?
   amountNational Int
   koriPayout     Int
+  /// ₭ actually debited from the buyer into escrow (null on pre-J1 legacy rows, which debited amountNational raw units).
+  amountKoriHeld Int?
   status         String    @default("reserved")
   reference      String    @unique
   reservedAt     DateTime  @default(now())
@@ -728,7 +883,7 @@ model DeliveryEscrow {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  delivery DeliveryTask @relation(fields: [deliveryTaskId], references: [id], onDelete: Cascade)
+  delivery DeliveryTask @relation(fields: [deliveryTaskId], references: [id], onDelete: Restrict)
 
   @@index([buyerId])
   @@index([riderId])
@@ -770,18 +925,18 @@ model DeliveryDisputeEvidence {
 }
 
 model Event {
-  id          String   @id @default(cuid())
-  promoterId  String
-  businessId  String?
-  title       String
-  description String?
-  venue       String?
+  id            String   @id @default(cuid())
+  promoterId    String
+  businessId    String?
+  title         String
+  description   String?
+  venue         String?
   coverImageUrl String?
-  startsAt    DateTime
-  ticketPrice Int
-  capacity    Int?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  startsAt      DateTime
+  ticketPrice   Int
+  capacity      Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   promoter User      @relation("EventPromoter", fields: [promoterId], references: [id])
   business Business? @relation(fields: [businessId], references: [id])
@@ -800,7 +955,7 @@ model Ticket {
   status    String   @default("paid")
   createdAt DateTime @default(now())
 
-  event  Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event  Event        @relation(fields: [eventId], references: [id], onDelete: Restrict)
   buyer  User         @relation(fields: [buyerId], references: [id])
   passes TicketPass[]
 
@@ -808,7 +963,9 @@ model Ticket {
   @@index([buyerId])
 }
 
-/** One scannable admission per ticket unit — door check-in. */
+/**
+ * One scannable admission per ticket unit — door check-in.
+ */
 model TicketPass {
   id          String    @id @default(cuid())
   ticketId    String
@@ -824,7 +981,9 @@ model TicketPass {
   @@index([status])
 }
 
-/** Jëkkal — community help / crowdfunding (Senegalese GoFundMe). */
+/**
+ * Jëkkal — community help / crowdfunding (Senegalese GoFundMe).
+ */
 model SolidarityCampaign {
   id                String    @id @default(cuid())
   creatorId         String
@@ -839,13 +998,22 @@ model SolidarityCampaign {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  creator     User                     @relation("SolidarityCreator", fields: [creatorId], references: [id])
-  beneficiary User                     @relation("SolidarityBeneficiary", fields: [beneficiaryUserId], references: [id])
+  creator       User                     @relation("SolidarityCreator", fields: [creatorId], references: [id])
+  beneficiary   User                     @relation("SolidarityBeneficiary", fields: [beneficiaryUserId], references: [id])
   contributions SolidarityContribution[]
+
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  kind                 String    @default("jekkal")
+  /// J11: `direct` = each gift goes straight to the beneficiary (no refund; every existing campaign is direct,
+  /// never silently converted). Protected campaigns are a separate product (ProtectedFund kind `campaign`).
+  mode                 String    @default("direct")
+  /// J11: a campaign for someone else waits for that person's consent before it can receive anything.
+  beneficiaryConsentAt DateTime?
 
   @@index([creatorId])
   @@index([beneficiaryUserId])
   @@index([status, createdAt])
+  @@index([kind, status])
 }
 
 model SolidarityContribution {
@@ -858,7 +1026,7 @@ model SolidarityContribution {
   reference  String   @unique
   createdAt  DateTime @default(now())
 
-  campaign SolidarityCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign SolidarityCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
   donor    User               @relation("SolidarityDonor", fields: [donorId], references: [id])
 
   @@index([campaignId, createdAt])
@@ -873,10 +1041,12 @@ model MboloThread {
   commerceType  String?
   commerceRefId String?
   inviteCode    String?  @unique
+  /// J10 groups: all | admins (announcement mode — only owner/admins post)
+  postingPolicy String   @default("all")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  creator     User              @relation("ThreadCreator", fields: [creatorId], references: [id])
+  creator     User               @relation("ThreadCreator", fields: [creatorId], references: [id])
   members     MboloMember[]
   messages    MboloMessage[]
   mediaAssets MbooloMediaAsset[]
@@ -891,6 +1061,16 @@ model MboloMember {
   threadId     String
   userId       String
   role         String    @default("member")
+  /// Message-request state: active (accepted) | requested | declined | blocked.
+  /// Non-active members cannot read, post, see presence or receive receipts.
+  status       String    @default("active")
+  invitedById  String?
+  respondedAt  DateTime?
+  /// J10 groups: an owner/admin muted this member (cannot post until then)
+  mutedUntil   DateTime?
+  /// J10 groups: removed by (status 'removed') — never rejoins by invite code; 'left' = left on their own
+  removedById  String?
+  removedAt    DateTime?
   lastReadAt   DateTime?
   lastTypingAt DateTime?
   createdAt    DateTime  @default(now())
@@ -900,24 +1080,29 @@ model MboloMember {
 
   @@unique([threadId, userId])
   @@index([userId])
+  @@index([userId, status])
 }
 
 model MboloMessage {
-  id           String   @id @default(cuid())
-  threadId     String
-  senderId     String
-  body         String   @default("")
-  kind         String   @default("text")
-  mediaUrl     String?  @db.Text
-  mediaAssetId String?  @unique
-  retention    String   @default("thread")
-  expiresAt    DateTime?
-  createdAt    DateTime @default(now())
+  id              String    @id @default(cuid())
+  threadId        String
+  senderId        String
+  body            String    @default("")
+  kind            String    @default("text")
+  mediaUrl        String?   @db.Text
+  mediaAssetId    String?   @unique
+  retention       String    @default("thread")
+  expiresAt       DateTime?
+  createdAt       DateTime  @default(now())
+  /// J12 (P-J12-3): stable id chosen by the sending device for one message; a retry/reconnect/outbox
+  /// flush with the same id returns the stored message instead of posting it twice. NULL for old clients.
+  clientMessageId String?
 
-  thread     MboloThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  sender     User             @relation(fields: [senderId], references: [id])
+  thread     MboloThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender     User              @relation(fields: [senderId], references: [id])
   mediaAsset MbooloMediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
 
+  @@unique([senderId, clientMessageId])
   @@index([threadId, createdAt])
   @@index([senderId])
 }
@@ -1006,40 +1191,123 @@ model MbooloGif {
 }
 
 model TontineGroup {
-  id              String    @id @default(cuid())
-  name            String
-  amountPerMember Int
-  frequency       String
-  createdBy       String
-  potBalance      Int       @default(0)
-  rotationIndex   Int       @default(0)
-  active          Boolean   @default(true)
-  nextDueAt       DateTime?
-  lastProcessedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  name             String
+  amountPerMember  Int
+  frequency        String
+  createdBy        String
+  potBalance       Int       @default(0)
+  rotationIndex    Int       @default(0)
+  active           Boolean   @default(true)
+  nextDueAt        DateTime?
+  lastProcessedAt  DateTime?
+  /// forming → active → completed | cancelled. Money moves only while 'active'.
+  status           String    @default("forming")
+  /// 1-based cycle being funded; 0 while forming.
+  currentCycle     Int       @default(0)
+  /// Contribution per member per cycle in ₭, fixed when the group starts.
+  contributionKori Int?
+  startedAt        DateTime?
+  endedAt          DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  creator     User                @relation("TontineCreator", fields: [createdBy], references: [id])
-  memberships TontineMembership[]
+  creator       User                  @relation("TontineCreator", fields: [createdBy], references: [id])
+  memberships   TontineMembership[]
+  contributions TontineContribution[]
+  payouts       TontinePayout[]
+  potEntries    TontinePotEntry[]
+
+  /// LEGACY (preserved, J2 decision 2026-10-03): exists in the production-shaped baseline; never drop.
+  legacyContributions LegacyTontineContribution[] @relation("LegacyTontineContributionGroup")
 
   @@index([createdBy])
   @@index([active, nextDueAt])
 }
 
 model TontineMembership {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   groupId           String
   userId            String
   rotationOrder     Int
-  hasReceivedPayout Boolean  @default(false)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  hasReceivedPayout Boolean   @default(false)
+  /// invited → accepted | declined; accepted → left | removed (only while forming).
+  /// An invitation never authorizes a debit; only 'accepted' members can contribute.
+  status            String    @default("invited")
+  invitedById       String?
+  acceptedAt        DateTime?
+  respondedAt       DateTime?
+  leftAt            DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  group TontineGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group TontineGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  user  User         @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@unique([groupId, userId])
   @@index([userId])
+}
+
+/// One explicit, member-authorized contribution per member per cycle.
+model TontineContribution {
+  id             String    @id @default(cuid())
+  groupId        String
+  cycle          Int
+  userId         String
+  amountKori     Int
+  /// settled → refunded (only if the group is cancelled before payout)
+  status         String    @default("settled")
+  /// How the member authorized it: 'explicit' (member pressed "cotiser").
+  authorization  String    @default("explicit")
+  reference      String    @unique
+  idempotencyKey String?   @unique
+  dueAt          DateTime?
+  settledAt      DateTime  @default(now())
+  refundedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  group TontineGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  user  User         @relation("TontineContributor", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, cycle, userId])
+  @@index([userId, createdAt])
+  /// Escrow-model contributions (run 3) live in their own table so the
+  /// production table "TontineContribution" (old shape) is preserved untouched.
+  @@map("TontineCycleContribution")
+}
+
+/// One payout per cycle, to the scheduled recipient, from the escrow pot.
+model TontinePayout {
+  id          String   @id @default(cuid())
+  groupId     String
+  cycle       Int
+  recipientId String
+  amountKori  Int
+  reference   String   @unique
+  createdAt   DateTime @default(now())
+
+  group     TontineGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  recipient User         @relation("TontinePayoutRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, cycle])
+}
+
+/// Append-only escrow ledger for a tontine pot (contribution +, payout −, refund −).
+/// TontineGroup.potBalance must always equal the sum of these rows.
+model TontinePotEntry {
+  id         String   @id @default(cuid())
+  groupId    String
+  cycle      Int
+  type       String
+  amountKori Int
+  userId     String
+  reference  String   @unique
+  createdAt  DateTime @default(now())
+
+  group TontineGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@index([groupId, cycle])
 }
 
 model Notification {
@@ -1051,13 +1319,31 @@ model Notification {
   refId       String?
   actionLabel String?
   read        Boolean  @default(false)
+  /// J10: money | security | orders | deliveries | work | community | school (null = legacy, derived from kind)
+  category    String?
+  /// J10: one notification per real event (e.g. "shipment:<id>:delivered"); retries never duplicate
+  dedupeKey   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, dedupeKey])
   @@index([userId, createdAt])
   @@index([userId, kind, refId])
+  @@index([userId, read, createdAt])
+}
+
+/// J10: per-person community and privacy settings (defaults = today's behaviour; nothing is made more public).
+model CommunitySettings {
+  userId               String   @id
+  /// who can find me by phone number: everyone | connections | nobody (handle search is separate)
+  discoverableByPhone  String   @default("everyone")
+  /// appear in "people in my neighbourhood" lists (opt-in; off by default)
+  neighbourhoodVisible Boolean  @default(false)
+  /// notification categories the person muted (money and security can never be muted)
+  mutedCategories      String[] @default([])
+  updatedAt            DateTime @updatedAt
 }
 
 model RegionalAlert {
@@ -1136,32 +1422,36 @@ model CultureFeedItem {
 }
 
 model MoneyRequest {
-  id                String    @id @default(cuid())
-  requesterId       String
-  payerId           String
-  amount            Int
-  currency          String    @default("national")
-  purposeCategory   String?
-  note              String?
-  voiceNoteUrl      String?   @db.Text
-  photoUrl          String?   @db.Text
-  videoUrl          String?   @db.Text
-  lockToBusinessId  String?
-  status            String    @default("pending")
-  reference         String    @unique
-  respondedAt       DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  requesterId      String
+  payerId          String
+  amount           Int
+  currency         String    @default("national")
+  purposeCategory  String?
+  note             String?
+  voiceNoteUrl     String?   @db.Text
+  photoUrl         String?   @db.Text
+  videoUrl         String?   @db.Text
+  lockToBusinessId String?
+  status           String    @default("pending")
+  reference        String    @unique
+  respondedAt      DateTime?
+  /// J4: requests expire (null = pre-J4 row, treated as never expiring).
+  expiresAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  requester      User      @relation("MoneyRequester", fields: [requesterId], references: [id], onDelete: Cascade)
-  payer          User      @relation("MoneyPayer", fields: [payerId], references: [id], onDelete: Cascade)
+  requester      User      @relation("MoneyRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  payer          User      @relation("MoneyPayer", fields: [payerId], references: [id], onDelete: Restrict)
   lockToBusiness Business? @relation("LockedMoneyRequests", fields: [lockToBusinessId], references: [id], onDelete: SetNull)
 
   @@index([requesterId, status, createdAt])
   @@index([payerId, status, createdAt])
 }
 
-/** Locked balance spendable only at one K21 merchant (from money requests). */
+/**
+ * Locked balance spendable only at one K21 merchant (from money requests).
+ */
 model MerchantVoucher {
   id          String   @id @default(cuid())
   userId      String
@@ -1170,8 +1460,8 @@ model MerchantVoucher {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
 
   @@unique([userId, businessId])
   @@index([userId])
@@ -1193,7 +1483,9 @@ model ProductView {
   @@index([userId])
 }
 
-/** Dedicated pot for recurring / scheduled payments (rent, family support, etc.). */
+/**
+ * Dedicated pot for recurring / scheduled payments (rent, family support, etc.).
+ */
 model PaymentFund {
   id          String   @id @default(cuid())
   userId      String
@@ -1204,7 +1496,7 @@ model PaymentFund {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Restrict)
   scheduledPayments ScheduledPayment[]
 
   @@index([userId])
@@ -1227,7 +1519,7 @@ model ScheduledPayment {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   fund PaymentFund? @relation(fields: [fundId], references: [id], onDelete: SetNull)
 
   @@index([userId, active])
@@ -1252,40 +1544,51 @@ model RailTransaction {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([userId, createdAt])
   @@index([provider, externalId])
   @@index([status])
 }
 
-/** External shop / partner collect sessions (Kebu, Rect, …). */
+/**
+ * External shop / partner collect sessions (Kebu, Rect, …).
+ */
 model PartnerPayment {
-  id                 String    @id @default(cuid())
-  partnerId          String
-  reference          String
-  amountXof          Int
-  currency           String    @default("XOF")
-  status             String    @default("pending")
-  phone              String?
-  method             String    @default("auto")
-  description        String?
-  metadataJson       String?   @db.Text
-  webhookUrl         String?
-  returnUrl          String?
-  cancelUrl          String?
-  checkoutToken      String    @unique
-  railReference      String?
-  settlementUserId   String?
-  failureReason      String?
-  completedAt        DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id                   String    @id @default(cuid())
+  partnerId            String
+  reference            String
+  amountXof            Int
+  currency             String    @default("XOF")
+  status               String    @default("pending")
+  phone                String?
+  method               String    @default("auto")
+  description          String?
+  metadataJson         String?   @db.Text
+  webhookUrl           String?
+  returnUrl            String?
+  cancelUrl            String?
+  checkoutToken        String    @unique
+  railReference        String?
+  settlementUserId     String?
+  /// J6.0 (D23/D24): legacy_platform (LEGACY: PARTNER_SETTLEMENT_USER_ID wallet)
+  /// | business_wallet (consented Kabu↔Jokko mapping) | held_for_review
+  /// (collected but not routable — partner unallocated + reconciliation exception).
+  settlementTarget     String    @default("legacy_platform")
+  externalBusinessId   String?
+  settlementBusinessId String?
+  externalLinkId       String?
+  settlementReference  String?
+  failureReason        String?
+  completedAt          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   webhookDeliveries PartnerWebhookDelivery[]
 
   @@unique([partnerId, reference])
   @@index([status, createdAt])
+  @@index([settlementBusinessId])
   @@index([phone])
 }
 
@@ -1306,25 +1609,29 @@ model PartnerWebhookDelivery {
   @@index([ok, nextRetryAt])
 }
 
-/** Partner outbound messages (OTP / fulfill notify). */
+/**
+ * Partner outbound messages (OTP / fulfill notify).
+ */
 model PartnerMessage {
-  id           String   @id @default(cuid())
-  partnerId    String
-  toPhone      String
-  text         String   @db.Text
-  status       String   @default("queued")
-  channelUsed  String   @default("none")
-  error        String?
-  metadataJson String?  @db.Text
-  idempotencyKey String? @unique
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String   @id @default(cuid())
+  partnerId      String
+  toPhone        String
+  text           String   @db.Text
+  status         String   @default("queued")
+  channelUsed    String   @default("none")
+  error          String?
+  metadataJson   String?  @db.Text
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@index([partnerId, createdAt])
   @@index([toPhone, createdAt])
 }
 
-/** Partner payouts — send XOF to a phone (supplier / refund / wage). */
+/**
+ * Partner payouts — send XOF to a phone (supplier / refund / wage).
+ */
 model PartnerPayout {
   id               String    @id @default(cuid())
   partnerId        String
@@ -1391,19 +1698,19 @@ model PartnerSupportAgent {
 }
 
 model PartnerSupportThread {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   partnerId       String
   shopExternalId  String?
   orderId         String?
   customerPhone   String
   customerUserId  String?
   mboloThreadId   String?
-  status          String    @default("open")
+  status          String   @default("open")
   assignedAgentId String?
   subject         String?
-  metadataJson    String?   @db.Text
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  metadataJson    String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   assignedAgent PartnerSupportAgent? @relation(fields: [assignedAgentId], references: [id], onDelete: SetNull)
 
@@ -1459,17 +1766,20 @@ model UserRateLimit {
 }
 
 model UserDevice {
-  id          String    @id @default(cuid())
-  userId      String
-  deviceId    String
-  deviceName  String?
-  ip          String?
-  countryCode String?
-  verifiedAt  DateTime?
-  firstSeenAt DateTime  @default(now())
-  lastSeenAt  DateTime  @default(now())
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  userId        String
+  deviceId      String
+  deviceName    String?
+  ip            String?
+  countryCode   String?
+  verifiedAt    DateTime?
+  /// J3: device trust revoked by the user/admin; its sessions are revoked too.
+  revokedAt     DateTime?
+  revokedReason String?
+  firstSeenAt   DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1494,7 +1804,7 @@ model HeldTransaction {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   fraudAlerts FraudAlert[]
 
   @@index([userId, status])
@@ -1609,11 +1919,11 @@ model AdminUser {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  sessions  AdminSession[]
-  auditLogs AdminAuditLog[]
-  tickets   SupportTicket[]        @relation("TicketAssignee")
-  messages  SupportTicketMessage[]
-  refunds   AdminRefund[]
+  sessions        AdminSession[]
+  auditLogs       AdminAuditLog[]
+  tickets         SupportTicket[]        @relation("TicketAssignee")
+  messages        SupportTicketMessage[]
+  refunds         AdminRefund[]
   supportCallLogs SupportCallLog[]
 
   @@index([active])
@@ -1645,7 +1955,7 @@ model AdminAuditLog {
   detailJson  String?
   createdAt   DateTime @default(now())
 
-  admin AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  admin AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Restrict)
 
   @@index([adminUserId, createdAt])
   @@index([action, createdAt])
@@ -1691,7 +2001,9 @@ model SupportTicketMessage {
   @@index([ticketId, createdAt])
 }
 
-/** Inbound/outbound customer-service call log (phone, WhatsApp, etc.). */
+/**
+ * Inbound/outbound customer-service call log (phone, WhatsApp, etc.).
+ */
 model SupportCallLog {
   id          String   @id @default(cuid())
   phone       String
@@ -1728,8 +2040,8 @@ model AdminRefund {
   status          String   @default("completed")
   createdAt       DateTime @default(now())
 
-  admin     AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
-  recipient User      @relation("RefundRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  admin     AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Restrict)
+  recipient User      @relation("RefundRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
 
   @@index([recipientUserId, createdAt])
   @@index([adminUserId, createdAt])
@@ -1753,15 +2065,17 @@ model TransferUndo {
   reversedReference  String?   @unique
   createdAt          DateTime  @default(now())
 
-  sender    User @relation("UndoSender", fields: [senderUserId], references: [id], onDelete: Cascade)
-  recipient User @relation("UndoRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  sender    User @relation("UndoSender", fields: [senderUserId], references: [id], onDelete: Restrict)
+  recipient User @relation("UndoRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
 
   @@index([senderUserId, status])
   @@index([recipientUserId])
   @@index([reversibleUntil])
 }
 
-/** Payroll group — HR, corporate, staff, farmers, etc. */
+/**
+ * Payroll group — HR, corporate, staff, farmers, etc.
+ */
 model PayrollGroup {
   id               String   @id @default(cuid())
   businessId       String
@@ -1776,20 +2090,22 @@ model PayrollGroup {
   @@index([businessId])
 }
 
-/** Employee on a business payroll (includes cooperative farmers). */
+/**
+ * Employee on a business payroll (includes cooperative farmers).
+ */
 model PayrollEmployee {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   businessId    String
   userId        String
   groupId       String?
   jobTitle      String?
   payAmount     Int?
-  paySchedule   String    @default("manual")
+  paySchedule   String   @default("manual")
   payDayOfWeek  Int?
   payDayOfMonth Int?
-  status        String    @default("active")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  status        String   @default("active")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
   user     User          @relation("PayrollEmployeeUser", fields: [userId], references: [id], onDelete: Cascade)
@@ -1802,7 +2118,9 @@ model PayrollEmployee {
   @@index([groupId])
 }
 
-/** Record of a payroll payment. */
+/**
+ * Record of a payroll payment.
+ */
 model PayrollRun {
   id          String    @id @default(cuid())
   businessId  String
@@ -1815,13 +2133,15 @@ model PayrollRun {
   completedAt DateTime?
   createdAt   DateTime  @default(now())
 
-  employee PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   @@index([businessId, createdAt])
   @@index([employeeId, createdAt])
 }
 
-/** Student enrolled at a school institution. */
+/**
+ * Student enrolled at a school institution.
+ */
 model SchoolStudent {
   id           String   @id @default(cuid())
   businessId   String
@@ -1833,15 +2153,17 @@ model SchoolStudent {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  business Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  parent   User                @relation("SchoolParent", fields: [parentUserId], references: [id], onDelete: Cascade)
+  business Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  parent   User               @relation("SchoolParent", fields: [parentUserId], references: [id], onDelete: Cascade)
   payments SchoolFeePayment[]
 
   @@index([businessId, status])
   @@index([parentUserId])
 }
 
-/** Monthly or term fee period for a school. */
+/**
+ * Monthly or term fee period for a school.
+ */
 model SchoolFeePeriod {
   id         String   @id @default(cuid())
   businessId String
@@ -1859,29 +2181,33 @@ model SchoolFeePeriod {
   @@index([dueDate])
 }
 
-/** Parent fee payment for a student in a period. */
+/**
+ * Parent fee payment for a student in a period.
+ */
 model SchoolFeePayment {
-  id             String    @id @default(cuid())
-  periodId       String
-  studentId      String
-  parentUserId   String
-  amount         Int
-  status         String    @default("pending")
-  paidAt         DateTime?
-  ledgerReference String?  @unique
-  reminderSentAt DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  periodId        String
+  studentId       String
+  parentUserId    String
+  amount          Int
+  status          String    @default("pending")
+  paidAt          DateTime?
+  ledgerReference String?   @unique
+  reminderSentAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  period  SchoolFeePeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
-  student SchoolStudent   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  period  SchoolFeePeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  student SchoolStudent   @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   @@unique([periodId, studentId])
   @@index([parentUserId, status])
   @@index([periodId, status])
 }
 
-/** Farmer delivery log for cooperatives — verified in person, syncs offline. */
+/**
+ * Farmer delivery log for cooperatives — verified in person, syncs offline.
+ */
 model FarmerDeliveryLog {
   id               String    @id @default(cuid())
   businessId       String
@@ -1906,7 +2232,9 @@ model FarmerDeliveryLog {
   @@index([farmerUserId, createdAt])
 }
 
-/** User blocked another user or business. */
+/**
+ * User blocked another user or business.
+ */
 model UserBlock {
   id                String   @id @default(cuid())
   blockerId         String
@@ -1923,30 +2251,68 @@ model UserBlock {
   @@index([blockerId])
 }
 
-/** User report — routed to K21 admin review queue. */
+/**
+ * User report — routed to K21 admin review queue.
+ */
 model ContentReport {
-  id                String   @id @default(cuid())
-  reporterId        String
-  targetUserId      String?
-  targetBusinessId  String?
-  category          String
-  reason            String
-  status            String   @default("open")
-  adminNotes        String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id               String    @id @default(cuid())
+  reporterId       String
+  targetUserId     String?
+  targetBusinessId String?
+  category         String
+  reason           String
+  status           String    @default("open")
+  adminNotes       String?
+  /// J10: message / group reports keep a snapshot of the reported content at report time
+  targetThreadId   String?
+  targetMessageId  String?
+  evidenceSnapshot String?
+  /// J10 outcome: no_violation | warn | restrict_messaging (resolvedBy = operator)
+  resolution       String?
+  resolvedBy       String?
+  resolvedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   reporter       User      @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
   targetUser     User?     @relation("ReportedUser", fields: [targetUserId], references: [id], onDelete: SetNull)
   targetBusiness Business? @relation(fields: [targetBusinessId], references: [id], onDelete: SetNull)
 
+  @@unique([reporterId, targetMessageId])
   @@index([status, createdAt])
   @@index([reporterId])
   @@index([targetUserId])
   @@index([targetBusinessId])
 }
 
-/** Friend link — bidirectional rows (A→B and B→A). */
+/// J10: a moderation action on a person (never on money). restrict_messaging stops new conversations and
+/// group posts until `until`; payments, refunds, payouts and receipts are unaffected. One appeal, decided by
+/// a different operator than the one who acted.
+model ModerationAction {
+  id               String    @id @default(cuid())
+  userId           String
+  /// warn | restrict_messaging
+  kind             String
+  until            DateTime?
+  reportId         String?
+  byAdminId        String
+  note             String
+  appealNote       String?
+  appealedAt       DateTime?
+  /// upheld | lifted
+  appealOutcome    String?
+  appealResolvedBy String?
+  appealResolvedAt DateTime?
+  liftedAt         DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([appealedAt])
+}
+
+/**
+ * Friend link — bidirectional rows (A→B and B→A).
+ */
 model UserFriend {
   id        String   @id @default(cuid())
   userId    String
@@ -1999,7 +2365,9 @@ model UserVouch {
   @@index([userId])
 }
 
-/** Offline-first queue — cooperative delivery logs, etc. */
+/**
+ * Offline-first queue — cooperative delivery logs, etc.
+ */
 model OfflineSyncQueue {
   id         String    @id @default(cuid())
   userId     String
@@ -2015,7 +2383,9 @@ model OfflineSyncQueue {
   @@index([entityType])
 }
 
-/** K21 Charts — community favorite-song chart. One vote per user per week. */
+/**
+ * K21 Charts — community favorite-song chart. One vote per user per week.
+ */
 model ChartSong {
   id          String   @id @default(cuid())
   weekKey     String
@@ -2045,7 +2415,9 @@ model SongVote {
   @@index([songId])
 }
 
-/** Cached external trending data (YouTube SN music, etc.) refreshed by cron. */
+/**
+ * Cached external trending data (YouTube SN music, etc.) refreshed by cron.
+ */
 model TrendingCache {
   id        String   @id @default(cuid())
   kind      String
@@ -2060,7 +2432,9 @@ model TrendingCache {
   @@index([kind, periodKey])
 }
 
-/** Real merchant reviews — one per user per business, no fake ratings ever. */
+/**
+ * Real merchant reviews — one per user per business, no fake ratings ever.
+ */
 model Review {
   id         String   @id @default(cuid())
   businessId String
@@ -2076,8 +2450,10 @@ model Review {
   @@index([businessId])
 }
 
-/** Profile poll — a member asks one question, friends vote. One active poll
- * per user (asking a new one closes the previous). */
+/**
+ * Profile poll — a member asks one question, friends vote. One active poll
+ * per user (asking a new one closes the previous).
+ */
 model UserPoll {
   id        String   @id @default(cuid())
   userId    String
@@ -2104,8 +2480,10 @@ model UserPollVote {
   @@index([pollId])
 }
 
-/** Channels — WeChat-style: each account can create exactly ONE channel;
- * others follow it and watch what it posts. */
+/**
+ * Channels — WeChat-style: each account can create exactly ONE channel;
+ * others follow it and watch what it posts.
+ */
 model Channel {
   id        String   @id @default(cuid())
   ownerId   String   @unique
@@ -2142,34 +2520,55 @@ model ChannelFollow {
   @@index([userId])
 }
 
-/** K21 in-person agent — float-backed cash-in/out at agent points. */
+/**
+ * K21 in-person agent — float-backed cash-in/out at agent points.
+ */
 model AgentProfile {
-  id            String   @id @default(cuid())
-  userId        String   @unique
-  agentCode     String   @unique
-  displayName   String
-  locationLabel String?
-  arrondissement  String?
-  lat             Float?
-  lng             Float?
-  /** standard = retail point; business = large float / gros retraits */
-  tier               String   @default("standard")
-  floatBalance       Int      @default(0)
-  floatLimit         Int      @default(500000)
-  maxDepositXof      Int      @default(500000)
-  maxWithdrawXof     Int      @default(500000)
-  commissionBps      Int      @default(100)
-  monthlyFlatFeeXof  Int      @default(25000)
-  volumeBonusBps     Int      @default(50)
-  status             String   @default("active")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  agentCode          String    @unique
+  displayName        String
+  locationLabel      String?
+  arrondissement     String?
+  lat                Float?
+  lng                Float?
+  /**
+   * standard = retail point; business = large float / gros retraits
+   */
+  tier               String    @default("standard")
+  floatBalance       Int       @default(0)
+  floatLimit         Int       @default(500000)
+  maxDepositXof      Int       @default(500000)
+  maxWithdrawXof     Int       @default(500000)
+  commissionBps      Int       @default(100)
+  monthlyFlatFeeXof  Int       @default(25000)
+  volumeBonusBps     Int       @default(50)
+  /// J6.1 lifecycle: applied → under_review → approved → active ⇄ suspended → terminated
+  /// (rejected from any pre-active state). Legacy rows: 'pending' ≡ applied, 'revoked' ≡ terminated.
+  /// No self-activation; float never activates.
+  status             String    @default("applied")
+  /// J6.1: individual | business (business agents are backed by a verified J5 Business)
+  agentType          String    @default("individual")
+  organizationId     String?
+  servicePointId     String?
+  identityVerifiedAt DateTime?
+  identityVerifiedBy String?
+  approvedBy         String?
+  approvedAt         DateTime?
+  activatedBy        String?
+  activatedAt        DateTime?
+  suspendedAt        DateTime?
+  suspensionReason   String?
+  terminatedAt       DateTime?
+  terminationReason  String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deposits     AgentDeposit[]
-  withdrawals  AgentWithdrawal[]
-  floatEntries AgentFloatEntry[]
-  payouts      AgentPayout[]
+  user               User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  deposits           AgentDeposit[]
+  withdrawals        AgentWithdrawal[]
+  floatEntries       AgentFloatEntry[]
+  payouts            AgentPayout[]
   floatTopUpRequests AgentFloatTopUpRequest[]
 
   @@index([status])
@@ -2177,8 +2576,10 @@ model AgentProfile {
   @@index([lat, lng])
 }
 
-/** Self-service float recharge request — an admin still approves it, but
- * the agent no longer has to leave the app to ask for one. */
+/**
+ * Self-service float recharge request — an admin still approves it, but
+ * the agent no longer has to leave the app to ask for one.
+ */
 model AgentFloatTopUpRequest {
   id           String    @id @default(cuid())
   agentId      String
@@ -2196,22 +2597,24 @@ model AgentFloatTopUpRequest {
   @@index([status])
 }
 
-/** Monthly agent compensation — flat fee + volume bonus on processed cash-ins. */
+/**
+ * Monthly agent compensation — flat fee + volume bonus on processed cash-ins.
+ */
 model AgentPayout {
-  id              String   @id @default(cuid())
-  agentId         String
-  periodYear      Int
-  periodMonth     Int
-  totalVolumeXof  Int      @default(0)
-  depositCount    Int      @default(0)
-  flatFeeXof      Int      @default(0)
-  volumeBonusXof  Int      @default(0)
-  totalPaidXof    Int      @default(0)
-  status          String   @default("paid")
-  reference       String   @unique
-  createdAt       DateTime @default(now())
+  id             String   @id @default(cuid())
+  agentId        String
+  periodYear     Int
+  periodMonth    Int
+  totalVolumeXof Int      @default(0)
+  depositCount   Int      @default(0)
+  flatFeeXof     Int      @default(0)
+  volumeBonusXof Int      @default(0)
+  totalPaidXof   Int      @default(0)
+  status         String   @default("paid")
+  reference      String   @unique
+  createdAt      DateTime @default(now())
 
-  agent AgentProfile @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  agent AgentProfile @relation(fields: [agentId], references: [id], onDelete: Restrict)
 
   @@unique([agentId, periodYear, periodMonth])
   @@index([periodYear, periodMonth])
@@ -2230,7 +2633,7 @@ model AgentDeposit {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user  User          @relation(fields: [userId], references: [id], onDelete: Restrict)
   agent AgentProfile? @relation(fields: [agentId], references: [id])
 
   @@index([userId, createdAt])
@@ -2251,7 +2654,7 @@ model AgentWithdrawal {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user  User          @relation(fields: [userId], references: [id], onDelete: Restrict)
   agent AgentProfile? @relation(fields: [agentId], references: [id])
 
   @@index([userId, createdAt])
@@ -2272,13 +2675,15 @@ model AgentFloatEntry {
   adminId      String?
   createdAt    DateTime @default(now())
 
-  agent AgentProfile @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  agent AgentProfile @relation(fields: [agentId], references: [id], onDelete: Restrict)
 
   @@index([agentId, createdAt])
   @@index([type])
 }
 
-/** Stripe card deposit (diaspora) — settled via webhook. */
+/**
+ * Stripe card deposit (diaspora) — settled via webhook.
+ */
 model StripeDeposit {
   id                    String    @id @default(cuid())
   userId                String
@@ -2291,13 +2696,15 @@ model StripeDeposit {
   createdAt             DateTime  @default(now())
   completedAt           DateTime?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([userId, createdAt])
   @@index([status])
 }
 
-/** TikTok-style affiliate — earn commission when referred users purchase. */
+/**
+ * TikTok-style affiliate — earn commission when referred users purchase.
+ */
 model AffiliateProfile {
   id            String   @id @default(cuid())
   userId        String   @unique
@@ -2309,9 +2716,9 @@ model AffiliateProfile {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  links        AffiliateLink[]
-  commissions  AffiliateCommission[]
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  links       AffiliateLink[]
+  commissions AffiliateCommission[]
 
   @@index([status])
 }
@@ -2337,26 +2744,2480 @@ model AffiliateLink {
 }
 
 model AffiliateCommission {
-  id             String   @id @default(cuid())
-  affiliateId    String
-  orderId        String?
-  buyerId        String
-  amount         Int
-  orderTotal     Int
-  commissionBps  Int
-  source         String
-  linkCode       String?
-  productId      String?
-  businessId     String?
-  mboloThreadId  String?
-  mboloMessageId String?
-  status         String   @default("paid")
-  reference      String   @unique
-  createdAt      DateTime @default(now())
+  id              String    @id @default(cuid())
+  affiliateId     String
+  orderId         String?
+  buyerId         String
+  amount          Int
+  orderTotal      Int
+  commissionBps   Int
+  source          String
+  linkCode        String?
+  productId       String?
+  businessId      String?
+  mboloThreadId   String?
+  mboloMessageId  String?
+  /// immediate (legacy: paid at purchase) | deferred: provisional | earned | paid | reversed | review
+  status          String    @default("paid")
+  reference       String    @unique
+  /// A4: immediate (legacy, live) | deferred (refund-aware; AFFILIATE_DEFERRED_SETTLEMENT)
+  settlementMode  String    @default("immediate")
+  completedSeenAt DateTime?
+  eligibleAt      DateTime?
+  earnedKori      Int?
+  reversedKori    Int       @default(0)
+  settledAt       DateTime?
+  paidAt          DateTime?
+  payoutReference String?   @unique
+  reviewReason    String?
+  createdAt       DateTime  @default(now())
 
-  affiliate AffiliateProfile @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  affiliate AffiliateProfile @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
 
   @@index([affiliateId, createdAt])
   @@index([buyerId])
   @@index([orderId])
+}
+
+/// Fixed-window request counters for unauthenticated/per-identifier rate limits
+/// (lib/request-limits.js). Shared across serverless instances via Postgres.
+model RateLimitBucket {
+  key         String   @id
+  windowStart DateTime
+  count       Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@index([updatedAt])
+}
+
+/// Append-only audit of credential remediation (never contains credentials,
+/// hashes, OTPs or reset secrets).
+model CredentialSecurityEvent {
+  id             String   @id @default(cuid())
+  userId         String
+  /// exposure_marked | pin_invalidated | password_invalidated | sessions_revoked
+  /// | pin_reestablished | password_reestablished
+  type           String
+  /// admin | operator_script | system | user
+  actorType      String
+  actorId        String?
+  reason         String?
+  /// A | B (classification from the exposure investigation), if applicable
+  classification String?
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+}
+
+// ============================================================================
+// LEGACY MODELS — preserved, never dropped (J2 decision 2026-10-03).
+// They exist in the production-shaped baseline (prisma/migrations/0_baseline,
+// captured 2026-08-17) but no current code reads or writes them. Shapes are
+// byte-for-byte the introspected baseline so no migration touches them.
+// See docs/JOKKO-LEGACY-SCHEMA.md.
+// ============================================================================
+
+/// LEGACY: Kebu business investment (users invested ₭ into a business offering).
+model KebuInvestment {
+  id         String   @id
+  offeringId String
+  investorId String
+  amountKori Int
+  status     String   @default("active")
+  reference  String   @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime
+
+  investor User                   @relation("LegacyKebuInvestor", fields: [investorId], references: [id], onDelete: Cascade)
+  offering KebuInvestmentOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+  payouts  KebuInvestmentPayout[]
+
+  @@index([investorId, status])
+  @@index([offeringId])
+}
+
+/// LEGACY: business fundraising offering on Kebu (target/raised in ₭, dividend bps).
+model KebuInvestmentOffering {
+  id                String           @id
+  businessId        String
+  title             String
+  description       String?
+  targetKori        Int
+  raisedKori        Int              @default(0)
+  minInvestmentKori Int              @default(1000)
+  maxInvestmentKori Int?
+  dividendBps       Int              @default(500)
+  status            String           @default("open")
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime
+  investments       KebuInvestment[]
+  business          Business         @relation("LegacyOfferingBusiness", fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, status])
+  @@index([status, createdAt])
+}
+
+/// LEGACY: dividend payout on a Kebu investment (₭).
+model KebuInvestmentPayout {
+  id           String         @id
+  investmentId String
+  amountKori   Int
+  reference    String         @unique
+  createdAt    DateTime       @default(now())
+  investment   KebuInvestment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+
+  @@index([investmentId])
+}
+
+/// LEGACY: a user spent ₭ on a business reward offer (redemption).
+model KoriRedemption {
+  id        String              @id
+  offerId   String
+  userId    String
+  costKori  Int
+  reference String              @unique
+  createdAt DateTime            @default(now())
+  offer     KoriRedemptionOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  user      User                @relation("LegacyKoriRedemptionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([offerId])
+  @@index([userId, createdAt])
+}
+
+/// LEGACY: business reward catalog priced in ₭.
+model KoriRedemptionOffer {
+  id          String           @id
+  businessId  String
+  title       String
+  description String?
+  costKori    Int
+  category    String           @default("reward")
+  inventory   Int?
+  active      Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime
+  redemptions KoriRedemption[]
+  business    Business         @relation("LegacyRedemptionOfferBusiness", fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([active, costKori])
+  @@index([businessId, active])
+}
+
+/// LEGACY: merchant promotion (percent / fixed off / buy-X-get-Y) applied to orders.
+model MerchantPromo {
+  id               String             @id
+  businessId       String
+  code             String?
+  title            String
+  description      String?
+  type             String
+  percentBps       Int?
+  fixedOffKori     Int?
+  triggerProductId String?
+  buyQty           Int?
+  freeProductId    String?
+  freeQty          Int                @default(1)
+  minOrderKori     Int?
+  maxUses          Int?
+  usesCount        Int                @default(0)
+  perUserMax       Int                @default(1)
+  startsAt         DateTime           @default(now())
+  expiresAt        DateTime?
+  active           Boolean            @default(true)
+  onlineOnly       Boolean            @default(false)
+  inPersonOnly     Boolean            @default(false)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime
+  business         Business           @relation("LegacyPromoBusiness", fields: [businessId], references: [id], onDelete: Cascade)
+  freeProduct      Product?           @relation("LegacyPromoFreeProduct", fields: [freeProductId], references: [id])
+  triggerProduct   Product?           @relation("LegacyPromoTriggerProduct", fields: [triggerProductId], references: [id])
+  uses             MerchantPromoUse[]
+  orders           Order[]            @relation("LegacyOrderPromo")
+  orderItems       OrderItem[]        @relation("LegacyOrderItemPromo")
+
+  @@unique([businessId, code])
+  @@index([active, expiresAt])
+  @@index([businessId, active])
+}
+
+/// LEGACY: one use of a merchant promo (discount granted, per order).
+model MerchantPromoUse {
+  id           String        @id
+  promoId      String
+  userId       String
+  orderId      String?
+  reference    String        @unique
+  discountKori Int           @default(0)
+  channel      String        @default("online")
+  createdAt    DateTime      @default(now())
+  order        Order?        @relation("LegacyPromoUseOrder", fields: [orderId], references: [id])
+  promo        MerchantPromo @relation(fields: [promoId], references: [id], onDelete: Cascade)
+  user         User          @relation("LegacyPromoUseUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([promoId, userId])
+  @@index([userId, createdAt])
+}
+
+/// LEGACY: one participant's share of a Nu Lekk bill split (₭).
+model NuLekkShare {
+  id         String      @id
+  splitId    String
+  userId     String
+  amountKori Int
+  status     String      @default("pending")
+  reference  String      @unique
+  paidAt     DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime
+  split      NuLekkSplit @relation(fields: [splitId], references: [id], onDelete: Cascade)
+  user       User        @relation("LegacyNuLekkShareUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([splitId, userId])
+  @@index([splitId, status])
+  @@index([userId, status])
+}
+
+/// LEGACY: Nu Lekk ("we eat") bill split, optionally paid to a business.
+model NuLekkSplit {
+  id         String        @id
+  creatorId  String
+  title      String?
+  category   String        @default("food")
+  totalKori  Int
+  businessId String?
+  status     String        @default("open")
+  reference  String        @unique
+  fundedAt   DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime
+  shares     NuLekkShare[]
+  business   Business?     @relation("LegacyNuLekkSplitBusiness", fields: [businessId], references: [id])
+  creator    User          @relation("LegacyNuLekkSplitCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([creatorId, status, createdAt])
+  @@index([status])
+}
+
+/// LEGACY: pre-run-3 tontine auto-collection rows (the drained model).
+/// Kept as forensic evidence; the escrow model uses TontineCycleContribution.
+model LegacyTontineContribution {
+  id         String       @id
+  groupId    String
+  userId     String
+  cycleKey   String
+  amountKori Int
+  reference  String       @unique
+  createdAt  DateTime     @default(now())
+  group      TontineGroup @relation("LegacyTontineContributionGroup", fields: [groupId], references: [id], onDelete: Cascade)
+  user       User         @relation("LegacyTontineContributor", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId, cycleKey])
+  @@index([groupId, cycleKey])
+  @@map("TontineContribution")
+}
+
+// ============================================================================
+// J2 — MONEY KERNEL (docs/JOKKO-J2-DESIGN.md). Single source of truth for value.
+// Balances here are written ONLY by the database posting trigger
+// (prisma/sql/money-kernel.sql); journal tables are append-only.
+// ============================================================================
+
+model LedgerAccount {
+  id            String   @id @default(cuid())
+  /// e.g. customer:<userId>:available, tontine:<groupId>:pot, provider:julaya:XOF:settlement
+  code          String   @unique
+  type          String
+  /// 'KRI' (₭ internal unit) | 'XOF' | 'GHS' | …
+  currency      String
+  /// 'credit' (liabilities/revenue) | 'debit' (assets)
+  normalSide    String
+  allowNegative Boolean  @default(false)
+  /// Materialized normal-side balance (minor units). Trigger-maintained only.
+  balance       BigInt   @default(0)
+  ownerType     String?
+  ownerId       String?
+  /// Legacy projection target kept equal to `balance` by the trigger.
+  projTable     String?
+  projId        String?
+  status        String   @default("active")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  postings Posting[]
+
+  @@unique([projTable, projId])
+  @@index([type])
+  @@index([ownerType, ownerId])
+}
+
+model JournalEntry {
+  id                  String   @id @default(cuid())
+  /// Business reference — the exactly-once anchor.
+  reference           String   @unique
+  kind                String
+  /// sha256 of the canonical postings: same reference + different hash = conflict.
+  payloadHash         String
+  reversesId          String?  @unique
+  externalOperationId String?
+  actorType           String
+  actorId             String?
+  reason              String?
+  metadata            Json?
+  createdAt           DateTime @default(now())
+
+  postings          Posting[]
+  reverses          JournalEntry?      @relation("Reversal", fields: [reversesId], references: [id], onDelete: Restrict)
+  reversedBy        JournalEntry?      @relation("Reversal")
+  externalOperation ExternalOperation? @relation(fields: [externalOperationId], references: [id], onDelete: Restrict)
+
+  @@index([kind, createdAt])
+  @@index([externalOperationId])
+}
+
+model Posting {
+  id        BigInt   @id @default(autoincrement())
+  entryId   String
+  accountId String
+  /// 'debit' | 'credit'
+  side      String
+  amount    BigInt
+  currency  String
+  createdAt DateTime @default(now())
+
+  entry   JournalEntry  @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  account LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([entryId])
+  @@index([accountId, id])
+}
+
+/// Money crossing the boundary (cash-in/out, Stripe, partner). State machine
+/// enforced in SQL (money-kernel.sql) and in lib/money-kernel/external-ops.js.
+model ExternalOperation {
+  id                String    @id @default(cuid())
+  provider          String
+  /// 'in' (collection) | 'out' (payout)
+  direction         String
+  state             String    @default("created")
+  reference         String    @unique
+  idempotencyKey    String?   @unique
+  providerReference String?
+  /// Amount in the external currency's minor unit (XOF has no sub-unit).
+  amountMinor       BigInt
+  currency          String
+  /// ₭ equivalent at the fixed peg (credited / burned).
+  amountKori        BigInt
+  feeMinor          BigInt    @default(0)
+  userId            String?
+  /// Ledger account the value belongs to (customer:…:available, partner wallet, …).
+  accountCode       String
+  /// Provider mode at creation ('live' | 'sandbox' | 'mock'): production may only be 'live'.
+  providerMode      String
+  reviewReason      String?
+  failureReason     String?
+  submittedAt       DateTime?
+  confirmedAt       DateTime?
+  settledAt         DateTime?
+  terminalAt        DateTime?
+  /// After this, no outcome → 'expired' (review), never confirmed.
+  outcomeDeadline   DateTime?
+  legacyTable       String?
+  legacyId          String?
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  events  ExternalOperationEvent[]
+  entries JournalEntry[]
+
+  @@unique([provider, providerReference])
+  @@index([state, outcomeDeadline])
+  @@index([userId, createdAt])
+  @@index([legacyTable, legacyId])
+}
+
+/// Append-only transition log for ExternalOperation.
+model ExternalOperationEvent {
+  id           BigInt   @id @default(autoincrement())
+  operationId  String
+  fromState    String
+  toState      String
+  /// 'api' | 'webhook' | 'status_poll' | 'admin' | 'job' | 'reconciliation'
+  source       String
+  signatureOk  Boolean  @default(false)
+  evidenceHash String?
+  note         String?
+  createdAt    DateTime @default(now())
+
+  operation ExternalOperation @relation(fields: [operationId], references: [id], onDelete: Restrict)
+
+  @@index([operationId, id])
+}
+
+/// Imported provider settlement statement lines (external truth).
+model ProviderStatementLine {
+  id                 String   @id @default(cuid())
+  provider           String
+  providerReference  String
+  direction          String
+  amountMinor        BigInt
+  currency           String
+  settledAt          DateTime
+  statementId        String
+  matchedOperationId String?
+  importedAt         DateTime @default(now())
+
+  @@unique([provider, providerReference, direction])
+  @@index([provider, statementId])
+}
+
+/// Reconciliation differences — never silently absorbed.
+model ReconciliationException {
+  id                String    @id @default(cuid())
+  kind              String
+  provider          String?
+  providerReference String?
+  operationId       String?
+  amountMinor       BigInt?
+  currency          String?
+  detail            String
+  status            String    @default("open")
+  resolvedAt        DateTime?
+  resolvedBy        String?
+  createdAt         DateTime  @default(now())
+
+  @@unique([kind, provider, providerReference])
+  @@index([status, createdAt])
+}
+
+/// Admin money adjustments: requested → approved → posted | rejected (dual authorization).
+model MoneyAdjustmentRequest {
+  id                String    @id @default(cuid())
+  idempotencyKey    String    @unique
+  debitAccount      String
+  creditAccount     String
+  amount            BigInt
+  currency          String
+  reason            String
+  originalReference String?
+  status            String    @default("requested")
+  requestedBy       String
+  approvedBy        String?
+  rejectedBy        String?
+  entryId           String?
+  createdAt         DateTime  @default(now())
+  decidedAt         DateTime?
+
+  @@index([status, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// J3 — Identity, Trust & Permissions (docs/JOKKO-J3-DESIGN.md)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One login on one device. Access tokens carry its id (`sid`); revoking the
+/// session kills its access and refresh tokens immediately.
+model AuthSession {
+  id           String    @id @default(cuid())
+  userId       String
+  deviceId     String?
+  /// otp_phone | otp_email | password | recovery
+  authMethod   String
+  /// trusted (verified device, normal login) | new (unverified device) | recovery
+  trust        String    @default("new")
+  trustedAt    DateTime?
+  /// Step-up (PIN) verified within THIS session — never shared across sessions.
+  stepUpAt     DateTime?
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime  @default(now())
+  /// Absolute lifetime: refresh rotation never extends a session past this.
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  revokeReason String?
+
+  @@index([userId, revokedAt])
+  @@index([userId, deviceId])
+}
+
+/// Separation of duties for operators. An AdminUser with no active grant can
+/// authenticate but is authorized for nothing.
+model AdminRoleGrant {
+  id           String    @id @default(cuid())
+  adminUserId  String
+  /// support | risk | compliance | finance_ops | finance_approver | sysadmin
+  role         String
+  grantedBy    String
+  approvedBy   String?
+  reason       String
+  grantedAt    DateTime  @default(now())
+  revokedAt    DateTime?
+  revokedBy    String?
+  revokeReason String?
+
+  @@index([adminUserId, revokedAt])
+}
+
+/// Generic maker-checker request for high-risk operator actions.
+model AdminApproval {
+  id          String    @id @default(cuid())
+  action      String
+  /// Canonical JSON of the action parameters; immutable after creation.
+  payloadJson String
+  payloadHash String
+  reason      String
+  caseRef     String?
+  /// requested → executed | rejected | expired
+  status      String    @default("requested")
+  requestedBy String
+  decidedBy   String?
+  decidedAt   DateTime?
+  resultJson  String?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  @@index([status, createdAt])
+  @@index([action, status])
+}
+
+/// Append-only identity / trust / permission audit trail.
+model IdentityAuditEvent {
+  id          String   @id @default(cuid())
+  /// user | admin | system | break_glass | partner | cron
+  actorType   String
+  actorId     String?
+  action      String
+  subjectType String
+  subjectId   String?
+  reason      String?
+  caseRef     String?
+  /// Minimal before/after state (never secrets, hashes or document images).
+  beforeJson  String?
+  afterJson   String?
+  sessionId   String?
+  ip          String?
+  createdAt   DateTime @default(now())
+
+  @@index([subjectType, subjectId, createdAt])
+  @@index([actorType, actorId, createdAt])
+  @@index([action, createdAt])
+}
+
+/// Append-only risk decisions (allow | step_up | hold | review | deny) with reasons.
+model RiskDecision {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  decision    String
+  reasonsJson String
+  signalsJson String
+  sessionId   String?
+  reference   String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([decision, createdAt])
+}
+
+/// Rolling failure counters that survive code re-issue (OTP, PIN, recovery).
+model AuthThrottle {
+  key          String    @id
+  failures     Int       @default(0)
+  windowStart  DateTime  @default(now())
+  blockedUntil DateTime?
+  updatedAt    DateTime  @updatedAt
+}
+
+/// Replay protection for signed provider callbacks (KYC).
+model WebhookReceipt {
+  id          String   @id @default(cuid())
+  provider    String
+  receiptHash String
+  createdAt   DateTime @default(now())
+
+  @@unique([provider, receiptHash])
+}
+
+/// J4 — a merchant-issued payment reference (QR / link). The QR carries only
+/// the opaque id; the merchant, amount and expiry are SERVER state. It can be
+/// paid once, before it expires, by the payer who confirms it.
+model MerchantCharge {
+  id          String    @id @default(cuid())
+  /// Opaque public code printed in the QR (unguessable).
+  code        String    @unique
+  businessId  String
+  createdBy   String
+  amountKori  Int
+  label       String?
+  /// open → paid | cancelled | expired
+  status      String    @default("open")
+  expiresAt   DateTime
+  paidBy      String?
+  paidAt      DateTime?
+  paymentRef  String?   @unique
+  /// J5: optional merchant reference / order the charge is for.
+  externalRef String?
+  orderId     String?
+  locationId  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([businessId, status])
+  @@index([businessId, createdAt])
+}
+
+/// J5: a place a business operates from. Every business has a primary
+/// location; inventory is single-location today (Product.inventory) and the
+/// model is ready for per-location stock and location-scoped staff.
+model BusinessLocation {
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  address    String?
+  lat        Float?
+  lng        Float?
+  isPrimary  Boolean  @default(false)
+  active     Boolean  @default(true)
+  addressId  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, active])
+}
+
+/// J5: where stock physically sits. A location of a business (store,
+/// warehouse, distributor depot) or — DORMANT — a Jokko fulfillment centre or
+/// pickup hub. Product.inventory is today the stock of the business's primary
+/// inventory location; StockMovement.inventoryLocationId records which one.
+model InventoryLocation {
+  id                 String   @id @default(cuid())
+  /// Business that owns this inventory location (the operator of the place).
+  operatorBusinessId String?
+  businessLocationId String?
+  /// store | warehouse | distributor_depot | jokko_fulfillment_center | pickup_hub
+  kind               String   @default("store")
+  /// active | dormant (not operable yet — never offered in production UI)
+  status             String   @default("active")
+  name               String
+  isPrimary          Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([operatorBusinessId, status])
+}
+
+/// J5: reusable, privacy-aware address for African commerce / logistics.
+/// `visibility`: private (owner only) | counterparty (shared for one order /
+/// relationship) | public (a shop front). A home address is never public.
+model Address {
+  id                String   @id @default(cuid())
+  ownerType         String
+  ownerId           String
+  /// home | business | store | warehouse | pickup_point | delivery_destination | farm | factory | fulfillment_center
+  purpose           String
+  visibility        String   @default("private")
+  country           String   @default("SN")
+  region            String?
+  department        String?
+  city              String?
+  commune           String?
+  neighborhood      String?
+  street            String?
+  building          String?
+  landmark          String?
+  instructions      String?
+  lat               Float?
+  lng               Float?
+  /// unverified | self_declared | agent_verified | courier_verified
+  verificationState String   @default("unverified")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([ownerType, ownerId])
+}
+
+/// J5 canonical payment record: every payment ACCEPTED by a business, whatever
+/// the method or channel, maps here. `settlement` says what it is:
+/// 'jokko_ledger' (electronic money, `ledgerReference` points to the J2 entry)
+/// | 'off_ledger_cash' (recorded cash/manual sale — never Jokko money)
+/// | 'external' (settled outside Jokko, e.g. a partner rail).
+model PaymentRecord {
+  id              String   @id @default(cuid())
+  businessId      String
+  /// wallet | static_qr | charge_qr | payment_link | online_checkout | provider_rail | cash | manual | device_tap (DORMANT) | softpos_card (DORMANT)
+  method          String
+  sourceChannel   String
+  sourceSystem    String   @default("jokko")
+  settlement      String
+  amountKori      Int
+  status          String   @default("completed")
+  ledgerReference String?  @unique
+  orderId         String?
+  chargeCode      String?
+  externalRef     String?
+  recordedBy      String?
+  note            String?
+  createdAt       DateTime @default(now())
+
+  @@index([businessId, createdAt])
+  @@index([orderId])
+}
+
+/// J5 transactional outbox: commerce events written in the same transaction
+/// as the change. Consumers (future Jokko Logistics, Kabu webhooks, demand
+/// aggregates) read from here — logistics logic never lives in payment
+/// handlers. Append-only.
+model CommerceEvent {
+  id            String    @id @default(cuid())
+  type          String
+  businessId    String?
+  aggregateType String
+  aggregateId   String
+  payloadJson   String
+  createdAt     DateTime  @default(now())
+  publishedAt   DateTime?
+
+  @@index([type, createdAt])
+  @@index([businessId, createdAt])
+  @@index([publishedAt])
+}
+
+/// J5 distribution: a distributor's territory.
+model Territory {
+  id                    String   @id @default(cuid())
+  distributorBusinessId String
+  name                  String
+  country               String   @default("SN")
+  region                String?
+  department            String?
+  communes              String?
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([distributorBusinessId, active])
+}
+
+/// J5: a commercial relationship between a distributor and a merchant.
+/// Invitation / assisted onboarding NEVER confers ownership or access to the
+/// merchant: the merchant accepts, the relationship carries explicit scopes
+/// (e.g. wholesale catalog + ordering), and either side can end it.
+model MerchantRelationship {
+  id                    String    @id @default(cuid())
+  distributorBusinessId String
+  merchantBusinessId    String?
+  invitedUserId         String?
+  introducedByUserId    String
+  territoryId           String?
+  /// invited | active | declined | ended
+  status                String    @default("invited")
+  scopesJson            String    @default("[\"wholesale_catalog\",\"wholesale_ordering\"]")
+  assistedOnboarding    Boolean   @default(false)
+  /// J7: optional relationship price list and assigned rep (operational, never a data grant)
+  priceListId           String?
+  assignedRepUserId     String?
+  invitedAt             DateTime  @default(now())
+  respondedAt           DateTime?
+  respondedBy           String?
+  endedAt               DateTime?
+  endedBy               String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([distributorBusinessId, status])
+  @@index([merchantBusinessId, status])
+  @@index([invitedUserId, status])
+}
+
+/// J5 integration mapping: a Jokko object ↔ an external system's object
+/// (Kabu business / product / order / customer). Created only with consent
+/// (owner link code + partner key). No copy of the external object is kept.
+model ExternalLink {
+  id         String    @id @default(cuid())
+  system     String
+  objectType String
+  externalId String
+  jokkoType  String
+  jokkoId    String
+  businessId String?
+  status     String    @default("active")
+  linkedBy   String?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  @@unique([system, objectType, externalId])
+  @@index([jokkoType, jokkoId])
+}
+
+/// One-time code the Jokko business owner gives to a partner system to link.
+model BusinessLinkCode {
+  id         String    @id @default(cuid())
+  businessId String
+  system     String
+  codeHash   String    @unique
+  createdBy  String
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+/// J5: append-only stock history. Every inventory change (sale, restore on
+/// cancellation/refund, manual adjustment) writes one row in the same
+/// transaction as the change, with the actor and a reason.
+model StockMovement {
+  id                  String   @id @default(cuid())
+  productId           String
+  businessId          String
+  locationId          String?
+  delta               Int
+  balanceAfter        Int
+  /// sale | cancel_restore | refund_restore | adjustment | initial
+  reason              String
+  note                String?
+  orderId             String?
+  actorUserId         String?
+  inventoryLocationId String?
+  createdAt           DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([productId, createdAt])
+  @@index([businessId, createdAt])
+  @@index([orderId])
+}
+
+// ─── J6: Agents & cash network ───────────────────────────────────────────────
+
+/// Append-only lifecycle history of an agent (who moved it, when, why).
+model AgentStatusEvent {
+  id         String   @id @default(cuid())
+  agentId    String
+  fromStatus String?
+  toStatus   String
+  actorType  String
+  actorId    String?
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([agentId, createdAt])
+}
+
+/// An individual operator or a business-backed agent network.
+model AgentOrganization {
+  id           String    @id @default(cuid())
+  kind         String
+  name         String
+  /// business kind: the verified J5 Business behind the network (never its wallet)
+  businessId   String?   @unique
+  ownerUserId  String
+  status       String    @default("applied")
+  statusReason String?
+  approvedBy   String?
+  approvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([ownerUserId])
+}
+
+/// A public place where cash services are offered. Never a home address.
+model AgentServicePoint {
+  id                      String    @id @default(cuid())
+  organizationId          String
+  name                    String
+  publicAddress           String
+  area                    String?
+  /// rounded (~1 km) for discovery ordering only
+  approxLat               Float?
+  approxLng               Float?
+  /// declared weekly hours: {"mon":[["08:00","20:00"]], …} (Africa/Dakar)
+  hoursJson               String?
+  cashIn                  Boolean   @default(true)
+  cashOut                 Boolean   @default(true)
+  merchantAssist          Boolean   @default(false)
+  /// compliance decision; merchantAssist is refused without it
+  merchantAssistPermitted Boolean   @default(false)
+  status                  String    @default("pending")
+  approvedBy              String?
+  approvedAt              DateTime?
+  createdBy               String
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+/// J6.4/J6.5: one physical-cash transaction (cash_in | cash_out) and its state machine.
+model AgentCashTransaction {
+  id                  String    @id @default(cuid())
+  reference           String    @unique
+  kind                String
+  customerId          String
+  agentId             String?
+  servicePointId      String?
+  amountXof           Int
+  amountKori          Int
+  state               String
+  /// sha256 of the purpose-bound handoff challenge (the raw value is only in the QR)
+  challengeHash       String    @unique
+  challengeExpiresAt  DateTime
+  /// sha256(tx, kind, customer, agent, service point, amount, expiry) fixed at binding
+  bindingHash         String?
+  boundAt             DateTime?
+  customerConfirmedAt DateTime?
+  completedAt         DateTime?
+  terminalAt          DateTime?
+  reviewDeadline      DateTime?
+  idempotencyKey      String?
+  customerDeviceId    String?
+  failureReason       String?
+  riskReasons         String?
+  commissionKori      Int       @default(0)
+  scanFailures        Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([customerId, idempotencyKey])
+  @@index([agentId, createdAt])
+  @@index([customerId, createdAt])
+  @@index([state, challengeExpiresAt])
+}
+
+/// Append-only state history of a cash transaction.
+model AgentCashEvent {
+  id        String   @id @default(cuid())
+  txId      String
+  fromState String?
+  toState   String
+  actorType String
+  actorId   String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([txId, createdAt])
+}
+
+/// Commission rule (finance-proposed, approved by a different operator). Agents never set it.
+model AgentCommissionRule {
+  id           String    @id @default(cuid())
+  purpose      String
+  bps          Int       @default(0)
+  flatKori     Int       @default(0)
+  minAmountXof Int       @default(0)
+  capKori      Int       @default(0)
+  status       String    @default("proposed")
+  createdBy    String
+  approvedBy   String?
+  approvedAt   DateTime?
+  retiredAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([purpose, status])
+}
+
+/// One commission per eligible completed cash transaction (funded or explicitly unfunded).
+model AgentCommission {
+  id                String    @id @default(cuid())
+  agentId           String
+  txId              String    @unique
+  ruleId            String?
+  amountKori        Int
+  status            String
+  ineligibleReason  String?
+  ledgerReference   String?
+  settledReference  String?
+  clawbackReference String?
+  createdAt         DateTime  @default(now())
+  settledAt         DateTime?
+
+  @@index([agentId, status])
+}
+
+/// Physical cash on hand as REPORTED by the agent. Self-reported; never authoritative.
+model AgentCashReport {
+  id             String   @id @default(cuid())
+  agentId        String
+  servicePointId String?
+  amountXof      Int
+  note           String?
+  createdAt      DateTime @default(now())
+
+  @@index([agentId, createdAt])
+}
+
+/// J6.12 assisted merchant onboarding: a rep introduces, the merchant owns.
+model MerchantOnboardingAssist {
+  id               String    @id @default(cuid())
+  introducerType   String
+  introducerId     String
+  repUserId        String
+  territoryId      String?
+  codeHash         String    @unique
+  status           String    @default("started")
+  merchantUserId   String?
+  businessId       String?
+  proposedName     String
+  proposedCategory String?
+  consentAt        DateTime?
+  expiresAt        DateTime
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([introducerType, introducerId])
+  @@index([repUserId])
+}
+
+// ─── J7: Commerce & distribution network ─────────────────────────────────────
+
+/// Operational wholesale catalog line of a seller (distributor / supplier / manufacturer). Not a storefront.
+model WholesaleListing {
+  id               String    @id @default(cuid())
+  sellerBusinessId String
+  productId        String?
+  sku              String
+  title            String
+  category         String?
+  /// unit | pack | case — what one ordered quantity means
+  unit             String    @default("pack")
+  unitsPerPack     Int       @default(1)
+  /// base price per ordered quantity (₭)
+  priceKori        Int
+  moqPacks         Int       @default(1)
+  stepPacks        Int       @default(1)
+  availability     String    @default("available")
+  /// relationships (connected merchants only) — the only J7 visibility
+  visibility       String    @default("relationships")
+  /// JSON array of territory ids; null = every territory of the seller
+  territoryIdsJson String?
+  depotLocationId  String?
+  effectiveFrom    DateTime  @default(now())
+  effectiveTo      DateTime?
+  status           String    @default("active")
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([sellerBusinessId, sku])
+  @@index([sellerBusinessId, status])
+}
+
+/// Volume tier: price per ordered quantity at or above minPacks.
+model WholesalePriceTier {
+  id        String @id @default(cuid())
+  listingId String
+  minPacks  Int
+  priceKori Int
+
+  @@unique([listingId, minPacks])
+}
+
+/// Seller price list assigned to some relationships (overrides base / tiers for its entries).
+model PriceList {
+  id               String   @id @default(cuid())
+  sellerBusinessId String
+  name             String
+  status           String   @default("active")
+  createdBy        String
+  createdAt        DateTime @default(now())
+
+  @@index([sellerBusinessId, status])
+}
+
+model PriceListEntry {
+  id          String @id @default(cuid())
+  priceListId String
+  listingId   String
+  priceKori   Int
+
+  @@unique([priceListId, listingId])
+}
+
+/// J7.13: a rep serves a territory of its distributor (operational; never grants merchant data).
+model TerritoryRep {
+  id          String   @id @default(cuid())
+  territoryId String
+  repUserId   String
+  status      String   @default("active")
+  assignedBy  String
+  createdAt   DateTime @default(now())
+
+  @@unique([territoryId, repUserId])
+  @@index([repUserId, status])
+}
+
+/// J7.7 B2B purchase order (buyer business → seller business).
+model PurchaseOrder {
+  id                    String    @id @default(cuid())
+  reference             String    @unique
+  buyerBusinessId       String
+  sellerBusinessId      String
+  relationshipId        String?
+  tradeAccountId        String?
+  territoryId           String?
+  status                String
+  /// due_now | net7 | net15 | net30 | net60 | net90
+  paymentTerm           String
+  /// unpaid | reserved (credit) | paid | invoiced | refunded
+  paymentStatus         String    @default("unpaid")
+  subtotalKori          Int
+  totalKori             Int
+  creditReservedKori    Int       @default(0)
+  idempotencyKey        String?
+  submittedBy           String
+  submittedAt           DateTime  @default(now())
+  acceptedBy            String?
+  acceptedAt            DateTime?
+  rejectedReason        String?
+  confirmedAt           DateTime?
+  paymentReference      String?   @unique
+  invoiceId             String?
+  fulfilmentMode        String?
+  fulfilmentRequestedAt DateTime?
+  deliveredAt           DateTime?
+  deliveryRecordedBy    String?
+  receivedAt            DateTime?
+  receivedBy            String?
+  completedAt           DateTime?
+  cancelledAt           DateTime?
+  cancelledBy           String?
+  cancelReason          String?
+  refundReference       String?   @unique
+  disputedAt            DateTime?
+  disputeReason         String?
+  depotLocationId       String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([buyerBusinessId, idempotencyKey])
+  @@index([sellerBusinessId, status, createdAt])
+  @@index([buyerBusinessId, createdAt])
+  @@index([tradeAccountId, status])
+}
+
+/// A line snapshot: what was agreed, at the server-computed price.
+model PurchaseOrderLine {
+  id              String  @id @default(cuid())
+  purchaseOrderId String
+  listingId       String
+  productId       String?
+  sku             String
+  title           String
+  unit            String
+  unitsPerPack    Int
+  packs           Int
+  unitPriceKori   Int
+  lineTotalKori   Int
+  /// base | tier | price_list
+  priceSource     String
+
+  @@index([purchaseOrderId])
+  @@index([listingId])
+}
+
+/// Append-only history of a purchase order.
+model PurchaseOrderEvent {
+  id              String   @id @default(cuid())
+  purchaseOrderId String
+  fromStatus      String?
+  toStatus        String
+  actorUserId     String?
+  actorBusinessId String?
+  note            String?
+  createdAt       DateTime @default(now())
+
+  @@index([purchaseOrderId, createdAt])
+}
+
+/// J7.10 one row per payment applied to an invoice (append-only).
+model TradeInvoicePayment {
+  id              String   @id @default(cuid())
+  invoiceId       String
+  amountKori      Int
+  ledgerReference String   @unique
+  paidByUserId    String
+  paymentSource   String
+  createdAt       DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+/// J7.10 explicit correction of an invoice (append-only). Never deletes history.
+model CreditMemo {
+  id              String   @id @default(cuid())
+  invoiceId       String
+  reference       String   @unique
+  amountKori      Int
+  /// dispute_waive | dispute_adjust | return_credit | correction
+  kind            String
+  reason          String
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+/// J7.14 stock position of a product at a depot / inventory location.
+model DepotStock {
+  id         String   @id @default(cuid())
+  locationId String
+  productId  String
+  onHand     Int      @default(0)
+  reserved   Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@unique([locationId, productId])
+}
+
+/// Append-only depot stock history.
+model DepotStockMovement {
+  id              String   @id @default(cuid())
+  depotStockId    String
+  locationId      String
+  productId       String
+  deltaOnHand     Int
+  deltaReserved   Int
+  onHandAfter     Int
+  reservedAfter   Int
+  /// receive | adjust | reserve | release | dispatch | return_restock
+  reason          String
+  purchaseOrderId String?
+  returnId        String?
+  actorUserId     String?
+  note            String?
+  createdAt       DateTime @default(now())
+
+  @@index([locationId, productId, createdAt])
+  @@index([purchaseOrderId])
+}
+
+/// J7.16 commercial return (goods), distinct from a refund (money).
+model CommercialReturn {
+  id               String    @id @default(cuid())
+  reference        String    @unique
+  purchaseOrderId  String
+  buyerBusinessId  String
+  sellerBusinessId String
+  /// requested → approved | rejected → goods_returned → received → resolved
+  status           String    @default("requested")
+  reason           String
+  linesJson        String
+  amountKori       Int
+  requestedBy      String
+  decidedBy        String?
+  decidedAt        DateTime?
+  decisionNote     String?
+  shippedAt        DateTime?
+  /// D44: how many times the buyer has shipped it (a cancelled / failed collection returns it to `approved`)
+  shipAttempts     Int       @default(0)
+  /// D44: the latest attempt goes through a tracked J8 collection
+  shipTracked      Boolean   @default(false)
+  receivedAt       DateTime?
+  receivedBy       String?
+  restocked        Boolean   @default(false)
+  /// credit_memo | refund | none
+  resolution       String?
+  creditMemoId     String?
+  refundReference  String?   @unique
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([purchaseOrderId])
+  @@index([sellerBusinessId, status])
+  @@index([buyerBusinessId, status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// J8 — Movement, logistics & fulfilment (docs/JOKKO-J8-LOGISTICS.md).
+// J8 is authoritative for PHYSICAL movement only: commerce (J5/J7) stays the
+// commercial record, J2 the money. They meet through references and events.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// An explicitly enrolled place that may hold parcels for collection / drop-off.
+/// Being an agent, a merchant or a distributor never makes a place a pickup point.
+model PickupPoint {
+  id                 String    @id @default(cuid())
+  operatorBusinessId String
+  /// legacy hub this point operates (hub parcels), if any
+  hubId              String?   @unique
+  addressId          String?
+  name               String
+  /// JSON array: customer_pickup | parcel_dropoff | return_dropoff
+  servicesJson       String    @default("[\"customer_pickup\"]")
+  hoursText          String?
+  capacityParcels    Int?
+  /// applied → active → suspended | closed
+  status             String    @default("applied")
+  appliedBy          String
+  decidedBy          String?
+  decidedAt          DateTime?
+  decisionReason     String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([operatorBusinessId, status])
+}
+
+/// One request to physically move goods for a commercial source. References the
+/// source (never copies the order); idempotent per (source, purpose).
+model FulfilmentRequest {
+  id                    String   @id @default(cuid())
+  reference             String   @unique
+  /// jokko_order | jokko_po | j7_return | stock_transfer | kabu | askaan | mbolo
+  sourceSystem          String
+  sourceId              String
+  /// outbound | return
+  purpose               String   @default("outbound")
+  sourceKey             String   @unique
+  /// MERCHANT_FULFILLED | DISTRIBUTOR_FULFILLED | CUSTOMER_PICKUP | JOKKO_LOGISTICS
+  fulfilmentOwner       String
+  /// business doing the moving (the seller / distributor), or null for JOKKO_LOGISTICS
+  fulfillerBusinessId   String?
+  /// local | intercity | regional
+  serviceType           String   @default("local")
+  originLocationId      String?
+  originBusinessId      String
+  destinationBusinessId String?
+  destinationUserId     String?
+  destinationAddressId  String?
+  pickupPointId         String?
+  /// none | sender | receiver
+  feePayer              String   @default("none")
+  feeKori               Int      @default(0)
+  courierEarningKori    Int      @default(0)
+  /// none | held | released | refunded
+  feeStatus             String   @default("none")
+  status                String   @default("open")
+  createdBy             String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([fulfillerBusinessId, status])
+  @@index([originBusinessId, createdAt])
+  @@index([destinationBusinessId, createdAt])
+}
+
+model Shipment {
+  id                String    @id @default(cuid())
+  reference         String    @unique
+  requestId         String
+  /// requested | accepted | ready_for_pickup | assigned | pickup_arrived | picked_up | in_transit
+  /// | delivery_arrived | delivered | delivery_failed | delivery_exception | return_requested
+  /// | return_in_transit | returned | cancelled
+  status            String
+  /// source | courier | receiver | pickup_point
+  custody           String    @default("source")
+  custodianUserId   String?
+  /// receiver_challenge | receiver_receiving | pickup_point_release | operator_ruling
+  deliveryProof     String?
+  deliveredAt       DateTime?
+  failureReason     String?
+  /// J8 pilot (D37): evidence for the failure side — receiver_confirmed | receiver_contested | operator_confirmed | operator_rejected
+  failureEvidence   String?
+  failureEvidenceBy String?
+  failureEvidenceAt DateTime?
+  routeId           String?
+  /// destination snapshot for the assigned courier; precise fields redacted after the retention window
+  destArea          String?
+  destPrecise       String?
+  destLat           Float?
+  destLng           Float?
+  preciseRedactedAt DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([requestId])
+  @@index([status, updatedAt])
+  @@index([routeId])
+}
+
+model ShipmentPackage {
+  id          String  @id @default(cuid())
+  shipmentId  String
+  reference   String  @unique
+  /// JSON [{productId, sku, units}] — contents by reference, no PII
+  linesJson   String
+  weightGrams Int?
+  dimsCm      String?
+  handling    String?
+
+  @@index([shipmentId])
+}
+
+/// Append-only physical history (DB trigger). A shipment is delivered at most once (partial unique index).
+model ShipmentEvent {
+  id            String   @id @default(cuid())
+  shipmentId    String
+  fromStatus    String?
+  toStatus      String
+  custodyBefore String?
+  custodyAfter  String?
+  actorType     String
+  actorId       String?
+  evidence      String?
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@index([shipmentId, createdAt])
+}
+
+/// At most one ACTIVE assignment per shipment (partial unique index).
+model CourierAssignment {
+  id             String    @id @default(cuid())
+  shipmentId     String
+  courierUserId  String
+  /// jokko_courier | fleet_driver
+  courierKind    String
+  status         String    @default("active")
+  assignedBy     String
+  assignedByType String
+  /// J8 pilot: the courier accepted the offered assignment (null = offered, not yet accepted)
+  acceptedAt     DateTime?
+  endedAt        DateTime?
+  endReason      String?
+  createdAt      DateTime  @default(now())
+
+  @@index([shipmentId, status])
+  @@index([courierUserId, status])
+}
+
+/// Purpose-bound, single-use, short-lived custody code bound to one shipment AND one counterpart.
+model CustodyChallenge {
+  id          String    @id @default(cuid())
+  shipmentId  String
+  /// pickup | delivery | collection | return_pickup | return_delivery
+  purpose     String
+  codeHash    String
+  issuedBy    String
+  boundUserId String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  usedBy      String?
+  attempts    Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([shipmentId, purpose])
+}
+
+/// Receiver's own record of what arrived. Append-only; inventory moves only from these.
+model ReceivingRecord {
+  id                 String   @id @default(cuid())
+  shipmentId         String   @unique
+  receiverBusinessId String?
+  receiverUserId     String
+  /// full | partial | damaged | refused | missing
+  outcome            String
+  /// JSON [{productId, sku, expected, received, damaged, missing, refused}]
+  linesJson          String
+  note               String?
+  createdAt          DateTime @default(now())
+}
+
+model StockTransfer {
+  id             String    @id @default(cuid())
+  reference      String    @unique
+  businessId     String
+  fromLocationId String
+  toLocationId   String
+  linesJson      String
+  status         String    @default("draft")
+  createdBy      String
+  dispatchedAt   DateTime?
+  receivedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([businessId, status])
+}
+
+/// Funded courier earning for ONE verified delivery (unique per shipment).
+model CourierEarning {
+  id              String    @id @default(cuid())
+  shipmentId      String    @unique
+  courierUserId   String
+  amountKori      Int
+  /// accrued → releasable → paid | reversed
+  status          String    @default("accrued")
+  releasableAt    DateTime
+  paidAt          DateTime?
+  payoutReference String?   @unique
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([courierUserId, status])
+}
+
+model ShipmentDispute {
+  id           String    @id @default(cuid())
+  shipmentId   String    @unique
+  openedBy     String
+  openedByRole String
+  reason       String
+  status       String    @default("open")
+  resolution   String?
+  resolvedBy   String?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+/// Append-only evidence (DB trigger).
+model ShipmentDisputeEvidence {
+  id        String   @id @default(cuid())
+  disputeId String
+  userId    String
+  role      String
+  kind      String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([disputeId])
+}
+
+/// A planned delivery run (manual planning is legitimate; no optimizer).
+model DeliveryRoute {
+  id              String   @id @default(cuid())
+  reference       String   @unique
+  ownerBusinessId String
+  depotLocationId String?
+  serviceDate     DateTime
+  driverUserId    String?
+  status          String   @default("planned")
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([ownerBusinessId, serviceDate])
+}
+
+model RouteStop {
+  id         String @id @default(cuid())
+  routeId    String
+  sequence   Int
+  shipmentId String @unique
+
+  @@index([routeId, sequence])
+}
+
+/// J8 pilot (D40): a buyer's explicit mapping of a supplier's product to the buyer's OWN catalogue product.
+model BuyerProductMapping {
+  id               String   @id @default(cuid())
+  buyerBusinessId  String
+  sellerBusinessId String
+  sellerProductId  String
+  buyerProductId   String
+  createdBy        String
+  createdAt        DateTime @default(now())
+
+  @@unique([buyerBusinessId, sellerProductId])
+  @@index([buyerProductId])
+}
+
+/// J8 pilot (D40): goods physically received but not yet matched to the buyer's catalogue — never in any stock position until mapped.
+model UnmatchedReceipt {
+  id               String    @id @default(cuid())
+  buyerBusinessId  String
+  sellerBusinessId String
+  sellerProductId  String
+  sku              String?
+  units            Int
+  shipmentId       String
+  shipmentRef      String
+  /// pending → mapped
+  status           String    @default("pending")
+  buyerProductId   String?
+  resolvedBy       String?
+  resolvedAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@unique([shipmentId, sellerProductId])
+  @@index([buyerBusinessId, status])
+}
+
+/// D44: buyer-side stock set aside for a commercial return. Created when the buyer ships the
+/// return (never on request): sellable units move into quarantine (out of sellable stock, still
+/// on the premises); handed_over on verified custody handoff (courier code) or self-reported
+/// (untracked return); released back to sellable if the return shipment is cancelled or comes back.
+model ReturnStockHold {
+  id               String   @id @default(cuid())
+  returnId         String
+  attempt          Int
+  buyerBusinessId  String
+  sellerProductId  String
+  /// the buyer's OWN product (D40 mapping); null = untracked goods (no buyer stock effect)
+  buyerProductId   String?
+  sellableUnits    Int
+  damagedUnits     Int
+  /// quarantined → handed_over | released
+  state            String   @default("quarantined")
+  /// courier_code | self_reported
+  handoverEvidence String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([returnId, sellerProductId, attempt])
+  @@index([buyerBusinessId, state])
+}
+
+// ───────────────────────────── J9: Work & Opportunity ─────────────────────────────
+
+/// J9: the worker's OWN work profile — entered by them, never inferred. By design there is no field
+/// for ethnicity, ancestry, nationality, language, neighbourhood or diaspora status.
+model WorkProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  headline      String?
+  skillsJson    String   @default("[]")
+  /// coarse areas the worker chooses to work in
+  areasJson     String   @default("[]")
+  availability  String?
+  /// private | applications_only | discoverable
+  visibility    String   @default("applications_only")
+  /// [{title, ref}] — references only, no files
+  portfolioJson String   @default("[]")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// J9: a qualification the worker claims; `verified` only by an operator holding work.qualifications.verify.
+model WorkQualification {
+  id          String    @id @default(cuid())
+  userId      String
+  /// skill | certificate | licence | training | experience
+  kind        String
+  title       String
+  issuer      String?
+  evidenceRef String?
+  /// self_declared | verified | rejected
+  status      String    @default("self_declared")
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNote  String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([status, createdAt])
+}
+
+/// J9: work a verified business offers. Requirements are structured (skills, qualification kinds,
+/// age only through hazardous / minAge) — no free-text screening criteria.
+model WorkOpportunity {
+  id            String    @id @default(cuid())
+  reference     String    @unique
+  businessId    String
+  /// courier | rep | pickup_point | staffing | gig | apprenticeship | coop_work
+  type          String
+  /// employment | contract | apprenticeship | coop_member
+  arrangement   String
+  title         String
+  description   String
+  area          String?
+  skillsJson    String    @default("[]")
+  headcount     Int       @default(1)
+  /// fixed | per_unit | hourly | stipend | wage | commission | fee
+  payKind       String
+  rateKori      Int
+  units         Int       @default(1)
+  /// prepaid | payroll | outcome | j8
+  funding       String
+  hazardous     Boolean   @default(false)
+  minAge        Int       @default(18)
+  nightWork     Boolean   @default(false)
+  hoursPerWeek  Int?
+  durationWeeks Int?
+  /// under_review | open | paused | closed | rejected
+  status        String    @default("open")
+  reviewFlags   String?
+  reviewedBy    String?
+  createdBy     String
+  closesAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, type, createdAt])
+  @@index([businessId, status])
+}
+
+model WorkApplication {
+  id            String   @id @default(cuid())
+  opportunityId String
+  workerUserId  String
+  /// applied | invited
+  source        String
+  /// submitted | invited | shortlisted | declined | withdrawn | offered | hired
+  status        String
+  note          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([opportunityId, workerUserId])
+  @@index([workerUserId, status])
+}
+
+/// J9: explicit terms. Prepaid offers are FUNDED when sent (escrow:work:<offerId>) so a worker can
+/// never accept an unfunded paid assignment. Terms are immutable once sent (DB guard).
+model WorkOffer {
+  id            String    @id @default(cuid())
+  reference     String    @unique
+  opportunityId String
+  applicationId String
+  businessId    String
+  workerUserId  String
+  arrangement   String
+  termsJson     String
+  termsHash     String
+  totalKori     Int
+  funding       String
+  /// none | held | refunded | transferred (escrow now backs the assignment)
+  fundingStatus String    @default("none")
+  /// sent | accepted | declined | withdrawn | expired
+  status        String    @default("sent")
+  expiresAt     DateTime
+  createdBy     String
+  decidedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([workerUserId, status])
+  @@index([businessId, status])
+  @@index([applicationId])
+}
+
+model WorkAssignment {
+  id            String    @id @default(cuid())
+  reference     String    @unique
+  offerId       String    @unique
+  opportunityId String
+  businessId    String
+  workerUserId  String
+  type          String
+  arrangement   String
+  totalKori     Int
+  funding       String
+  /// escrow returned to the business (cancelled / refunded milestones / unused per-unit budget)
+  refundedKori  Int       @default(0)
+  /// active | completed | cancelled
+  status        String    @default("active")
+  checkedInAt   DateTime?
+  checkedOutAt  DateTime?
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  cancelReason  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workerUserId, status])
+  @@index([businessId, status])
+}
+
+model WorkMilestone {
+  id             String    @id @default(cuid())
+  assignmentId   String
+  seq            Int
+  title          String
+  amountKori     Int
+  /// work | reimbursement
+  kind           String    @default("work")
+  /// pending | submitted | accepted | refunded | disputed
+  status         String    @default("pending")
+  submittedAt    DateTime?
+  acceptDeadline DateTime?
+  acceptedAt     DateTime?
+  /// user id | auto | ruling
+  acceptedBy     String?
+
+  @@unique([assignmentId, seq])
+  @@index([status, acceptDeadline])
+}
+
+/// Append-only (DB guard).
+model WorkEvidence {
+  id           String   @id @default(cuid())
+  assignmentId String
+  milestoneId  String?
+  disputeId    String?
+  byUserId     String
+  /// worker | business | operator
+  role         String
+  /// note | photo_ref | document_ref | attendance | receipt_ref
+  kind         String
+  content      String
+  createdAt    DateTime @default(now())
+
+  @@index([assignmentId, createdAt])
+  @@index([disputeId])
+}
+
+/// A6: a private evidence attachment (photo / document). Bytes live here (≤ 1 MB, metadata stripped),
+/// served only through authorized, audited API reads; never a public URL. Retention purges the bytes
+/// (sha256 + metadata stay as the record) unless a dispute on the assignment is still open.
+model WorkEvidenceFile {
+  id           String    @id @default(cuid())
+  evidenceId   String    @unique
+  assignmentId String
+  milestoneId  String?
+  disputeId    String?
+  uploaderId   String
+  /// worker | business
+  role         String
+  mime         String
+  sizeBytes    Int
+  sha256       String
+  bytes        Bytes?
+  /// metadata segments removed on upload (e.g. "jpeg:app1" = EXIF / GPS)
+  stripped     String?
+  expiresAt    DateTime
+  purgedAt     DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([assignmentId, createdAt])
+  @@index([uploaderId, createdAt])
+  @@index([expiresAt])
+}
+
+/// A6: every read of an evidence file (parties included) — who, in which role, why.
+model WorkEvidenceAccess {
+  id        String   @id @default(cuid())
+  fileId    String
+  actorType String
+  actorId   String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([fileId, createdAt])
+}
+
+/// Counterpart-issued, single-use, bound code (attendance check-in / check-out).
+model WorkChallenge {
+  id           String    @id @default(cuid())
+  assignmentId String
+  /// checkin | checkout
+  purpose      String
+  codeHash     String
+  issuedBy     String
+  expiresAt    DateTime
+  usedAt       DateTime?
+  attempts     Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  @@index([assignmentId, purpose])
+}
+
+/// J9: a FUNDED earning (value already sits in worker:<id>:earnings or work_business:<id>:earnings).
+/// accrued → releasable (after hold, no open dispute) → paid; accrued | releasable → reversed (ruling, maker/checker).
+model WorkEarning {
+  id               String    @id @default(cuid())
+  /// deterministic: milestone:<id> | outcome:<id> — one earning per source, ever
+  sourceKey        String    @unique
+  workerUserId     String?
+  payeeBusinessId  String?
+  payerBusinessId  String
+  assignmentId     String?
+  milestoneId      String?
+  ruleId           String?
+  /// contractor_payment | apprenticeship_stipend | member_work_payment | commission | service_fee | reimbursement
+  classification   String
+  amountKori       Int
+  /// accrued | releasable | paid | reversed
+  status           String    @default("accrued")
+  /// J9 settlement policy: the payer may contest until then (deemed acceptance gets a longer window)
+  contestableUntil DateTime?
+  /// payout eligibility = max(hold, contest window); never earlier than contestableUntil
+  releasableAt     DateTime
+  paidAt           DateTime?
+  payoutReference  String?   @unique
+  reversedAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([workerUserId, status])
+  @@index([payeeBusinessId, status])
+  @@index([assignmentId])
+}
+
+model WorkDispute {
+  id               String    @id @default(cuid())
+  assignmentId     String
+  milestoneId      String?
+  openedBy         String
+  /// worker | business
+  openedByRole     String
+  /// nonpayment | false_completion | terms_breach | harassment | other
+  kind             String
+  reason           String
+  /// open | awaiting_settlement | resolved
+  status           String    @default("open")
+  /// worker | business | split | finding_only
+  resolution       String?
+  splitWorkerKori  Int?
+  resolvedBy       String?
+  resolvedAt       DateTime?
+  note             String?
+  settledBy        String?
+  settledAt        DateTime?
+  /// bumped by an appeal ruling; a settlement approval executes only the ruling version it was requested for
+  rulingVersion    Int       @default(1)
+  /// money executes only after the appeal window (or once an appeal is decided)
+  executableAfter  DateTime?
+  appealedBy       String?
+  appealedByRole   String?
+  appealedAt       DateTime?
+  appealNote       String?
+  appealResolvedBy String?
+  createdAt        DateTime  @default(now())
+
+  @@index([assignmentId, status])
+  @@index([status, createdAt])
+}
+
+/// J9: an outcome-funded rule (rep commission on a verified received first order; pickup-point fee
+/// on a verified release). Amount defaults to 0; ACTIVE only after a second business member with
+/// business.pay approves; pays only from its prefunded budget (escrow:work_rule:<id>).
+model WorkRule {
+  id            String    @id @default(cuid())
+  businessId    String
+  /// rep_first_received_order | pickup_release_fee
+  kind          String
+  amountKori    Int       @default(0)
+  minOrderKori  Int       @default(0)
+  pickupPointId String?
+  /// proposed | active | paused | ended
+  status        String    @default("proposed")
+  proposedBy    String
+  approvedBy    String?
+  approvedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([businessId, kind, status])
+}
+
+model WorkOutcome {
+  id                String   @id @default(cuid())
+  ruleId            String
+  /// rule:<id>:merchant:<id> | rule:<id>:shipment:<id> — once per outcome, ever
+  outcomeKey        String   @unique
+  sourceRef         String
+  beneficiaryUserId String?
+  beneficiaryBizId  String?
+  /// accrued | budget_exhausted | ineligible
+  status            String
+  reason            String?
+  earningId         String?
+  createdAt         DateTime @default(now())
+
+  @@index([ruleId, createdAt])
+}
+
+/// J9: feedback between the parties of a finished assignment — contestable; contested feedback is
+/// excluded from aggregates until an operator rules.
+model WorkFeedback {
+  id                String    @id @default(cuid())
+  assignmentId      String
+  /// worker | business
+  fromRole          String
+  fromUserId        String
+  subjectUserId     String?
+  subjectBusinessId String?
+  rating            Int
+  comment           String?
+  /// published | contested | upheld | removed
+  status            String    @default("published")
+  contestNote       String?
+  ruledBy           String?
+  ruledAt           DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@unique([assignmentId, fromRole])
+  @@index([subjectUserId, status])
+  @@index([subjectBusinessId, status])
+}
+
+/// A worker blocks a business from inviting / offering them (harassment protection).
+model WorkBlock {
+  id         String   @id @default(cuid())
+  userId     String
+  businessId String
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, businessId])
+}
+
+// ============================================================================
+// J11 — COLLECTIVE MONEY ENGINE (docs/JOKKO-J11-0-AUDIT.md §3). Additive only:
+// never reads or writes the legacy TontineGroup / TontineContribution rows.
+// Money lives in J2 ledger accounts (collective:<id>:pot, collective:<id>:share:<user>);
+// these tables are the rules, obligations and history around it.
+// ============================================================================
+
+/// A collective money group: kind `rotating` (model A tontine) or `goal` (model B group goal savings).
+/// proposed → awaiting_acceptance → active → completed | cancelled. `frozenAt` set = ops freeze (no money moves).
+model CollectiveGroup {
+  id               String    @id @default(cuid())
+  kind             String
+  name             String
+  organizerId      String
+  status           String    @default("proposed")
+  /// Rules version members accept; any change before activation bumps it and clears every acceptance.
+  rulesVersion     Int       @default(0)
+  rulesHash        String?
+  rulesJson        String?   @db.Text
+  contributionKori Int
+  frequency        String
+  graceDays        Int       @default(3)
+  /// rotation: `fixed` (organizer-proposed order, accepted by everyone) | `draw` (random, seed recorded in the rules)
+  rotationMethod   String    @default("draw")
+  /// goal: each member's personal target, and when savings unlock (`anytime` | `end`).
+  targetKori       Int?
+  withdrawPolicy   String?
+  cycleCount       Int?
+  currentCycle     Int       @default(0)
+  startAt          DateTime?
+  activatedAt      DateTime?
+  endedAt          DateTime?
+  frozenAt         DateTime?
+  frozenReason     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  members     CollectiveMember[]
+  obligations CollectiveObligation[]
+  payments    CollectivePayment[]
+  payouts     CollectivePayout[]
+  votes       CollectiveVote[]
+  disputes    CollectiveDispute[]
+  events      CollectiveEvent[]
+  claims      CollectiveClaim[]
+
+  @@index([organizerId])
+  @@index([status])
+}
+
+/// invited → joined | declined; joined → left | removed (before activation); joined → exited (by member vote).
+model CollectiveMember {
+  id                   String    @id @default(cuid())
+  groupId              String
+  userId               String
+  status               String    @default("invited")
+  /// rotating: the 1-based cycle in which this member receives the pot (fixed in the accepted rules).
+  position             Int?
+  acceptedRulesVersion Int?
+  acceptedRulesHash    String?
+  acceptedAt           DateTime?
+  invitedById          String?
+  joinedAt             DateTime?
+  leftAt               DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+/// One obligation per member per scheduled cycle, created at activation (the transparent schedule).
+/// open → partial → paid | late_paid; open|partial → missed (after grace; still payable → late_paid);
+/// → cancelled (group cancelled / member exited before the cycle). Never auto-debited.
+model CollectiveObligation {
+  id             String    @id @default(cuid())
+  groupId        String
+  cycle          Int
+  userId         String
+  dueAt          DateTime
+  graceUntil     DateTime
+  amountDueKori  Int
+  amountPaidKori Int       @default(0)
+  status         String    @default("open")
+  paidAt         DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, cycle, userId])
+  @@index([groupId, cycle])
+  @@index([userId, status])
+}
+
+/// Append-only money history of a group: contribution | payout | refund | withdrawal | catch_up.
+/// Each row mirrors exactly one J2 posting (same reference).
+model CollectivePayment {
+  id             String   @id @default(cuid())
+  groupId        String
+  cycle          Int
+  userId         String
+  kind           String
+  amountKori     Int
+  late           Boolean  @default(false)
+  reference      String   @unique
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@index([groupId, cycle])
+  @@index([userId, createdAt])
+}
+
+/// Rotating: exactly one payout per cycle (DB unique). basis: full | partial_vote | dispute_ruling.
+model CollectivePayout {
+  id          String   @id @default(cuid())
+  groupId     String
+  cycle       Int
+  recipientId String
+  amountKori  Int
+  basis       String
+  reference   String   @unique
+  createdAt   DateTime @default(now())
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, cycle])
+}
+
+/// Member votes. topic: extend_grace | partial_release | cancel | exit. Eligibility is frozen at opening.
+model CollectiveVote {
+  id           String    @id @default(cuid())
+  groupId      String
+  cycle        Int?
+  topic        String
+  proposedBy   String
+  subjectUser  String?
+  payloadJson  String    @db.Text
+  eligibleJson String    @db.Text
+  status       String    @default("open")
+  expiresAt    DateTime
+  decidedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  group   CollectiveGroup    @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  ballots CollectiveBallot[]
+
+  @@index([groupId, status])
+}
+
+model CollectiveBallot {
+  id        String   @id @default(cuid())
+  voteId    String
+  userId    String
+  choice    String
+  createdAt DateTime @default(now())
+
+  vote CollectiveVote @relation(fields: [voteId], references: [id], onDelete: Restrict)
+
+  @@unique([voteId, userId])
+}
+
+/// A member's dispute on one cycle. While open, that cycle cannot pay out. An operator rules
+/// (collective_ops); a money outcome executes only on a second operator's approval (finance).
+model CollectiveDispute {
+  id         String    @id @default(cuid())
+  groupId    String
+  cycle      Int
+  openedBy   String
+  reason     String
+  status     String    @default("open")
+  outcome    String?
+  ruledBy    String?
+  ruledAt    DateTime?
+  rulingNote String?
+  settledAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@index([groupId, status])
+  @@index([status, createdAt])
+}
+
+/// Immutable group history (who did what, when). Shown to members; ids only in operator exports.
+model CollectiveEvent {
+  id         String   @id @default(cuid())
+  groupId    String
+  actorType  String
+  actorId    String?
+  action     String
+  detailJson String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@index([groupId, createdAt])
+}
+
+/// J11 model C (protected project, milestone release) and model D-protected (Jekkal protected campaign,
+/// all-or-nothing). Both DORMANT behind their own flags. Money sits in J2 `protected:<id>:escrow`; an
+/// approval never moves money by itself — every release is a separate J3 maker/checker settlement.
+/// draft → funding → funded → completed | failed | cancelled (frozenAt = ops freeze).
+model ProtectedFund {
+  id                   String    @id @default(cuid())
+  kind                 String
+  title                String
+  purpose              String    @db.Text
+  organizerId          String
+  recipientUserId      String?
+  recipientBusinessId  String?
+  recipientConsentAt   DateTime?
+  goalKori             Int
+  deadline             DateTime
+  /// project: independent approvers (never the organizer or the recipient) and how many must approve a milestone.
+  approverIdsJson      String    @default("[]")
+  approverAcceptedJson String    @default("[]")
+  approvalsRequired    Int       @default(0)
+  status               String    @default("draft")
+  raisedKori           Int       @default(0)
+  releasedKori         Int       @default(0)
+  refundedKori         Int       @default(0)
+  frozenAt             DateTime?
+  frozenReason         String?
+  closedAt             DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  milestones    ProtectedMilestone[]
+  contributions ProtectedContribution[]
+
+  @@index([status, deadline])
+  @@index([organizerId])
+  @@index([recipientUserId])
+}
+
+/// pending → approved (approvers; no money) → released (settlement) | cancelled.
+model ProtectedMilestone {
+  id           String    @id @default(cuid())
+  fundId       String
+  seq          Int
+  title        String
+  amountKori   Int
+  status       String    @default("pending")
+  evidenceNote String?
+  approvedAt   DateTime?
+  releasedAt   DateTime?
+  releaseRef   String?   @unique
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  fund      ProtectedFund       @relation(fields: [fundId], references: [id], onDelete: Restrict)
+  approvals ProtectedApproval[]
+
+  @@unique([fundId, seq])
+}
+
+model ProtectedApproval {
+  id          String   @id @default(cuid())
+  milestoneId String
+  approverId  String
+  decision    String
+  note        String?
+  createdAt   DateTime @default(now())
+
+  milestone ProtectedMilestone @relation(fields: [milestoneId], references: [id], onDelete: Restrict)
+
+  @@unique([milestoneId, approverId])
+}
+
+model ProtectedContribution {
+  id             String   @id @default(cuid())
+  fundId         String
+  contributorId  String
+  amountKori     Int
+  refundedKori   Int      @default(0)
+  anonymous      Boolean  @default(false)
+  reference      String   @unique
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+
+  fund ProtectedFund @relation(fields: [fundId], references: [id], onDelete: Restrict)
+
+  @@index([fundId])
+  @@index([contributorId])
+}
+
+/// J11 model E: cooperative member-capital RECORDS ONLY. No money moves, no shares, no securities,
+/// no dividends are computed. Kinds keep wages, gifts, member capital and loans apart; investment
+/// returns are not recordable while model F (regulated investments) is not licensed.
+/// Append-only, except the member's own confirm / dispute stamp.
+model CoopCapitalRecord {
+  id                String    @id @default(cuid())
+  businessId        String
+  memberUserId      String
+  kind              String
+  direction         String
+  amountXof         Int
+  occurredOn        DateTime
+  note              String?
+  evidenceRef       String?
+  recordedBy        String
+  reference         String    @unique
+  memberConfirmedAt DateTime?
+  memberDisputedAt  DateTime?
+  memberNote        String?
+  createdAt         DateTime  @default(now())
+
+  @@index([businessId, memberUserId])
+  @@index([memberUserId])
+}
+
+/// J11 (P-J11-8): when a group closes (completed or terminated), every member's non-zero position — what
+/// they received minus what they paid — becomes an explicit, immutable claim. `owes` = received more than
+/// paid; `owed` = paid more than received. Per group Σ owes = Σ owed (money is conserved). A claim is a
+/// record: no money moves, nothing is auto-debited, and nothing is forgiven or redistributed until a
+/// separately approved recovery policy (P-J11-3) says how.
+model CollectiveClaim {
+  id           String   @id @default(cuid())
+  groupId      String
+  userId       String
+  direction    String
+  amountKori   Int
+  basis        String
+  paidKori     Int
+  receivedKori Int
+  createdAt    DateTime @default(now())
+
+  group CollectiveGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+/// J13-4: a handle given up by an account (renamed). Lets the server tell whether a handle may have changed
+/// owner recently — the only way to verify an older client's handle-only payment (recipient-binding-policy).
+/// Append-only; never used as a payment identifier.
+model HandleRelease {
+  id         String   @id @default(cuid())
+  handle     String
+  userId     String
+  releasedAt DateTime @default(now())
+
+  @@index([handle, releasedAt])
+}
+
+/// J14-S1: a partner's subscription to signed event delivery (D-J14-2). DISABLED unless PARTNER_EVENTS_ENABLED.
+/// The signing secret is stored encrypted at rest (AES-256-GCM, lib/field-crypto.js) and shown once at creation /
+/// rotation. `previousSecretEnc` keeps signing valid for the receiver during a short rotation overlap.
+model PartnerEventSubscription {
+  id                 String    @id @default(cuid())
+  partnerId          String
+  url                String
+  eventTypesJson     String
+  secretEnc          String
+  previousSecretEnc  String?
+  previousValidUntil DateTime?
+  status             String    @default("active") // active | disabled
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  rotatedAt          DateTime?
+  /// fan-out cursor: CommerceEvent.createdAt of the last event already considered for this subscription
+  fannedThrough      DateTime?
+
+  deliveries PartnerEventDelivery[]
+
+  @@index([partnerId, status])
+}
+
+/// J14-S1: one event to one subscription. Operational log (30-day retention); the CommerceEvent itself and any
+/// ledger/audit record keep their own retention. Unique per (subscription, event): at-least-once, never duplicated.
+model PartnerEventDelivery {
+  id             String    @id @default(cuid())
+  subscriptionId String
+  eventId        String
+  status         String    @default("pending") // pending | sending | delivered | dead
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now())
+  lastStatusCode Int?
+  lastError      String?
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  subscription PartnerEventSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, eventId])
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
+}
+
+/// J14-S6: a database-managed partner API key (dormant unless PARTNER_SCOPED_KEYS_ENABLED=true). Only the
+/// SHA-256 of the key is stored; the key is shown once. A key is usable only after a DIFFERENT operator
+/// approves it (maker/checker), only for its scopes (= route policy permissions), only in its environment.
+model PartnerApiKey {
+  id                String    @id @default(cuid())
+  partnerId         String
+  keyHash           String    @unique
+  /// First characters of the key, for identification in logs and lists (never enough to use it).
+  keyPrefix         String
+  scopesJson        String
+  /// sandbox | live
+  environment       String
+  /// pending → active → revoked (pending → revoked when rejected or cancelled)
+  status            String    @default("pending")
+  rateLimitPerMin   Int?
+  expiresAt         DateTime?
+  /// The key this one replaces; the old key expires after the overlap once this one is activated.
+  rotatesKeyId      String?
+  rotationOverlapMs Int?
+  createdBy         String
+  activatedBy       String?
+  activatedAt       DateTime?
+  revokedBy         String?
+  revokedAt         DateTime?
+  revokeReason      String?
+  lastUsedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([partnerId, status])
+}
+
+/// J14-S6: partner audit trail — one row per mutating partner API call (who, which key, which route, outcome).
+/// No request bodies, no personal data.
+model PartnerAuditLog {
+  id         String   @id @default(cuid())
+  partnerId  String
+  keyId      String?
+  /// env (legacy key from the environment) | db (PartnerApiKey)
+  credential String
+  routeKey   String
+  statusCode Int
+  createdAt  DateTime @default(now())
+
+  @@index([partnerId, createdAt])
+}
+
+/// J14-F1 (S4): a partner's REQUEST to debit a business wallet (payout or payroll batch). Dormant unless
+/// PARTNER_DEBIT_INSTRUCTIONS_ENABLED=true. Nothing moves until an authorized business financial approver
+/// approves it in Jokko (fresh step-up, matching detailsHash) within 15 minutes; then executed exactly once.
+/// Request details (kind, lines, total, hash, business) are immutable (DB trigger).
+model PartnerDebitInstruction {
+  id             String    @id @default(cuid())
+  partnerId      String
+  businessId     String
+  externalLinkId String
+  externalRef    String
+  /// payout | payroll_batch
+  kind           String
+  /// Immutable lines: [{ i, recipientUserId, employeeId, handleAtRequest, amountKori, reference }]
+  linesJson      String    @db.Text
+  lineCount      Int
+  totalKori      Int
+  detailsHash    String
+  memo           String?
+  /// requested → executed | rejected | cancelled | expired | invalidated | failed
+  status         String    @default("requested")
+  expiresAt      DateTime
+  decidedBy      String?
+  decidedAt      DateTime?
+  decisionReason String?
+  failureCode    String?
+  executedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([partnerId, externalRef])
+  @@index([businessId, status])
 }

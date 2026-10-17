@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import PressScale from '../components/PressScale';
 import ScreenBackground from '../components/ScreenBackground';
 import GlowButton from '../components/GlowButton';
+import RecipientConfirmCard from '../components/RecipientConfirmCard';
 import { useToast } from '../components/Toast';
 import {
   createPaymentFund,
@@ -13,6 +14,7 @@ import {
   getPaymentFunds,
   getScheduledPayments,
   toggleScheduledPayment,
+  lookupUser,
 } from '../lib/api-client';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
 
@@ -74,6 +76,7 @@ export default function ScheduledPaymentsScreen({ navigation }) {
   const [scheduleType, setScheduleType] = useState('weekly');
   const [scheduleDay, setScheduleDay] = useState(5);
   const [recipient, setRecipient] = useState('');
+  const [pendingRecipient, setPendingRecipient] = useState(null); // J14-S0: verified person awaiting confirmation
   const [sendAmount, setSendAmount] = useState('1000');
   const [showSendForm, setShowSendForm] = useState(false);
 
@@ -163,21 +166,36 @@ export default function ScheduledPaymentsScreen({ navigation }) {
     }
   };
 
-  const createSendSchedule = async () => {
+  // J14-S0: every future run pays the account chosen HERE — look it up and confirm who it is first.
+  const checkRecipient = async () => {
     const amt = parseInt(sendAmount.replace(/\D/g, ''), 10);
     if (!recipient.trim() || !amt) return;
     try {
+      setPendingRecipient(await lookupUser(recipient.trim().replace(/^@/, ''), { mode: 'handle' }));
+    } catch (err) {
+      setPendingRecipient(null);
+      showToast(err.message ?? 'Personne introuvable');
+    }
+  };
+
+  const createSendSchedule = async () => {
+    const amt = parseInt(sendAmount.replace(/\D/g, ''), 10);
+    if (!pendingRecipient?.recipientRef || !amt) return;
+    try {
       await createScheduledPayment({
         kind: 'send',
-        recipientHandle: recipient.replace(/^@/, ''),
+        recipientHandle: String(pendingRecipient.handle).replace(/^@/, ''),
+        recipientRef: pendingRecipient.recipientRef,
         amountKori: amt,
         scheduleType,
         scheduleDay,
         fundId: selectedFundId ?? undefined,
       });
+      setPendingRecipient(null);
       await load();
       showToast('Envoi planifié ✓');
     } catch (err) {
+      if (err.category === 'recipient_changed' || err.category === 'confirmation_required') setPendingRecipient(null);
       showToast(err.message ?? 'Erreur');
     }
   };
@@ -187,7 +205,7 @@ export default function ScheduledPaymentsScreen({ navigation }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 18 }}>←</Text>
           </PressScale>
           <Text style={styles.title}>Épargne & planifiés</Text>
@@ -230,7 +248,7 @@ export default function ScheduledPaymentsScreen({ navigation }) {
               />
             </View>
             <View style={styles.rowInputs}>
-              <TextInput
+              <TextInput accessibilityLabel="Objectif en C (optionnel)"
                 style={[styles.input, { flex: 1 }]}
                 placeholder="Objectif en C (optionnel)"
                 keyboardType="number-pad"
@@ -258,7 +276,7 @@ export default function ScheduledPaymentsScreen({ navigation }) {
                   <View style={styles.block}>
                     <Text style={styles.sectionTitle}>Ajouter maintenant</Text>
                     <View style={styles.rowInputs}>
-                      <TextInput
+                      <TextInput accessibilityLabel="Montant (C)"
                         style={[styles.input, { flex: 1 }]}
                         placeholder="Montant (C)"
                         keyboardType="number-pad"
@@ -277,7 +295,7 @@ export default function ScheduledPaymentsScreen({ navigation }) {
 
                 <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>Épargne automatique</Text>
                 <Text style={styles.hint}>Prélèvement depuis ton wallet vers l'objectif sélectionné.</Text>
-                <TextInput
+                <TextInput accessibilityLabel="Montant par versement (C)"
                   style={styles.input}
                   placeholder="Montant par versement (C)"
                   keyboardType="number-pad"
@@ -349,21 +367,31 @@ export default function ScheduledPaymentsScreen({ navigation }) {
 
             {showSendForm ? (
               <View style={styles.block}>
-                <TextInput
+                <TextInput accessibilityLabel="@handle destinataire"
                   style={styles.input}
                   placeholder="@handle destinataire"
                   autoCapitalize="none"
                   value={recipient}
                   onChangeText={setRecipient}
                 />
-                <TextInput
+                <TextInput accessibilityLabel="Montant (C)"
                   style={styles.input}
                   placeholder="Montant (C)"
                   keyboardType="number-pad"
                   value={sendAmount}
                   onChangeText={setSendAmount}
                 />
-                <GlowButton label="Programmer l'envoi" onPress={createSendSchedule} tone="gold" />
+                {pendingRecipient ? (
+                  <RecipientConfirmCard
+                    profile={pendingRecipient}
+                    question={`Programmer un envoi à ${pendingRecipient.name || pendingRecipient.handle} ?`}
+                    confirmLabel="Oui, programmer l'envoi"
+                    onConfirm={createSendSchedule}
+                    onCancel={() => setPendingRecipient(null)}
+                  />
+                ) : (
+                  <GlowButton label="Vérifier le destinataire" onPress={checkRecipient} tone="gold" />
+                )}
                 {sendSchedules.map((s) => (
                   <View key={s.id} style={styles.scheduleCard}>
                     <Text style={styles.rowTitle}>

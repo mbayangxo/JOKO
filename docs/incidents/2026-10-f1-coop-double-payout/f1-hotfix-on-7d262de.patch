@@ -1,0 +1,123 @@
+diff --git a/lib/cooperative-service.js b/lib/cooperative-service.js
+index d9cfe60..42715c1 100644
+--- a/lib/cooperative-service.js
++++ b/lib/cooperative-service.js
+@@ -1,3 +1,4 @@
++import crypto from 'node:crypto';
+ import { prisma } from './prisma.js';
+ import { requireBusinessAdmin, requireBusinessMember } from './business-access.js';
+ import { payEmployee } from './payroll-service.js';
+@@ -106,21 +107,43 @@ export async function payoutFarmerDeliveries({ req, res, businessId, farmerUserI
+     });
+   }
+ 
+-  const outcome = await payEmployee({
+-    req,
+-    res,
+-    businessId,
+-    employeeId: payrollEmployee.id,
+-    amount,
+-    note: note ?? `Livraison ${totalTons.toFixed(2)}t`,
+-  });
++  // F1 hotfix (cooperative double payout): claim the logs BEFORE paying, so concurrent or retried
++  // requests cannot both pay them; mark them paid INSIDE the money transaction (per-log reference:
++  // payoutReference is unique); release the claim if the transfer fails; a risk-held payment keeps
++  // the claim (status payout_held) so it can never be paid a second time.
++  const claim = `claim-${crypto.randomUUID()}`;
++  const ids = logs.map((l) => l.id);
++  const claimed = await prisma.$transaction((tx) => Promise.all(ids.map((id) => tx.farmerDeliveryLog.updateMany({
++    where: { id, businessId, status: 'verified', payoutReference: null },
++    data: { status: 'payout_pending', payoutReference: `${claim}:${id}` },
++  }))));
++  if (claimed.some((u) => u.count !== 1)) {
++    await prisma.farmerDeliveryLog.updateMany({ where: { id: { in: ids }, payoutReference: { startsWith: `${claim}:` } }, data: { status: 'verified', payoutReference: null } });
++    throw new Error('Payout already in progress or done for these deliveries');
++  }
+ 
+-  if (!outcome.held && outcome.result) {
+-    const ref = outcome.result.reference;
+-    await prisma.farmerDeliveryLog.updateMany({
+-      where: { id: { in: logs.map((l) => l.id) } },
+-      data: { status: 'paid', payoutReference: ref },
++  let outcome;
++  try {
++    outcome = await payEmployee({
++      req,
++      res,
++      businessId,
++      employeeId: payrollEmployee.id,
++      amount,
++      note: note ?? `Livraison ${totalTons.toFixed(2)}t`,
++      inTx: async (db, ref) => {
++        for (const id of ids) {
++          const u = await db.farmerDeliveryLog.updateMany({ where: { id, status: 'payout_pending', payoutReference: `${claim}:${id}` }, data: { status: 'paid', payoutReference: `${ref}:${id}` } });
++          if (u.count !== 1) throw new Error('Payout already done for these deliveries');
++        }
++      },
+     });
++  } catch (e) {
++    await prisma.farmerDeliveryLog.updateMany({ where: { id: { in: ids }, status: 'payout_pending', payoutReference: { startsWith: `${claim}:` } }, data: { status: 'verified', payoutReference: null } });
++    throw e;
++  }
++  if (outcome.held) {
++    await prisma.farmerDeliveryLog.updateMany({ where: { id: { in: ids }, status: 'payout_pending', payoutReference: { startsWith: `${claim}:` } }, data: { status: 'payout_held' } });
+   }
+ 
+   return { ...outcome, totalTons, amount, deliveryCount: logs.length };
+diff --git a/lib/payroll-service.js b/lib/payroll-service.js
+index 11c63f4..40f1919 100644
+--- a/lib/payroll-service.js
++++ b/lib/payroll-service.js
+@@ -98,7 +98,7 @@ export async function addPayrollEmployee(businessId, data) {
+   return employee;
+ }
+ 
+-async function executePayrollTransfer({ req, res, business, employee, amount, note, ownerWallet }) {
++async function executePayrollTransfer({ req, res, business, employee, amount, note, ownerWallet, inTx }) {
+   const txRef = reference('PAY');
+   const gate = await gateOrExecute(
+     req,
+@@ -117,8 +117,8 @@ async function executePayrollTransfer({ req, res, business, employee, amount, no
+       },
+     },
+     async (ref) => {
+-      const entry = await runMoneyTransaction(prisma, async (db) =>
+-        transferNational(db, {
++      const entry = await runMoneyTransaction(prisma, async (db) => {
++        const e = await transferNational(db, {
+           amount,
+           senderWalletId: ownerWallet.id,
+           recipientWalletId: employee.user.wallet.id,
+@@ -137,8 +137,12 @@ async function executePayrollTransfer({ req, res, business, employee, amount, no
+             note,
+             reference: `${ref}-E`,
+           },
+-        }),
+-      );
++        });
++        // F1 hotfix: the caller's consequence of this payment (marking cooperative logs paid) commits
++        // in the SAME transaction as the transfer — a payment never exists without it.
++        if (inTx) await inTx(db, ref);
++        return e;
++      });
+       await prisma.payrollRun.create({
+         data: {
+           businessId: business.id,
+@@ -165,7 +169,7 @@ async function executePayrollTransfer({ req, res, business, employee, amount, no
+   return { held: false, result: gate.result };
+ }
+ 
+-export async function payEmployee({ req, res, businessId, employeeId, amount, note }) {
++export async function payEmployee({ req, res, businessId, employeeId, amount, note, inTx }) {
+   await requireBusinessAdmin(req.userId, businessId);
+   const business = await prisma.business.findUniqueOrThrow({ where: { id: businessId } });
+   const ownerWallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: req.userId } });
+@@ -180,7 +184,7 @@ export async function payEmployee({ req, res, businessId, employeeId, amount, no
+   if (!payAmount || payAmount <= 0) throw new Error('Invalid pay amount');
+ 
+   await assertStepUpForAmount(req, payAmount);
+-  return executePayrollTransfer({ req, res, business, employee, amount: payAmount, note, ownerWallet });
++  return executePayrollTransfer({ req, res, business, employee, amount: payAmount, note, ownerWallet, inTx });
+ }
+ 
+ export async function payEmployeeByHandle({ req, res, businessId, employeeHandle, amount, note }) {

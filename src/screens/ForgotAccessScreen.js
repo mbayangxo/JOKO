@@ -68,7 +68,7 @@ export default function ForgotAccessScreen({ onCancel, onRecovered }) {
     <OnboardingShell>
       <Animated.View style={[styles.body, entrance]}>
         <View style={styles.headRow}>
-          <PressScale scaleTo={0.9} onPress={onCancel} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={onCancel} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 14, color: ob.ink }}>←</Text>
           </PressScale>
           <Text style={styles.headTitle}>{t(langCode, 'forgotTitle')}</Text>
@@ -84,7 +84,7 @@ export default function ForgotAccessScreen({ onCancel, onRecovered }) {
 
             <View style={styles.inputGroup}>
               <Text style={styles.igLabel}>{t(langCode, 'forgotEmailLabel')}</Text>
-              <TextInput
+              <TextInput accessibilityLabel="saliou@email.com"
                 style={[styles.igField, validForm && styles.fieldOk]}
                 placeholder="saliou@email.com"
                 placeholderTextColor={ob.faint}

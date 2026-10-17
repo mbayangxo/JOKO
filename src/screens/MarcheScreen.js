@@ -18,12 +18,13 @@ import { coordsFromArrondissement } from '../lib/dakar-coords';
 import { marketplaceSearch, marketplaceShopsNearby } from '../lib/api-client';
 import { useEntrance } from '../hooks/animations';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
+import LowDataImage from '../components/LowDataImage';
 
 const QUICK_SEARCHES = ['riz', 'huile', 'oignon', 'tomate', 'pain', 'lait'];
 
 function ProductThumb({ uri, title }) {
   if (uri) {
-    return <Image source={{ uri }} style={styles.thumbImg} accessibilityLabel={title} />;
+    return <LowDataImage uri={uri} style={styles.thumbImg} accessibilityLabel={title} />;
   }
   return (
     <View style={styles.thumbPlaceholder}>
@@ -38,7 +39,7 @@ function ShopCard({ shop, onPress, delay = 0 }) {
     <Animated.View style={entrance}>
       <PressScale scaleTo={0.98} onPress={onPress} style={styles.shopCard}>
         {shop.imageUrl ? (
-          <Image source={{ uri: shop.imageUrl }} style={styles.shopHero} />
+          <LowDataImage uri={shop.imageUrl} style={styles.shopHero} />
         ) : (
           <View style={[styles.shopHero, styles.shopHeroPlaceholder]}>
             <Text style={{ fontSize: 28 }}>🏪</Text>
@@ -145,7 +146,7 @@ export default function MarcheScreen({ navigation }) {
           </Text>
           <View style={styles.searchRow}>
             <Text style={styles.searchIcon}>🔍</Text>
-            <TextInput
+            <TextInput accessibilityLabel="Ex. riz, huile, lait"
               style={styles.searchInput}
               placeholder="Ex. riz, huile, lait…"
               placeholderTextColor={colors.appCanvas.textFaint}

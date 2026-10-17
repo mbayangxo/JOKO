@@ -143,7 +143,7 @@ export default function DistributionHubScreen({ navigation }) {
       <ScreenBackground />
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 16 }}>←</Text>
           </PressScale>
           <Text style={styles.title}>Distribution K21</Text>
@@ -172,7 +172,7 @@ export default function DistributionHubScreen({ navigation }) {
                 <Text style={styles.hint}>
                   Crée ta marque K21 avec catalogue B2B + B2C et paiement KEBU — tu ajoutes tes produits ensuite dans Catalogue.
                 </Text>
-                <TextInput
+                <TextInput accessibilityLabel="Nom de la marque"
                   style={styles.input}
                   value={brandName}
                   onChangeText={setBrandName}
@@ -218,8 +218,8 @@ export default function DistributionHubScreen({ navigation }) {
             {tab === 'b2b' && brand ? (
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Comptes clients B2B</Text>
-                <TextInput style={styles.input} placeholder="@handle client" value={buyerHandle} onChangeText={setBuyerHandle} placeholderTextColor="rgba(5,8,5,0.4)" />
-                <TextInput style={styles.input} placeholder="Nom ferme / magasin" value={buyerLabel} onChangeText={setBuyerLabel} placeholderTextColor="rgba(5,8,5,0.4)" />
+                <TextInput accessibilityLabel="@handle client" style={styles.input} placeholder="@handle client" value={buyerHandle} onChangeText={setBuyerHandle} placeholderTextColor="rgba(5,8,5,0.4)" />
+                <TextInput accessibilityLabel="Nom ferme / magasin" style={styles.input} placeholder="Nom ferme / magasin" value={buyerLabel} onChangeText={setBuyerLabel} placeholderTextColor="rgba(5,8,5,0.4)" />
                 <View style={styles.termRow}>
                   {['immediate', 'net15', 'net30', 'monthly'].map((t) => (
                     <PressScale key={t} scaleTo={0.95} onPress={() => setPaymentTerm(t)} style={[styles.termChip, paymentTerm === t && styles.termChipOn]}>
@@ -227,7 +227,7 @@ export default function DistributionHubScreen({ navigation }) {
                     </PressScale>
                   ))}
                 </View>
-                <TextInput style={styles.input} placeholder="Limite crédit (Kori)" value={creditLimit} onChangeText={setCreditLimit} keyboardType="number-pad" placeholderTextColor="rgba(5,8,5,0.4)" />
+                <TextInput accessibilityLabel="Limite crédit (Kori)" style={styles.input} placeholder="Limite crédit (Kori)" value={creditLimit} onChangeText={setCreditLimit} keyboardType="number-pad" placeholderTextColor="rgba(5,8,5,0.4)" />
                 <View style={styles.termRow}>
                   {['new', 'trusted', 'partner'].map((t) => (
                     <PressScale key={t} scaleTo={0.95} onPress={() => setTrustTier(t)} style={[styles.termChip, trustTier === t && styles.termChipOn]}>

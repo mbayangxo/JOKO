@@ -14,6 +14,24 @@ const defaultTestUrl =
 
 process.env.DATABASE_URL = normalizeDatabaseUrl(process.env.DATABASE_URL?.trim() || defaultTestUrl);
 
+// Fail fast and clearly when the database is down (e.g. the dev VM was restored without restarting
+// Postgres): one explicit "DATABASE UNAVAILABLE" error instead of dozens of misleading application failures.
+// Fix: `npm run db:ensure` (docs/JOKKO-LOCAL-POSTGRES.md).
+{
+  const net = await import('node:net');
+  const u = new URL(process.env.DATABASE_URL.replace(/^postgres(ql)?:/, 'http:'));
+  const host = u.hostname || 'localhost';
+  const port = Number(u.port || 5432);
+  const up = await new Promise((resolve) => {
+    const sock = net.connect({ host, port });
+    const done = (v) => { sock.destroy(); resolve(v); };
+    sock.setTimeout(3000, () => done(false));
+    sock.once('connect', () => done(true));
+    sock.once('error', () => done(false));
+  });
+  if (!up) throw new Error(`DATABASE UNAVAILABLE at ${host}:${port} — not an application failure. Run \`npm run db:ensure\` and rerun.`);
+}
+
 process.env.JWT_ACCESS_SECRET ??= 'test-jwt-access-secret-0123456789';
 process.env.JWT_REFRESH_SECRET ??= 'test-jwt-refresh-secret-0123456789';
 

@@ -3,13 +3,15 @@ import Constants from 'expo-constants';
 import { getAccessToken, getOrCreateDeviceId, getRefreshToken, saveSessionTokens, clearSession, touchActivity } from './secure-storage.js';
 import { captureApiError } from './sentry.js';
 import { loadPreferences } from './preferences-storage.js';
+import { LOW_DATA_CACHE_TTL_MS, lowDataCacheKey, subjectOf } from './offline-policy.js';
+import { reportRequest } from './network-state.js';
 
 const API_BASE =
   process.env.EXPO_PUBLIC_API_URL ??
   Constants.expoConfig?.extra?.apiUrl ??
   'https://keit-six.vercel.app';
+// J12: low-data cache — allowlisted non-sensitive GETs only, partitioned by user (src/lib/offline-policy.js).
 const GET_CACHE = new Map();
-const CACHE_TTL_MS = 45_000;
 
 let prefsCache = null;
 async function getNetworkPrefs() {
@@ -68,10 +70,6 @@ export function getSslPinConfig() {
   return process.env.EXPO_PUBLIC_SSL_PIN_SHA256 ?? null;
 }
 
-function cacheKey(method, url) {
-  return `${method}:${url}`;
-}
-
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -82,27 +80,35 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   }
 }
 
-export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth = true, skipCache = false, _retry401 = true, accessToken: accessTokenOverride } = {}) {
+function newIdempotencyKey() {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return uuid;
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth = true, skipCache = false, _retry401 = true, accessToken: accessTokenOverride, idempotencyKey } = {}) {
+  // Every write carries ONE Idempotency-Key for all of its attempts (timeout
+  // retry below, 401 refresh retry) so the server never executes it twice.
+  const writeKey = method === 'GET' ? null : idempotencyKey ?? newIdempotencyKey();
   const url = resolveUrl(path);
   assertHttps(url);
   const prefs = await getNetworkPrefs();
   const timeoutMs = prefs.lowDataMode ? 45_000 : 25_000;
 
-  if (method === 'GET' && prefs.lowDataMode && !skipCache) {
-    const key = cacheKey(method, url);
-    const hit = GET_CACHE.get(key);
-    if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data;
+  const token = auth ? accessTokenOverride ?? (await getAccessToken()) : null;
+  const cacheAs = method === 'GET' && prefs.lowDataMode && !skipCache ? lowDataCacheKey(url, subjectOf(token)) : null;
+  if (cacheAs) {
+    const hit = GET_CACHE.get(cacheAs);
+    if (hit && Date.now() - hit.at < LOW_DATA_CACHE_TTL_MS) return hit.data;
   }
 
   const headers = { 'Content-Type': 'application/json' };
   const deviceId = await getOrCreateDeviceId();
   headers['X-Device-Id'] = deviceId;
   if (prefs.lowDataMode) headers['X-Low-Data'] = '1';
-  if (auth) {
-    const token = accessTokenOverride ?? (await getAccessToken());
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
+  if (token) headers.Authorization = `Bearer ${token}`;
   if (stepUpToken) headers['X-Step-Up-Token'] = stepUpToken;
+  if (writeKey) headers['Idempotency-Key'] = writeKey;
 
   const pin = getSslPinConfig();
   if (pin && Platform.OS !== 'web') {
@@ -118,7 +124,9 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
   let lastError;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
+      const t0 = Date.now();
       const response = await fetchWithTimeout(url, options, timeoutMs);
+      reportRequest({ ok: true, ms: Date.now() - t0, retried: attempt > 0 });
       if (auth && response.ok) await touchActivity();
 
       const data = await response.json().catch(() => ({}));
@@ -141,8 +149,10 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
                 accessToken: refreshed.accessToken,
                 refreshToken: refreshed.refreshToken,
               });
-              return apiFetch(path, { method, body, stepUpToken, auth, skipCache, _retry401: false, accessToken: accessTokenOverride });
+              return apiFetch(path, { method, body, stepUpToken, auth, skipCache, _retry401: false, accessToken: accessTokenOverride, idempotencyKey: writeKey });
             } catch {
+              // J12: an expired/revoked session ends here — nothing cached for it survives.
+              GET_CACHE.clear();
               await clearSession();
             }
           }
@@ -158,6 +168,8 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
         const error = new Error(msg);
         error.status = response.status;
         error.code = data.code;
+        error.category = data.category ?? null;
+        error.idempotencyKey = writeKey;
         error.data = data;
         if (response.status >= 500) {
           captureApiError(error, { path, status: response.status, code: data.code });
@@ -165,12 +177,11 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
         throw error;
       }
 
-      if (method === 'GET' && prefs.lowDataMode) {
-        GET_CACHE.set(cacheKey(method, url), { at: Date.now(), data });
-      }
+      if (cacheAs) GET_CACHE.set(cacheAs, { at: Date.now(), data });
       return data;
     } catch (error) {
       lastError = error;
+      if (error.name === 'AbortError' || /Network|fetch|Load failed/.test(error.message ?? '')) reportRequest({ ok: false, unreachable: true });
       const retryable =
         error.name === 'AbortError' ||
         error.message?.includes('Network') ||
@@ -180,13 +191,23 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
     }
   }
 
+  const raw = lastError?.message ?? '';
+  const lost = lastError?.name === 'AbortError' || raw === 'Load failed' || raw.includes('Failed to fetch') || raw.includes('Network request failed');
+  if (lost && writeKey) {
+    // J4: a WRITE whose response was lost may have executed. Never tell the
+    // user to "retry" (a new tap = a new payment): report an unknown outcome
+    // with the intent key so the screen can ask GET /api/money/intents/:key.
+    const unknown = new Error('Vérification du paiement en cours… Ne le renouvelle pas.');
+    unknown.code = 'outcome_unknown';
+    unknown.idempotencyKey = writeKey;
+    throw unknown;
+  }
   if (lastError?.name === 'AbortError') {
     const slow = new Error('Connexion lente — réessaie dans un instant');
     slow.code = 'timeout';
     throw slow;
   }
-  const raw = lastError?.message ?? '';
-  if (raw === 'Load failed' || raw.includes('Failed to fetch') || raw.includes('Network request failed')) {
+  if (lost) {
     const network = new Error('Connexion impossible — vérifie ta connexion et réessaie');
     network.code = 'network';
     throw network;
@@ -194,10 +215,11 @@ export async function apiFetch(path, { method = 'GET', body, stepUpToken, auth =
   throw lastError;
 }
 
-export function lookupUser(query) {
+export function lookupUser(query, { mode } = {}) {
   const q = String(query).trim();
   if (q.length < 3) return Promise.reject(new Error('Query too short'));
-  return apiFetch(`/api/users/lookup?q=${encodeURIComponent(q)}`, { skipCache: true });
+  const m = mode === 'handle' || mode === 'phone' ? `&mode=${mode}` : '';
+  return apiFetch(`/api/users/lookup?q=${encodeURIComponent(q)}${m}`, { skipCache: true });
 }
 
 export function transferUndo(reference) {
@@ -279,6 +301,16 @@ export function authCompleteProfile(body) {
   return apiFetch('/api/auth/complete-profile', { method: 'POST', body, skipCache: true });
 }
 
+/** Best-effort server sign-out (revokes this device's refresh token). */
+export function authLogout(refreshToken) {
+  return apiFetch('/api/auth/logout', { method: 'POST', body: { refreshToken }, skipCache: true, _retry401: false });
+}
+
+/** Sign out of every device. */
+export function authLogoutAll() {
+  return apiFetch('/api/auth/logout-all', { method: 'POST', body: {}, skipCache: true, _retry401: false });
+}
+
 export function authRefreshToken(refreshToken) {
   return apiFetch('/api/auth/refresh', { method: 'POST', body: { refreshToken }, auth: false, skipCache: true, _retry401: false });
 }
@@ -327,8 +359,17 @@ export function getTransactions(limit = 20, accessToken) {
   return apiFetch(`/api/transactions?limit=${limit}`, { skipCache: true, accessToken, _retry401: !accessToken });
 }
 
+/**
+ * J13-4: exchange the lookup's recipientRef for a single-payment instructionRef (this account, this amount,
+ * this intent key). Moves no money. Called at "Oui — Envoyer", inside the same intent as the send.
+ */
+export function confirmP2p({ recipientRef, amountKori, intentKey }) {
+  return apiFetch('/api/money/p2p/confirm', { method: 'POST', body: { recipientRef, amountKori, intentKey }, skipCache: true });
+}
+
 export function transferSend({
   recipientHandle,
+  instructionRef,
   amount,
   currency = 'kori',
   note,
@@ -339,13 +380,15 @@ export function transferSend({
   giftCardTheme,
   threadId,
   stepUpToken,
+  intentKey,
 }) {
   const handle = String(recipientHandle).replace(/^@/, '');
   return apiFetch('/api/transfers/send', {
     method: 'POST',
-    body: { recipientHandle: handle, amount, currency, note, voiceNoteUrl, photoUrl, videoUrl, gifUrl, giftCardTheme, threadId },
+    body: { recipientHandle: handle, instructionRef, amount, currency, note, voiceNoteUrl, photoUrl, videoUrl, gifUrl, giftCardTheme, threadId },
     stepUpToken,
     skipCache: true,
+    idempotencyKey: intentKey,
   });
 }
 
@@ -353,11 +396,12 @@ export function getMerchantPublic(idOrKebuId) {
   return apiFetch(`/api/merchants/${encodeURIComponent(idOrKebuId)}/public`, { skipCache: true });
 }
 
-export function merchantPay(businessId, { amount, currency = 'kori', stepUpToken, useVoucher, threadId }) {
+export function merchantPay(businessId, { amount, currency = 'kori', stepUpToken, useVoucher, threadId, intentKey }) {
   return apiFetch(`/api/merchants/${encodeURIComponent(businessId)}/pay`, {
     method: 'POST',
     body: { amount, currency, stepUpToken, useVoucher: useVoucher === true ? true : undefined, threadId },
     skipCache: true,
+    idempotencyKey: intentKey,
   });
 }
 
@@ -365,20 +409,22 @@ export function getMerchantVouchers() {
   return apiFetch('/api/merchant-vouchers/mine', { skipCache: true });
 }
 
-export function cashIn({ amount, operator = 'orange_money', phone }) {
+export function cashIn({ amount, operator = 'orange_money', phone, intentKey }) {
   return apiFetch('/api/cash/in', {
     method: 'POST',
     body: { amount, operator, phone },
     skipCache: true,
+    idempotencyKey: intentKey,
   });
 }
 
-export function cashOut({ amount, operator = 'orange_money', phone, stepUpToken }) {
+export function cashOut({ amount, operator = 'orange_money', phone, stepUpToken, intentKey }) {
   return apiFetch('/api/cash/out', {
     method: 'POST',
     body: { amount, operator, phone },
     stepUpToken,
     skipCache: true,
+    idempotencyKey: intentKey,
   });
 }
 
@@ -391,12 +437,31 @@ export function depositNational({ amount, source = 'beta' }) {
   });
 }
 
-export function createAgentDeposit({ amount }) {
-  return apiFetch('/api/deposits/agent', {
-    method: 'POST',
-    body: { amount },
-    skipCache: true,
-  });
+/** J6: cash-in intent at an agent. One `intentKey` per attempt (never a second intent on retry). */
+export function createCashIntent({ kind, amountXof, intentKey, stepUpToken }) {
+  return apiFetch(kind === 'cash_out' ? '/api/agent-cash/out' : '/api/agent-cash/in', { method: 'POST', body: { amountXof }, idempotencyKey: intentKey, stepUpToken, skipCache: true });
+}
+
+export function getCashTx(id) {
+  return apiFetch(`/api/agent-cash/tx/${encodeURIComponent(id)}`, { skipCache: true });
+}
+
+export function listCashTx() {
+  return apiFetch('/api/agent-cash/tx', { skipCache: true });
+}
+
+/** Customer confirms the bound point + amount (cash-in) or authorizes it with the PIN (cash-out). */
+export function confirmCashTx(id, bindingHash, stepUpToken) {
+  return apiFetch(`/api/agent-cash/tx/${encodeURIComponent(id)}/confirm`, { method: 'POST', body: { bindingHash }, stepUpToken, skipCache: true });
+}
+
+export function cancelCashTx(id) {
+  return apiFetch(`/api/agent-cash/tx/${encodeURIComponent(id)}/cancel`, { method: 'POST', skipCache: true });
+}
+
+/** New QR for the SAME (still unbound) transaction; the previous QR stops working. */
+export function reissueCashChallenge(id) {
+  return apiFetch(`/api/agent-cash/tx/${encodeURIComponent(id)}/challenge`, { method: 'POST', skipCache: true });
 }
 
 export function getAgentDepositStatus(reference) {
@@ -419,23 +484,55 @@ export function getAgentMe() {
   return apiFetch('/api/agent/me', { skipCache: true });
 }
 
-export function agentScanDeposit({ token, qr }) {
-  return apiFetch('/api/agent/deposits/scan', {
-    method: 'POST',
-    body: { token, qr },
-    skipCache: true,
-  });
+/** J6: agent scans the customer's QR (binds this point; reserves float for a cash-in). */
+export function agentScanCash(qr) {
+  return apiFetch('/api/agent/cash/scan', { method: 'POST', body: { qr }, skipCache: true });
 }
 
-export function agentConfirmDeposit(depositId) {
-  return apiFetch(`/api/agent/deposits/${encodeURIComponent(depositId)}/confirm`, {
-    method: 'POST',
-    skipCache: true,
-  });
+/** J6: agent completes after the physical handoff — PIN step-up required. */
+export function agentCompleteCash(id, bindingHash, stepUpToken) {
+  return apiFetch(`/api/agent/cash/${encodeURIComponent(id)}/complete`, { method: 'POST', body: { bindingHash }, stepUpToken, skipCache: true });
+}
+
+export function agentDeclineCash(id, reason) {
+  return apiFetch(`/api/agent/cash/${encodeURIComponent(id)}/decline`, { method: 'POST', body: { reason }, skipCache: true });
+}
+
+export function getAgentCommissions() {
+  return apiFetch('/api/agent/commissions', { skipCache: true });
+}
+
+export function settleAgentCommissions(intentKey) {
+  return apiFetch('/api/agent/commissions/settle', { method: 'POST', idempotencyKey: intentKey, skipCache: true });
+}
+
+export function getAgentCash() {
+  return apiFetch('/api/agent/cash', { skipCache: true });
 }
 
 export function getMboloThreads() {
   return apiFetch('/api/mbolo/threads', { skipCache: true });
+}
+
+/** Incoming message requests (strangers). */
+export function getMboloRequests() {
+  return apiFetch('/api/mbolo/requests', { skipCache: true });
+}
+
+/** action: 'accept' | 'decline' | 'block' */
+export function respondMboloRequest(threadId, action) {
+  return apiFetch(`/api/mbolo/threads/${encodeURIComponent(threadId)}/${action}`, {
+    method: 'POST',
+    skipCache: true,
+  });
+}
+
+export function reportMboloRequest(threadId, { category = 'spam', reason } = {}) {
+  return apiFetch(`/api/mbolo/threads/${encodeURIComponent(threadId)}/report`, {
+    method: 'POST',
+    body: { category, reason },
+    skipCache: true,
+  });
 }
 
 export function createMboloThread({ name, memberHandles = [] }) {
@@ -636,10 +733,11 @@ export function createJekkalCampaign(body) {
   return apiFetch('/api/jekkal/campaigns', { method: 'POST', body, skipCache: true });
 }
 
-export function contributeJekkal(campaignId, body) {
+export function contributeJekkal(campaignId, body, { idempotencyKey } = {}) {
   return apiFetch(`/api/jekkal/campaigns/${encodeURIComponent(campaignId)}/contribute`, {
     method: 'POST',
     body,
+    idempotencyKey,
     skipCache: true,
   });
 }
@@ -665,42 +763,22 @@ export function getMyFloatTopUpRequests() {
   return apiFetch('/api/agent/float/topup-requests/mine', { skipCache: true });
 }
 
+/** J6.14: active service points only; declared hours; no float / availability claims. */
 export function getAgentsNearby({ lat, lng, mode = 'deposit', amount } = {}) {
   const params = new URLSearchParams();
   if (lat != null) params.set('lat', String(lat));
   if (lng != null) params.set('lng', String(lng));
-  if (mode) params.set('mode', mode);
+  params.set('service', mode === 'withdraw' ? 'cash_out' : 'cash_in');
   if (amount != null) params.set('amount', String(amount));
-  const q = params.toString();
-  return apiFetch(`/api/agents/nearby${q ? `?${q}` : ''}`, { skipCache: true });
+  return apiFetch(`/api/agent-cash/points?${params.toString()}`, { skipCache: true });
 }
 
-export function createAgentWithdraw({ amount }) {
-  return apiFetch('/api/withdrawals/agent', {
-    method: 'POST',
-    body: { amount },
-    skipCache: true,
-  });
-}
 
 export function getAgentWithdrawStatus(reference) {
   return apiFetch(`/api/withdrawals/agent/${encodeURIComponent(reference)}`, { skipCache: true });
 }
 
-export function agentScanWithdraw({ token, qr }) {
-  return apiFetch('/api/agent/withdrawals/scan', {
-    method: 'POST',
-    body: { token, qr },
-    skipCache: true,
-  });
-}
 
-export function agentConfirmWithdraw(withdrawalId) {
-  return apiFetch(`/api/agent/withdrawals/${encodeURIComponent(withdrawalId)}/confirm`, {
-    method: 'POST',
-    skipCache: true,
-  });
-}
 
 export function getInviteShare() {
   return apiFetch('/api/invite/share', { skipCache: true });
@@ -1132,6 +1210,18 @@ export function createTontineGroup(body) {
   return apiFetch('/api/tontine/groups', { method: 'POST', body, skipCache: true });
 }
 
+function tontineAction(groupId, action, body) {
+  return apiFetch(`/api/tontine/groups/${encodeURIComponent(groupId)}/${action}`, { method: 'POST', body, skipCache: true });
+}
+
+/** Consent + escrow model: nothing is ever debited without the member's own action. */
+export const acceptTontineInvite = (groupId) => tontineAction(groupId, 'accept');
+export const declineTontineInvite = (groupId) => tontineAction(groupId, 'decline');
+export const startTontine = (groupId) => tontineAction(groupId, 'start');
+export const contributeToTontine = (groupId) => tontineAction(groupId, 'contribute');
+export const cancelTontine = (groupId) => tontineAction(groupId, 'cancel');
+export const leaveTontine = (groupId) => tontineAction(groupId, 'leave');
+
 export function releaseTontinePot(groupId) {
   return apiFetch(`/api/tontine/groups/${encodeURIComponent(groupId)}/release`, {
     method: 'POST',
@@ -1194,6 +1284,33 @@ export function getNotifications() {
   return apiFetch('/api/notifications', { skipCache: true });
 }
 
+/** J10: categorized feed (cursor `before`), unread counts per category, mark all read, community settings. */
+export function getNotificationsFeed({ category, before } = {}) {
+  const q = new URLSearchParams();
+  if (category) q.set('category', category);
+  if (before) q.set('before', before);
+  return apiFetch(`/api/notifications/feed${q.toString() ? `?${q}` : ''}`, { skipCache: true });
+}
+/** J10 groups + moderation. */
+const thr = (id, path) => `/api/mbolo/threads/${encodeURIComponent(id)}/${path}`;
+export const getGroupRoster = (id) => apiFetch(thr(id, 'roster'), { skipCache: true });
+export const setGroupRole = (id, userId, role) => apiFetch(thr(id, 'roles'), { method: 'POST', body: { userId, role }, skipCache: true });
+export const removeGroupMember = (id, userId) => apiFetch(thr(id, 'remove'), { method: 'POST', body: { userId }, skipCache: true });
+export const muteGroupMember = (id, userId, hours) => apiFetch(thr(id, 'mute'), { method: 'POST', body: { userId, hours }, skipCache: true });
+export const setGroupPostingPolicy = (id, postingPolicy) => apiFetch(thr(id, 'settings'), { method: 'POST', body: { postingPolicy }, skipCache: true });
+export const revokeGroupInvite = (id) => apiFetch(thr(id, 'invite/revoke'), { method: 'POST', body: {}, skipCache: true });
+export const leaveGroup = (id) => apiFetch(thr(id, 'leave'), { method: 'POST', body: {}, skipCache: true });
+export const reportMboloMessage = (messageId, category, reason) => apiFetch(`/api/mbolo/messages/${encodeURIComponent(messageId)}/report`, { method: 'POST', body: { category, reason }, skipCache: true });
+export const getMyModeration = () => apiFetch('/api/me/moderation', { skipCache: true });
+export const appealModeration = (id, note) => apiFetch(`/api/me/moderation/${encodeURIComponent(id)}/appeal`, { method: 'POST', body: { note }, skipCache: true });
+export const getNeighbourhood = () => apiFetch('/api/community/neighbourhood', { skipCache: true });
+export const openOrderConversation = (orderId) => apiFetch(`/api/marketplace/orders/${encodeURIComponent(orderId)}/conversation`, { method: 'POST', body: {}, skipCache: true });
+export const getToday = () => apiFetch('/api/me/today', { skipCache: true });
+export const getUnreadNotifications = () => apiFetch('/api/notifications/unread', { skipCache: true });
+export const markAllNotificationsRead = (category) => apiFetch('/api/notifications/read-all', { method: 'POST', body: category ? { category } : {}, skipCache: true });
+export const getCommunitySettings = () => apiFetch('/api/me/community-settings', { skipCache: true });
+export const saveCommunitySettings = (body) => apiFetch('/api/me/community-settings', { method: 'PUT', body, skipCache: true });
+
 export function markNotificationRead(id) {
   return apiFetch(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'POST', skipCache: true });
 }
@@ -1221,11 +1338,12 @@ export function getTransferRequests(role = 'all') {
   return apiFetch(`/api/transfers/requests?role=${encodeURIComponent(role)}`, { skipCache: true });
 }
 
-export function acceptTransferRequest(id, { stepUpToken } = {}) {
+export function acceptTransferRequest(id, { stepUpToken, intentKey } = {}) {
   return apiFetch(`/api/transfers/requests/${encodeURIComponent(id)}/accept`, {
     method: 'POST',
     stepUpToken,
     skipCache: true,
+    idempotencyKey: intentKey,
   });
 }
 
@@ -1592,4 +1710,258 @@ export function followChannel(channelId, follow = true) {
     body: { follow },
     skipCache: true,
   });
+}
+
+// ── J4 Money read model & primitives ────────────────────────────────────────
+export function getMoneyHome() {
+  return apiFetch('/api/money/home', { skipCache: true });
+}
+
+export function getMoneyActivity({ limit = 30, before } = {}) {
+  const q = new URLSearchParams({ limit: String(limit), ...(before ? { before } : {}) });
+  return apiFetch(`/api/money/activity?${q}`, { skipCache: true });
+}
+
+export function getMoneyReceipt(reference) {
+  return apiFetch(`/api/money/activity/${encodeURIComponent(reference)}`, { skipCache: true });
+}
+
+export function previewMoney(flow, amountKori) {
+  return apiFetch('/api/money/preview', { method: 'POST', body: { flow, amountKori }, skipCache: true });
+}
+
+/** "Did my payment go through?" — never guess, never re-send blindly. */
+export function getMoneyIntent(intentKey) {
+  return apiFetch(`/api/money/intents/${encodeURIComponent(intentKey)}`, { skipCache: true });
+}
+
+/** J13-F17: close an intent that never reached the server (moves no money; never closes one that ran). */
+export function voidMoneyIntent(intentKey) {
+  return apiFetch(`/api/money/intents/${encodeURIComponent(intentKey)}/void`, { method: 'POST', skipCache: true });
+}
+
+export function createMerchantCharge({ businessId, amountKori, label, externalRef, orderId }) {
+  return apiFetch('/api/money/charges', { method: 'POST', body: { businessId, amountKori, label, externalRef, orderId }, skipCache: true });
+}
+
+export function viewMerchantCharge(code) {
+  return apiFetch(`/api/money/charges/${encodeURIComponent(code)}`, { skipCache: true });
+}
+
+export function payMerchantCharge(code, { expectedAmountKori, stepUpToken, intentKey }) {
+  return apiFetch(`/api/money/charges/${encodeURIComponent(code)}/pay`, {
+    method: 'POST',
+    body: { expectedAmountKori },
+    stepUpToken,
+    skipCache: true,
+    idempotencyKey: intentKey,
+  });
+}
+
+export function refundReceivedPayment(reference, { amountKori, reason, intentKey }) {
+  return apiFetch(`/api/money/payments/${encodeURIComponent(reference)}/refund`, {
+    method: 'POST',
+    body: { amountKori, reason },
+    skipCache: true,
+    idempotencyKey: intentKey,
+  });
+}
+
+// ── J5 Merchant + Business OS ────────────────────────────────────────────────
+const bos = (businessId, path = '') => `/api/businesses/${encodeURIComponent(businessId)}/os${path}`;
+export const getBusinessAccess = (id) => apiFetch(bos(id, '/access'), { skipCache: true });
+export const getBusinessProfile = (id) => apiFetch(bos(id, '/profile'), { skipCache: true });
+export const updateBusinessProfile = (id, body) => apiFetch(bos(id, '/profile'), { method: 'PATCH', body, skipCache: true });
+export const addBusinessLocation = (id, body) => apiFetch(bos(id, '/locations'), { method: 'POST', body, skipCache: true });
+export const switchBusinessSettlement = (id) => apiFetch(bos(id, '/settlement'), { method: 'POST', body: {}, skipCache: true });
+export const requestBusinessVerification = (id, note) => apiFetch(bos(id, '/verification'), { method: 'POST', body: { note }, skipCache: true });
+export const getBusinessToday = (id) => apiFetch(bos(id, '/today'), { skipCache: true });
+export const getBusinessCatalog = (id) => apiFetch(bos(id, '/catalog'), { skipCache: true });
+export const createCatalogItem = (id, body) => apiFetch(bos(id, '/catalog'), { method: 'POST', body, skipCache: true });
+export const updateCatalogItem = (id, productId, body) => apiFetch(bos(id, `/catalog/${encodeURIComponent(productId)}`), { method: 'PATCH', body, skipCache: true });
+export const adjustStock = (id, productId, body) => apiFetch(bos(id, `/stock/${encodeURIComponent(productId)}/adjust`), { method: 'POST', body, skipCache: true });
+export const getStockHistory = (id, productId) => apiFetch(bos(id, `/stock/${encodeURIComponent(productId)}/history`), { skipCache: true });
+export const getBusinessOrders = (id, status) => apiFetch(bos(id, `/orders${status ? `?status=${encodeURIComponent(status)}` : ''}`), { skipCache: true });
+export const moveBusinessOrder = (id, orderId, status) => apiFetch(bos(id, `/orders/${encodeURIComponent(orderId)}/status`), { method: 'POST', body: { status }, skipCache: true });
+export const cancelBusinessOrder = (id, orderId, reason, intentKey) =>
+  apiFetch(bos(id, `/orders/${encodeURIComponent(orderId)}/cancel`), { method: 'POST', body: { reason }, skipCache: true, idempotencyKey: intentKey });
+export const refundBusinessOrder = (id, orderId, { reason, restock }, intentKey) =>
+  apiFetch(bos(id, `/orders/${encodeURIComponent(orderId)}/refund`), { method: 'POST', body: { reason, restock }, skipCache: true, idempotencyKey: intentKey });
+export const cancelMyOrder = (orderId, reason, intentKey) =>
+  apiFetch(`/api/marketplace/orders/${encodeURIComponent(orderId)}/cancel`, { method: 'POST', body: { reason }, skipCache: true, idempotencyKey: intentKey });
+export const getBusinessMoney = (id) => apiFetch(bos(id, '/money'), { skipCache: true });
+export const getBusinessAnalytics = (id, period = '30d') => apiFetch(bos(id, `/analytics?period=${encodeURIComponent(period)}`), { skipCache: true });
+export const getBusinessCustomers = (id) => apiFetch(bos(id, '/customers'), { skipCache: true });
+export const getBusinessCharges = (id, status) => apiFetch(bos(id, `/charges${status ? `?status=${encodeURIComponent(status)}` : ''}`), { skipCache: true });
+export const cancelMerchantCharge = (code) => apiFetch(`/api/money/charges/${encodeURIComponent(code)}/cancel`, { method: 'POST', body: {}, skipCache: true });
+export const changeBusinessMemberRole = (id, memberId, role) =>
+  apiFetch(`/api/businesses/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}/role`, { method: 'POST', body: { role }, skipCache: true });
+export const removeBusinessMember = (id, memberId, reason) =>
+  apiFetch(`/api/businesses/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}/remove`, { method: 'POST', body: { reason }, skipCache: true });
+export const getBusinessPayments = (id) => apiFetch(bos(id, '/payments'), { skipCache: true });
+export const recordManualSale = (id, body) => apiFetch(bos(id, '/sales/manual'), { method: 'POST', body, skipCache: true });
+export const getMerchantRelationships = (id) => apiFetch(bos(id, '/relationships'), { skipCache: true });
+export const respondMerchantRelationship = (id, relId, accept) =>
+  apiFetch(bos(id, `/relationships/${encodeURIComponent(relId)}/respond`), { method: 'POST', body: { accept }, skipCache: true });
+export const endMerchantRelationship = (id, relId) => apiFetch(bos(id, `/relationships/${encodeURIComponent(relId)}/end`), { method: 'POST', body: {}, skipCache: true });
+
+// ── J7 restock (B2B purchase orders). Prices always come from the server quote. ──
+const b2b = (businessId, path) => `/api/businesses/${encodeURIComponent(businessId)}/b2b/${path}`;
+export const getRestockSuppliers = (businessId) => apiFetch(b2b(businessId, 'suppliers'), { skipCache: true });
+export const getSupplierCatalog = (businessId, supplierId) => apiFetch(b2b(businessId, `suppliers/${encodeURIComponent(supplierId)}/catalog`), { skipCache: true });
+export const getReorderSuggestions = (businessId, supplierId) => apiFetch(b2b(businessId, `suppliers/${encodeURIComponent(supplierId)}/reorder`), { skipCache: true });
+export const quoteRestock = (businessId, body) => apiFetch(b2b(businessId, 'quote'), { method: 'POST', body, skipCache: true });
+export const submitRestockOrder = (businessId, body, { idempotencyKey } = {}) => apiFetch(b2b(businessId, 'purchase-orders'), { method: 'POST', body, idempotencyKey, skipCache: true });
+export const listRestockOrders = (businessId) => apiFetch(b2b(businessId, 'purchase-orders?side=buyer'), { skipCache: true });
+export const payRestockOrder = (businessId, poId, expectedAmountKori, { stepUpToken, idempotencyKey } = {}) =>
+  apiFetch(b2b(businessId, `purchase-orders/${encodeURIComponent(poId)}/pay`), { method: 'POST', body: { expectedAmountKori }, stepUpToken, idempotencyKey, skipCache: true });
+export const receiveRestockOrder = (businessId, poId, action = 'receive') =>
+  apiFetch(b2b(businessId, `purchase-orders/${encodeURIComponent(poId)}/buyer`), { method: 'POST', body: { action }, skipCache: true });
+
+/* ── J8 logistics (lib/logistics/* on the server; every action is an authorized server transition) ── */
+const lg = (path) => `/api/logistics/${path}`;
+const shp = (id, action = '') => lg(`shipments/${encodeURIComponent(id)}${action ? `/${action}` : ''}`);
+const bizLg = (businessId, path) => `/api/businesses/${encodeURIComponent(businessId)}/logistics/${path}`;
+const post = (path, body = {}, opts = {}) => apiFetch(path, { method: 'POST', body, skipCache: true, ...opts });
+
+export const getShipment = (id) => apiFetch(shp(id), { skipCache: true });
+export const getMyShipments = () => apiFetch(lg('shipments/mine'), { skipCache: true });
+export const getCourierShipments = (cursor) => apiFetch(lg(`courier/shipments${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`), { skipCache: true });
+export const getBusinessShipments = (businessId, { side = 'origin', status, cursor } = {}) =>
+  apiFetch(bizLg(businessId, `shipments?side=${side}${status ? `&status=${encodeURIComponent(status)}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`), { skipCache: true });
+export const respondToAssignment = (id, accept, reason) => post(shp(id, 'respond'), { accept, ...(reason ? { reason } : {}) });
+export const issueShipmentCode = (id, purpose) => post(shp(id, 'codes'), { purpose });
+export const courierPickupShipment = (id, code, idempotencyKey) => post(shp(id, 'pickup'), { code }, { idempotencyKey });
+export const courierShipmentStep = (id, step) => post(shp(id, 'step'), { step });
+export const courierDeliverShipment = (id, code, idempotencyKey) => post(shp(id, 'deliver'), { code }, { idempotencyKey });
+export const courierFailShipment = (id, reason, note) => post(shp(id, 'fail'), { reason, ...(note ? { note } : {}) });
+export const courierShipmentException = (id, note) => post(shp(id, 'exception'), { note });
+export const courierReturnStart = (id) => post(shp(id, 'return/start'));
+export const courierReturnComplete = (id, code, idempotencyKey) => post(shp(id, 'return/complete'), { code }, { idempotencyKey });
+export const acceptShipmentHandoff = (id, code) => post(shp(id, 'handoff'), { code });
+export const issueHandoffCode = (id) => post(shp(id, 'handoff-code'));
+export const recordShipmentReceiving = (id, lines, note, idempotencyKey) => post(shp(id, 'receiving'), { lines, ...(note ? { note } : {}) }, { idempotencyKey });
+export const respondToShipmentFailure = (id, agree) => post(shp(id, 'failure/respond'), { agree });
+export const releaseShipmentCollection = (id, code) => post(shp(id, 'release'), { code });
+export const dropShipmentAtPoint = (id) => post(shp(id, 'drop'));
+export const cancelShipment = (id, reason) => post(shp(id, 'cancel'), { reason });
+export const assignShipmentCourier = (id, courierUserId) => post(shp(id, 'assign'), { courierUserId });
+export const unassignShipmentCourier = (id, reason) => post(shp(id, 'unassign'), { reason });
+export const emergencyReassignShipment = (id, courierUserId, reason) => post(shp(id, 'emergency-reassign'), { courierUserId, reason });
+export const openShipmentDispute = (id, reason) => post(shp(id, 'dispute'), { reason });
+export const getShipmentDispute = (disputeId) => apiFetch(lg(`disputes/${encodeURIComponent(disputeId)}`), { skipCache: true });
+export const addShipmentDisputeEvidence = (disputeId, content, kind = 'note') => post(lg(`disputes/${encodeURIComponent(disputeId)}/evidence`), { content, kind });
+export const getCourierEarnings = () => apiFetch(lg('earnings'), { skipCache: true });
+export const payoutCourierEarnings = (idempotencyKey) => post(lg('earnings/payout'), {}, { idempotencyKey });
+export const createDeliveryRoute = (businessId, body) => post(bizLg(businessId, 'routes'), body);
+export const listDeliveryRoutes = (businessId) => apiFetch(bizLg(businessId, 'routes'), { skipCache: true });
+export const getRouteReconciliation = (businessId, routeId) => apiFetch(bizLg(businessId, `routes/${encodeURIComponent(routeId)}/reconciliation`), { skipCache: true });
+/* seller side of J7 purchase orders, for the distributor's dispatch desk */
+export const listSellerOrders = (businessId) => apiFetch(b2b(businessId, 'purchase-orders?side=seller'), { skipCache: true });
+export const getPurchaseOrder = (businessId, poId) => apiFetch(b2b(businessId, `purchase-orders/${encodeURIComponent(poId)}`), { skipCache: true });
+export const acceptSellerOrder = (businessId, poId) => apiFetch(b2b(businessId, `purchase-orders/${encodeURIComponent(poId)}/accept`), { method: 'POST', body: {}, skipCache: true });
+export const advanceSellerOrder = (businessId, poId, body) => apiFetch(b2b(businessId, `purchase-orders/${encodeURIComponent(poId)}/advance`), { method: 'POST', body, skipCache: true });
+/* D40 buyer catalogue mapping */
+export const getProductMappings = (businessId) => apiFetch(b2b(businessId, 'product-mappings'), { skipCache: true });
+export const resolveUnmatchedReceipt = (businessId, receiptId, buyerProductId) =>
+  apiFetch(b2b(businessId, `unmatched-receipts/${encodeURIComponent(receiptId)}/resolve`), { method: 'POST', body: { buyerProductId }, skipCache: true });
+
+/* ── J9 Work & Opportunity (lib/work/*) ─────────────────────────────────── */
+const wk = (path) => `/api/work/${path}`;
+const bizWk = (businessId, path) => `/api/businesses/${encodeURIComponent(businessId)}/work/${path}`;
+const enc = encodeURIComponent;
+/* worker */
+export const getWorkTypes = () => apiFetch(wk('types'));
+export const getWorkProfile = () => apiFetch(wk('profile'), { skipCache: true });
+export const saveWorkProfile = (body) => apiFetch(wk('profile'), { method: 'PUT', body, skipCache: true });
+export const addWorkQualification = (body) => post(wk('qualifications'), body);
+export const blockWorkBusiness = (businessId) => post(wk('blocks'), { businessId });
+export const discoverWork = ({ type, area, skill } = {}) => {
+  const q = new URLSearchParams(Object.entries({ type, area, skill }).filter(([, v]) => v)).toString();
+  return apiFetch(wk(`opportunities${q ? `?${q}` : ''}`), { skipCache: true });
+};
+export const applyToWork = (oppId, note) => post(wk(`opportunities/${enc(oppId)}/apply`), note ? { note } : {});
+export const getMyWorkApplications = () => apiFetch(wk('applications'), { skipCache: true });
+export const withdrawWorkApplication = (id) => post(wk(`applications/${enc(id)}/withdraw`));
+export const getMyWorkOffers = () => apiFetch(wk('offers'), { skipCache: true });
+export const acceptWorkOffer = (id, termsHash, ageAttested) => post(wk(`offers/${enc(id)}/accept`), { termsHash, ...(ageAttested ? { ageAttested: true } : {}) });
+export const declineWorkOffer = (id) => post(wk(`offers/${enc(id)}/decline`));
+export const getMyAssignments = () => apiFetch(wk('assignments'), { skipCache: true });
+export const getMyAssignment = (id) => apiFetch(wk(`assignments/${enc(id)}`), { skipCache: true });
+export const submitAttendance = (id, purpose, code) => post(wk(`assignments/${enc(id)}/attendance`), { purpose, code });
+export const submitMilestone = (id, seq, content, kind = 'note') => post(wk(`assignments/${enc(id)}/submit`), { seq, kind, content });
+export const endMyAssignment = (id, reason) => post(wk(`assignments/${enc(id)}/end`), { reason });
+export const openWorkDispute = (id, body) => post(wk(`assignments/${enc(id)}/disputes`), body);
+export const getWorkDispute = (id) => apiFetch(wk(`disputes/${enc(id)}`), { skipCache: true });
+export const addWorkDisputeEvidence = (id, content, kind = 'note') => post(wk(`disputes/${enc(id)}/evidence`), { content, kind });
+export const getWorkEarnings = () => apiFetch(wk('earnings'), { skipCache: true });
+export const payoutWorkEarnings = (idempotencyKey) => post(wk('earnings/payout'), {}, { idempotencyKey });
+export const leaveWorkFeedback = (assignmentId, rating, comment) => post(wk(`assignments/${enc(assignmentId)}/feedback`), { rating, ...(comment ? { comment } : {}) });
+export const getMyWorkFeedback = () => apiFetch(wk('feedback'), { skipCache: true });
+export const contestWorkFeedback = (id, note) => post(wk(`feedback/${enc(id)}/contest`), { note });
+/* business */
+export const listBizOpportunities = (businessId) => apiFetch(bizWk(businessId, 'opportunities'), { skipCache: true });
+export const createBizOpportunity = (businessId, body) => post(bizWk(businessId, 'opportunities'), body);
+export const setBizOpportunityStatus = (businessId, oppId, status) => post(bizWk(businessId, `opportunities/${enc(oppId)}/status`), { status });
+export const listBizApplicants = (businessId, oppId) => apiFetch(bizWk(businessId, `opportunities/${enc(oppId)}/applicants`), { skipCache: true });
+export const inviteBizWorker = (businessId, oppId, workerHandle) => post(bizWk(businessId, `opportunities/${enc(oppId)}/invite`), { workerHandle });
+export const decideBizApplication = (businessId, appId, decision) => post(bizWk(businessId, `applications/${enc(appId)}/decide`), { decision });
+export const searchBizWorkers = (businessId, { skill, area } = {}) => {
+  const q = new URLSearchParams(Object.entries({ skill, area }).filter(([, v]) => v)).toString();
+  return apiFetch(bizWk(businessId, `workers${q ? `?${q}` : ''}`), { skipCache: true });
+};
+export const createBizOffer = (businessId, body, { stepUpToken, idempotencyKey } = {}) => post(bizWk(businessId, 'offers'), body, { stepUpToken, idempotencyKey });
+export const withdrawBizOffer = (businessId, offerId) => post(bizWk(businessId, `offers/${enc(offerId)}/withdraw`));
+export const listBizAssignments = (businessId) => apiFetch(bizWk(businessId, 'assignments'), { skipCache: true });
+export const issueBizAttendanceCode = (businessId, assignmentId, purpose) => post(bizWk(businessId, `assignments/${enc(assignmentId)}/attendance-code`), { purpose });
+export const acceptBizMilestone = (businessId, assignmentId, seq) => post(bizWk(businessId, `assignments/${enc(assignmentId)}/accept`), { seq });
+export const uploadWorkEvidenceFile = (assignmentId, body) => post(`work/assignments/${enc(assignmentId)}/evidence/files`, body);
+export const acceptBizMilestonesBatch = (businessId, items) => post(bizWk(businessId, 'milestones/accept-batch'), { items });
+export const endBizAssignment = (businessId, assignmentId, reason) => post(bizWk(businessId, `assignments/${enc(assignmentId)}/end`), { reason });
+export const openBizWorkDispute = (businessId, assignmentId, body) => post(bizWk(businessId, `assignments/${enc(assignmentId)}/disputes`), body);
+export const listBizWorkRules = (businessId) => apiFetch(bizWk(businessId, 'rules'), { skipCache: true });
+export const proposeBizWorkRule = (businessId, body) => post(bizWk(businessId, 'rules'), body);
+export const approveBizWorkRule = (businessId, ruleId) => post(bizWk(businessId, `rules/${enc(ruleId)}/approve`));
+export const fundBizWorkRule = (businessId, ruleId, amountKori, { stepUpToken, idempotencyKey } = {}) => post(bizWk(businessId, `rules/${enc(ruleId)}/fund`), { amountKori }, { stepUpToken, idempotencyKey });
+export const appealWorkDispute = (disputeId, note) => post(wk(`disputes/${enc(disputeId)}/appeal`), { note });
+export const appealBizWorkDispute = (businessId, disputeId, note) => post(bizWk(businessId, `disputes/${enc(disputeId)}/appeal`), { note });
+
+/** J11 collective money (rotating tontines + goal savings) — dark unless the server flag is on (503 otherwise). */
+const cg = (id, path = '') => `/api/collective/groups/${encodeURIComponent(id)}${path ? `/${path}` : ''}`;
+export const getCollectiveGroups = () => apiFetch('/api/collective/groups', { skipCache: true });
+export const createCollectiveGroup = (body) => apiFetch('/api/collective/groups', { method: 'POST', body, skipCache: true });
+export const getCollectiveGroup = (id) => apiFetch(cg(id), { skipCache: true });
+export const inviteToCollective = (id, handles) => apiFetch(cg(id, 'invite'), { method: 'POST', body: { handles }, skipCache: true });
+export const respondCollectiveInvite = (id, accept) => apiFetch(cg(id, 'respond'), { method: 'POST', body: { accept }, skipCache: true });
+export const leaveCollective = (id) => apiFetch(cg(id, 'leave'), { method: 'POST', body: {}, skipCache: true });
+export const proposeCollectiveRules = (id, body) => apiFetch(cg(id, 'rules'), { method: 'POST', body, skipCache: true });
+export const acceptCollectiveRules = (id, rulesHash) => apiFetch(cg(id, 'rules/accept'), { method: 'POST', body: { rulesHash }, skipCache: true });
+export const declineCollectiveRules = (id) => apiFetch(cg(id, 'rules/decline'), { method: 'POST', body: {}, skipCache: true });
+export const cancelCollectiveBeforeStart = (id) => apiFetch(cg(id, 'cancel'), { method: 'POST', body: {}, skipCache: true });
+export const contributeCollective = (id, { amountKori, stepUpToken, idempotencyKey } = {}) =>
+  apiFetch(cg(id, 'contribute'), { method: 'POST', body: amountKori ? { amountKori } : {}, stepUpToken, idempotencyKey, skipCache: true });
+export const releaseCollective = (id) => apiFetch(cg(id, 'release'), { method: 'POST', body: {}, skipCache: true });
+export const withdrawCollective = (id, { amountKori, idempotencyKey } = {}) => apiFetch(cg(id, 'withdraw'), { method: 'POST', body: amountKori ? { amountKori } : {}, idempotencyKey, skipCache: true });
+export const openCollectiveVote = (id, topic, days) => apiFetch(cg(id, 'votes'), { method: 'POST', body: days ? { topic, days } : { topic }, skipCache: true });
+export const castCollectiveBallot = (voteId, choice) => apiFetch(`/api/collective/votes/${encodeURIComponent(voteId)}/ballot`, { method: 'POST', body: { choice }, skipCache: true });
+export const openCollectiveDispute = (id, reason) => apiFetch(cg(id, 'disputes'), { method: 'POST', body: { reason }, skipCache: true });
+/** J11 coop capital records (records only). */
+export const getMyCoopCapital = () => apiFetch('/api/coop/capital/mine', { skipCache: true });
+export const respondCoopRecord = (id, confirm, note) => apiFetch(`/api/coop/capital/${encodeURIComponent(id)}/respond`, { method: 'POST', body: note ? { confirm, note } : { confirm }, skipCache: true });
+/** J10/J11 Jekkal direct: the named beneficiary consents. */
+export const respondJekkalBeneficiary = (id, accept) => apiFetch(`/api/jekkal/campaigns/${encodeURIComponent(id)}/beneficiary`, { method: 'POST', body: { accept }, skipCache: true });
+
+// ── J15-D2: partner debit requests (S4) — the business approver's view ─────────────────────────────────────
+export function listPartnerDebits(businessId, { status } = {}) {
+  return apiFetch(`/api/businesses/${encodeURIComponent(businessId)}/partner-debits${status ? `?status=${encodeURIComponent(status)}` : ''}`, { skipCache: true });
+}
+export function getPartnerDebit(businessId, id) {
+  return apiFetch(`/api/businesses/${encodeURIComponent(businessId)}/partner-debits/${encodeURIComponent(id)}`, { skipCache: true });
+}
+/** Explicit approval of EXACTLY the details shown (detailsHash) with a fresh step-up token. */
+export function approvePartnerDebit(businessId, id, { detailsHash, stepUpToken }) {
+  return apiFetch(`/api/businesses/${encodeURIComponent(businessId)}/partner-debits/${encodeURIComponent(id)}/approve`, { method: 'POST', body: { detailsHash }, stepUpToken });
+}
+export function rejectPartnerDebit(businessId, id, reason) {
+  return apiFetch(`/api/businesses/${encodeURIComponent(businessId)}/partner-debits/${encodeURIComponent(id)}/reject`, { method: 'POST', body: { reason } });
 }

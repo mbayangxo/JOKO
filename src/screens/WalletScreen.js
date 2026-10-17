@@ -1,4 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import LoadErrorState from '../components/LoadErrorState';
+import { intentReconciler, reconcileNow } from '../lib/intent-reconciliation';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -8,7 +10,8 @@ import ScreenBackground from '../components/ScreenBackground';
 import PressScale from '../components/PressScale';
 import KoriAmount from '../components/KoriAmount';
 import ConfettiBurst from '../components/ConfettiBurst';
-import { getTontineGroups, getTransactions } from '../lib/api-client';
+import { getMoneyActivity, getMoneyHome, getMoneyReceipt, getTontineGroups, getTransactions } from '../lib/api-client';
+import { actionButton, activityRow, balanceView } from '../lib/money-ux';
 import { getLastCelebratedReceiveId, setLastCelebratedReceiveId } from '../lib/celebration-storage';
 import { colors, fontFamily, radius, spacing, type } from '../theme';
 
@@ -139,31 +142,129 @@ function NattaCard({ group, onPress }) {
   );
 }
 
-function TransactionRow({ icon, iconBg, title, subtitle, value, positive, amountColor }) {
+const ACTION_LABELS = { send: 'Envoyer', merchantPay: 'Payer un marchand', cashIn: 'Recharger', cashOut: 'Retirer' };
+
+/** J4: server balance split — only "disponible" is spendable. */
+function MoneyBalance({ home }) {
+  if (!home) return null;
+  const view = balanceView(home);
+  const blocked = Object.entries(ACTION_LABELS)
+    .map(([k, label]) => ({ label, ...actionButton(home.actions?.[k]) }))
+    .filter((a) => !a.enabled && a.reason);
   return (
-    <View style={styles.txRow}>
-      <View style={[styles.txIcon, { backgroundColor: iconBg }]}>
-        <Text style={{ fontSize: 16 }}>{icon}</Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.txTitle}>{title}</Text>
-        <Text style={styles.txSub}>{subtitle}</Text>
-      </View>
-      <KoriAmount value={value} prefix={positive ? '+' : ''} textStyle={[styles.txAmount, { color: amountColor }]} color={amountColor} gap={2} />
+    <View style={styles.balanceCard}>
+      <Text style={styles.sectionLabel}>Disponible</Text>
+      <KoriAmount value={view.spendableKori} textStyle={styles.balanceAmount} color={colors.ink} gap={3} />
+      {view.lines.map((l) => (
+        <Text key={l.label} style={styles.balanceLine}>
+          {l.label} : {l.kori} ₭ — pas encore utilisable
+        </Text>
+      ))}
+      {blocked.map((a) => (
+        <Text key={a.label} style={styles.restriction}>
+          {a.label} : {a.reason}
+          {a.nextStep ? ` ${a.nextStep}` : ''}
+        </Text>
+      ))}
     </View>
   );
 }
 
+// J13-F6: one distinct chip per money state (glyph + label + tone) — design-system colours only, no red.
+const STATUS_CHIP = {
+  ok: { backgroundColor: 'rgba(15,188,72,0.14)', color: '#0a6b2b' },
+  pending: { backgroundColor: 'rgba(250,216,54,0.28)', color: '#6b4a00' },
+  review: { backgroundColor: 'rgba(232,92,26,0.14)', color: colors.terracottaDark },
+  failed: { backgroundColor: 'rgba(5,8,5,0.08)', color: 'rgba(5,8,5,0.7)' },
+  reversed: { backgroundColor: 'rgba(5,8,5,0.06)', color: 'rgba(5,8,5,0.7)' },
+};
+
+function ActivityItem({ item, open, receipt, onPress }) {
+  const row = activityRow(item);
+  // Only a completed movement takes the in/out colour; every other state reads as not-final.
+  const color = row.tone === 'ok' ? (item.direction === 'in' ? colors.greenDark : colors.terracottaDark) : 'rgba(5,8,5,0.45)';
+  return (
+    <PressScale
+      scaleTo={0.98}
+      onPress={onPress}
+      style={styles.txRow}
+      accessibilityRole="button"
+      accessibilityLabel={`${row.title}, ${row.amountLabel}, ${row.statusLabel}`}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={styles.txTitle}>{row.title}</Text>
+        <View style={styles.txStatusLine}>
+          <Text style={[styles.statusChip, STATUS_CHIP[row.tone]]} testID={`status-${row.tone}`}>
+            {row.glyph} {row.statusLabel}
+          </Text>
+        </View>
+        {row.pendingNote || row.linkedNote ? (
+          <Text style={styles.txSub}>{[row.pendingNote, row.linkedNote].filter(Boolean).join(' · ')}</Text>
+        ) : null}
+        {open && receipt ? (
+          <Text style={styles.txSub}>
+            Réf. {receipt.reference}
+            {receipt.explanation ? `\n${receipt.explanation}` : ''}
+          </Text>
+        ) : null}
+      </View>
+      <Text style={[styles.txAmount, { color }, row.struck ? styles.txStruck : null]}>{row.amountLabel}</Text>
+    </PressScale>
+  );
+}
+
 export default function WalletScreen({ navigation }) {
+  const [home, setHome] = useState(null);
+  const [activity, setActivity] = useState([]);
+  const [openRef, setOpenRef] = useState(null);
+  const [receipt, setReceipt] = useState(null);
+
+  const openReceipt = (reference) => {
+    if (openRef === reference) {
+      setOpenRef(null);
+      return;
+    }
+    setOpenRef(reference);
+    setReceipt(null);
+    getMoneyReceipt(reference).then(setReceipt).catch(() => setReceipt(null));
+  };
+
   const [loading, setLoading] = useState(true);
   const [txs, setTxs] = useState([]);
   const [nattaGroups, setNattaGroups] = useState([]);
   const [celebrate, setCelebrate] = useState(false);
+  // J13-F7: a failed history load is shown as an error with retry — never as "Aucune opération".
+  const [activityFailed, setActivityFailed] = useState(false);
+  // The history has its OWN load state: the screen spinner is released by another request, and an
+  // unresolved history must never read as "Aucune opération" (J13-F7, found by the J13 browser suite).
+  const [activityLoaded, setActivityLoaded] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // J13-F17: an unknown payment that gets its final answer (here or anywhere in the app) reloads the history
+  // and balance from the server — the provisional state is replaced by the authoritative one.
+  useEffect(() => intentReconciler.subscribe(() => setReloadKey((k) => k + 1)), []);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       setLoading(true);
+      setActivityLoaded(false);
+      reconcileNow(); // history refresh = a reconciliation point (lookups only; never a re-submission)
+      // Server-authoritative balance + one coherent history (survives reinstall).
+      Promise.all([getMoneyHome(), getMoneyActivity()])
+        .then(([h, a]) => {
+          if (cancelled) return;
+          setHome(h);
+          setActivity(Array.isArray(a?.items) ? a.items : []);
+          setActivityFailed(false);
+          setActivityLoaded(true);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setActivityFailed(true);
+            setActivityLoaded(true);
+          }
+        });
       Promise.all([getTransactions(100), getTontineGroups()])
         .then(async ([txList, groups]) => {
           if (cancelled) return;
@@ -192,7 +293,7 @@ export default function WalletScreen({ navigation }) {
       return () => {
         cancelled = true;
       };
-    }, []),
+    }, [reloadKey]),
   );
 
   const spending = computeMonthlySpending(txs);
@@ -203,7 +304,7 @@ export default function WalletScreen({ navigation }) {
       {celebrate ? <ConfettiBurst /> : null}
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <View style={styles.header}>
-          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <PressScale scaleTo={0.9} onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
             <Text style={{ fontSize: 14, color: colors.ink }}>←</Text>
           </PressScale>
           <Text style={styles.title}>Mon portefeuille</Text>
@@ -213,6 +314,7 @@ export default function WalletScreen({ navigation }) {
           <ActivityIndicator color={colors.greenDark} style={{ marginTop: spacing.giant }} />
         ) : (
           <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+            <MoneyBalance home={home} />
             <SpendingRing spending={spending} />
 
             {nattaGroups.length > 0 ? (
@@ -225,21 +327,22 @@ export default function WalletScreen({ navigation }) {
             ) : null}
 
             <View>
-              <Text style={styles.sectionLabel}>Transactions</Text>
-              {txs.length === 0 ? (
-                <Text style={styles.emptyText}>Aucune transaction pour l'instant.</Text>
+              <Text style={styles.sectionLabel}>Historique</Text>
+              {!activityLoaded && activity.length === 0 ? (
+                <ActivityIndicator color={colors.greenDark} accessibilityLabel="Chargement de l’historique" />
+              ) : activityFailed && activity.length === 0 ? (
+                <LoadErrorState what="ton historique" onRetry={() => setReloadKey((k) => k + 1)} />
+              ) : activity.length === 0 ? (
+                <Text style={styles.emptyText}>Aucune opération pour l'instant.</Text>
               ) : (
                 <View style={{ gap: spacing.sm }}>
-                  {txs.map((tx) => (
-                    <TransactionRow
-                      key={tx.key}
-                      icon={tx.icon}
-                      iconBg={tx.iconBg}
-                      title={tx.title}
-                      subtitle={tx.subtitle}
-                      value={Math.abs(tx.amount)}
-                      positive={tx.amount > 0}
-                      amountColor={tx.amount > 0 ? colors.greenDark : colors.terracottaDark}
+                  {activity.map((item) => (
+                    <ActivityItem
+                      key={item.reference}
+                      item={item}
+                      open={openRef === item.reference}
+                      receipt={openRef === item.reference ? receipt : null}
+                      onPress={() => openReceipt(item.reference)}
                     />
                   ))}
                 </View>
@@ -295,9 +398,16 @@ const styles = StyleSheet.create({
   goalAmount: { flexDirection: 'row', alignItems: 'baseline', gap: 2 },
   goalAmountText: { fontFamily: fontFamily.displayBlack, fontSize: 17, letterSpacing: -0.5, color: colors.ink },
 
+  balanceCard: { gap: 4, backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: 1, borderColor: 'rgba(5,8,5,0.07)', borderRadius: radius.xxl, padding: spacing.xxl },
+  balanceAmount: { fontFamily: fontFamily.displayBlack, fontSize: 26, letterSpacing: -0.8, color: colors.ink },
+  balanceLine: { ...type.caption, color: 'rgba(5,8,5,0.6)' },
+  restriction: { ...type.caption, color: colors.terracottaDark },
   txRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg, paddingHorizontal: spacing.xl, paddingVertical: 9, backgroundColor: 'rgba(255,255,255,0.65)', borderWidth: 1, borderColor: 'rgba(5,8,5,0.07)', borderRadius: radius.lg },
   txIcon: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   txTitle: { fontFamily: fontFamily.bodyBold, fontSize: 12, color: colors.ink },
   txSub: { ...type.caption, color: 'rgba(5,8,5,0.5)' },
   txAmount: { fontFamily: fontFamily.bodyBold, fontSize: 13 },
+  txStruck: { textDecorationLine: 'line-through' },
+  txStatusLine: { flexDirection: 'row', marginTop: 2 },
+  statusChip: { fontFamily: fontFamily.bodySemiBold, fontSize: 10.5, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, overflow: 'hidden' },
 });

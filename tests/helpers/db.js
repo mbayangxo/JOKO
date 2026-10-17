@@ -1,15 +1,19 @@
 import './setup.js';
 import crypto from 'crypto';
 import { prisma } from '../../lib/prisma.js';
+import { custodyKoriTotals } from '../../lib/kori-reserve.js';
+import { agentFloatTopUp, business as businessAccount, testFund } from '../../lib/money-kernel/index.js';
 
 export { prisma };
 
 let phoneCounter = 0;
 
 export function uniquePhone() {
+  // Digits only: a real E.164 number. (Hex letters made phone-based lookups
+  // like partner messaging and support agents fail normalization.)
   phoneCounter += 1;
-  const rand = crypto.randomBytes(3).toString('hex');
-  return `+2217${rand}${String(phoneCounter).padStart(3, '0')}`.slice(0, 16);
+  const rand = String(crypto.randomInt(0, 10_000_000)).padStart(7, '0');
+  return `+2217${rand}${String(phoneCounter % 1000).padStart(3, '0')}`;
 }
 
 export function uniqueRef(prefix = 'TEST') {
@@ -43,11 +47,21 @@ export async function createUserWithWallet({
       cniVerifiedAt: tier >= 2 ? now : null,
       addressVerifiedAt: tier >= 3 ? now : null,
       lastActivityAt: now,
-      wallet: { create: { balance: 0, koriBalance: spendableKori, currency: 'XOF' } },
+      wallet: { create: { balance: 0, koriBalance: 0, currency: 'XOF' } },
     },
     include: { wallet: true },
   });
-  return user;
+  if (spendableKori > 0) await fundUser(user.id, spendableKori);
+  return prisma.user.findUnique({ where: { id: user.id }, include: { wallet: true } });
+}
+
+/**
+ * Test-only funding through the Money Kernel (test faucet → customer). The
+ * database refuses direct balance writes, so fixtures fund like everything else.
+ */
+export async function fundUser(userId, amount, db = prisma) {
+  const run = (tx) => testFund(tx, { userId, amount, reference: uniqueRef('FAUCET') });
+  return db === prisma ? prisma.$transaction(run) : run(db);
 }
 
 /** Register a verified device for a user so fraud checks pass. */
@@ -66,12 +80,77 @@ export async function createVerifiedDevice(userId, deviceId = `test-device-${cry
 }
 
 /**
+ * J3 fixture: an ESTABLISHED login — a verified device first seen
+ * `deviceAgeHours` ago, a trusted AuthSession on it, and (optionally) a PIN
+ * step-up made in that session. Returns an access token bound to the session
+ * (sid), signed with `secret`. This is the precondition a real customer has
+ * after signing in on their own phone; tests about new devices, recovery or
+ * missing step-up build their own weaker sessions instead.
+ */
+export async function establishedSessionToken(userId, deviceId, secret, { stepUp = true, deviceAgeHours = 48, trust = 'trusted' } = {}) {
+  const jwt = (await import('jsonwebtoken')).default;
+  const past = new Date(Date.now() - deviceAgeHours * 60 * 60 * 1000);
+  await prisma.userDevice.updateMany({ where: { userId, deviceId }, data: { firstSeenAt: past, verifiedAt: past } });
+  const session = await prisma.authSession.create({
+    data: {
+      userId,
+      deviceId,
+      authMethod: 'otp_phone',
+      trust,
+      trustedAt: trust === 'trusted' ? past : null,
+      stepUpAt: stepUp ? new Date() : null,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    },
+  });
+  const token = jwt.sign({ sub: userId, type: 'access', iatMs: Date.now(), sid: session.id }, secret, { expiresIn: '30m' });
+  return token;
+}
+
+/**
+ * ₭ a user received as `reward` entries paid FROM the funded incentive budget
+ * (another test may leave incentives:funded with a balance). Rewards are
+ * legitimate only from that budget; anything else would be minted value.
+ */
+export async function fundedRewardsFor(userId) {
+  const [{ funded }] = await prisma.$queryRaw`
+    SELECT COALESCE(SUM(c.amount), 0)::int AS funded
+      FROM "Posting" c
+      JOIN "LedgerAccount" ca ON ca.id = c."accountId"
+      JOIN "JournalEntry" j ON j.id = c."entryId" AND j.kind = 'reward'
+     WHERE ca.code = ${`customer:${userId}:available`} AND c.side = 'credit'
+       AND EXISTS (SELECT 1 FROM "Posting" d JOIN "LedgerAccount" da ON da.id = d."accountId"
+                    WHERE d."entryId" = j.id AND da.code = 'incentives:funded' AND d.side = 'debit')`;
+  return funded;
+}
+
+/**
+ * J15: the incentive pool (incentives:funded) is a SHARED platform account. A test that funds it must leave it
+ * as it found it, or every later send / merchant payment in the run also books a reward and exact-balance
+ * assertions elsewhere become order-dependent (the root cause of the historical J4 P2P failures). Pays any
+ * remainder out through the kernel's own reward flow to a throwaway sink user, so the ledger stays balanced.
+ */
+export async function drainIncentivePool() {
+  const { reward } = await import('../../lib/money-kernel/flows.js');
+  const pool = await prisma.ledgerAccount.findUnique({ where: { code: 'incentives:funded' } });
+  const left = Number(pool?.balance ?? 0);
+  if (left <= 0) return 0;
+  const sink = await createUserWithWallet({ koriBalance: 0 });
+  await prisma.$transaction((tx) => reward(tx, { userId: sink.id, amount: left, reference: uniqueRef('POOL-DRAIN'), rewardType: 'test_pool_drain' }));
+  return left;
+}
+
+/** Session id behind a token minted by establishedSessionToken. */
+export function sidOf(token) {
+  return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).sid;
+}
+
+/**
  * Reset the global Kori reserve so it exactly matches SUM(wallet.koriBalance).
  * Serial test execution makes this safe (see --test-concurrency=1).
  */
 export async function resetReserveToWallets() {
-  const total =
-    (await prisma.wallet.aggregate({ _sum: { koriBalance: true } }))._sum.koriBalance ?? 0;
+  // All ₭ custody accounts (wallets, business wallets, pots, vouchers, escrow).
+  const { total } = await custodyKoriTotals(prisma);
   await prisma.koriReserve.upsert({
     where: { id: 'global' },
     create: {
@@ -187,4 +266,17 @@ export async function runWithConcurrency(tasks, limit) {
   }
   await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
   return results;
+}
+
+/** Test-only: fund a business wallet through the Money Kernel. */
+export async function fundBusiness(businessId, amount) {
+  return prisma.$transaction(async (tx) => {
+    const to = await businessAccount(tx, businessId);
+    return testFund(tx, { to, amount, reference: uniqueRef('FAUCETB') });
+  });
+}
+
+/** Test-only: agent float via the attested top-up flow (XOF). */
+export async function fundAgentFloat(agentId, amountXof) {
+  return prisma.$transaction((tx) => agentFloatTopUp(tx, { agentId, amountMinor: amountXof, reference: uniqueRef('AFT'), adminId: 'test' }));
 }
