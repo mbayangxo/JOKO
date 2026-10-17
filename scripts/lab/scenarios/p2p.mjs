@@ -6,7 +6,7 @@
 import crypto from 'node:crypto';
 import { fundUser, prisma } from '../../../tests/helpers/db.js';
 import { customer, signedIn } from '../../../tests/j3/helpers.js';
-import { rngFor } from '../prng.mjs';
+import { labKey, rngFor } from '../prng.mjs';
 import { intentOutcome } from '../../../lib/api-idempotency.js';
 
 export const name = 'p2p';
@@ -47,7 +47,7 @@ export async function setup(cluster, { seed, users = 24, fundKori = 20_000 }) {
   return { actors, fundKori };
 }
 
-const newKey = (rng) => `lab-${Math.floor(rng() * 2 ** 48).toString(16).padStart(12, '0')}`;
+const newKey = labKey;
 
 /** One operation. Returns records (one per HTTP request that could move money). */
 export async function step(ctx, opIndex, { seed, apiWorkers }) {

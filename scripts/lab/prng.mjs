@@ -11,3 +11,9 @@ export function mulberry32(a) {
 }
 
 export const rngFor = (seed, i) => mulberry32((Math.imul(seed >>> 0, 2654435761) ^ Math.imul(i + 1, 40503)) >>> 0);
+
+/**
+ * A client intent key from two 32-bit draws (64 bits). One draw scaled to 2^48 left the low 16 bits zero: 2^32
+ * distinct keys, so a 4-hour soak reused a key for one payer (soak 9003, a lab artefact that also surfaced J15-L6).
+ */
+export const labKey = (rng) => `lab-${(rng() * 2 ** 32 >>> 0).toString(16).padStart(8, '0')}${(rng() * 2 ** 32 >>> 0).toString(16).padStart(8, '0')}`;

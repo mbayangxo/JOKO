@@ -10,7 +10,7 @@
  */
 import { fundUser, prisma } from '../../../tests/helpers/db.js';
 import { business, customer, signedIn } from '../../../tests/j3/helpers.js';
-import { rngFor } from '../prng.mjs';
+import { labKey, rngFor } from '../prng.mjs';
 import * as p2p from './p2p.mjs';
 
 export const name = 'mixed';
@@ -35,7 +35,7 @@ export async function setup(cluster, { seed, users = 24, merchants = 4 }) {
   return ctx;
 }
 
-const key = (rng) => `lab-${Math.floor(rng() * 2 ** 48).toString(16).padStart(12, '0')}`;
+const key = labKey;
 
 export async function step(ctx, i, opts) {
   const rng = rngFor(opts.seed ^ 0x5bd1e995, i);
