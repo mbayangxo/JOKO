@@ -132,27 +132,31 @@ This is evidence for the separate emergency track; it is not a deploy. P0-A runt
 
 ## 7. Fresh full gate
 
-**First attempt at `8d52aa8`: NOT CLEAN.**
-- 953/954; every other check 0.
-- J6 destruction test: a cash-out scan was correctly refused `agent_capacity` because the test scanned all 16 codes at once (FL-6).
-- Root-caused from the gate database and proven by forcing the order. Fixed in `1d00e03` (test only).
+Each gate creates a new database, applies every migration, runs the whole suite and then every invariant, load, sweep, browser and rehearsal check (`scripts/dev/gate.sh`). A gate is valid only if Postgres did not restart during it.
 
-**Fresh full gate at `1d00e03`: CLEAN.** Postgres was up for the whole run (started 06:13, no restart), so the run is valid.
+| Gate | Commit | Result |
+|---|---|---|
+| 1 | `8d52aa8` | NOT CLEAN: 953/954. J6 destruction test order (FL-6), fixed in `1d00e03` (test only) |
+| 2 | `1d00e03` | CLEAN, 954/954 |
+| 3 | `89dd253` (after FL-7, S-1..S-3, FL-8) | NOT CLEAN: 966/967. Fragile J7 privacy assertion (FL-9), fixed in `b69c6fc` (test only). Every other check 0 |
+| **4 (final)** | **`b69c6fc`** | **CLEAN, 967/967.** Postgres up for the whole run (started 04:18:32 UTC, no restart): valid |
+
+**Final gate at `b69c6fc`, 2026-10-17 05:05–05:40 UTC:**
 
 | Check | Result |
 |---|---|
-| Full suite (`npm test`, J1–J15) | **954 / 954** |
+| Full suite (`npm test`, J1–J15) | **967 / 967** |
 | Money / logistics / work / collective invariants, after the suite and after everything | 0 |
 | Load, sweeps | 0 |
 | Web build | 0 |
-| Browser E2E J8–J15 (J15 = S4 approval screen) | 0 (7, 8, 9, 12, 3, 5, 12, 11 steps) |
+| Browser E2E J8–J15 | 0 |
 | Weak-network lab (J12), migration rehearsal | 0 |
 | `schema_diff` | empty |
 | `audit_critical` | 0 |
 | Crons | unchanged (`daily`, `scheduled-payments`); `deploy_inert yes` |
 | Client matches schema | at start and end |
 
-Later commits only touch this report.
+Later commits only touch documentation.
 
 ## 8. Remaining risks and gaps
 
